@@ -1,0 +1,38 @@
+# E2E for the browser ISO builder: Playwright drives the real WASM engine
+# (real registry pulls through the relay). --grep-invert @full keeps the
+# default run fast; the @full build+QEMU-boot proof is dispatch-only.
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+  schedule:
+    # Weekly: the app talks to live infra (relay, GHCR) that can drift.
+    - cron: '40 5 * * 1'
+
+jobs:
+  e2e:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: install deps + chromium
+        working-directory: e2e
+        run: |
+          npm ci || npm install --no-audit --no-fund
+          npx playwright install --with-deps chromium
+      - name: run e2e (inspect flow, real network)
+        working-directory: e2e
+        run: npx playwright test --grep-invert @full
+      - name: upload report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report
+          path: e2e/playwright-report/
+          if-no-files-found: warn

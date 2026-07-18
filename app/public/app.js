@@ -391,6 +391,73 @@ $("fpsearch").addEventListener("input", (e) => {
   fpTimer = setTimeout(() => fpSearch(e.target.value.trim()), 300);
 });
 
+// ── Image picker (base variant × desktop) ─────────────────────────────────
+// The intended TunaOS experience: pick a base + desktop, build a standard
+// ISO — no image ref to type, no settings. Everything under "Advanced" is
+// opt-in. Community desktops (kde/cosmic/niri/xfce) aren't published as ISOs,
+// so the builder is the way to get them. Keep this list in sync with the
+// image matrix published to ghcr.io/tuna-os (build-config.yml).
+const DESKTOPS = {
+  gnome:  { name: "GNOME",      emoji: "🦴" },
+  kde:    { name: "KDE Plasma", emoji: "🌊" },
+  cosmic: { name: "COSMIC",     emoji: "☄️" },
+  niri:   { name: "Niri",       emoji: "🪟" },
+  xfce:   { name: "XFCE",       emoji: "🐭" },
+};
+const VARIANTS = [
+  { id: "yellowfin", name: "AlmaLinux Kitten 10 (flagship)", des: ["gnome", "kde", "cosmic", "niri"] },
+  { id: "bonito",    name: "Fedora 44",                      des: ["gnome", "kde", "cosmic", "niri", "xfce"] },
+  { id: "sailfin",   name: "openSUSE Tumbleweed",            des: ["gnome", "kde", "niri", "xfce"] },
+  { id: "flounder",  name: "Debian 13 Trixie",               des: ["gnome", "kde", "cosmic", "niri", "xfce"] },
+  { id: "grouper",   name: "Ubuntu 26.04",                   des: ["gnome", "kde", "niri", "xfce"] },
+  { id: "marlin",    name: "Arch Linux",                     des: ["gnome", "kde", "cosmic", "niri", "xfce"] },
+  { id: "skipjack",  name: "CentOS Stream 10",               des: ["gnome", "kde", "cosmic", "niri"] },
+  { id: "albacore",  name: "AlmaLinux 10",                   des: ["gnome", "kde", "cosmic", "niri"] },
+  { id: "guppy",     name: "Gentoo (source-based)",          des: ["gnome", "kde"] },
+];
+function currentVariant() {
+  return VARIANTS.find((v) => v.id === $("variant").value) || VARIANTS[0];
+}
+function syncEditionSelection() {
+  const box = $("editions");
+  if (!box) return;
+  const val = $("image").value.trim();
+  for (const el of box.children)
+    el.classList.toggle("selected", val === `${$("variant").value}:${el.dataset.de}`);
+}
+function renderEditions() {
+  const box = $("editions");
+  if (!box) return;
+  const v = currentVariant();
+  box.innerHTML = "";
+  for (const de of v.des) {
+    const meta = DESKTOPS[de] || { name: de, emoji: "🖥️" };
+    const b = document.createElement("button");
+    b.type = "button";
+    b.className = "edition";
+    b.dataset.de = de;
+    b.innerHTML = `<span class="emoji">${meta.emoji}</span>${meta.name}<small>${v.id}</small>`;
+    b.onclick = () => {
+      $("image").value = `${v.id}:${de}`;
+      syncEditionSelection();
+      updateShare();
+      inspect(); // one click → inspect + reveal Build; no typing, no settings
+    };
+    box.appendChild(b);
+  }
+  syncEditionSelection();
+}
+// Populate the variant dropdown and wire re-render on change.
+for (const v of VARIANTS) {
+  const o = document.createElement("option");
+  o.value = v.id;
+  o.textContent = v.name;
+  $("variant").appendChild(o);
+}
+$("variant").addEventListener("change", renderEditions);
+renderEditions();
+$("image").addEventListener("input", syncEditionSelection);
+
 // Apply URL params.
 {
   const q = new URLSearchParams(location.search);
@@ -402,6 +469,10 @@ $("fpsearch").addEventListener("input", (e) => {
   if (q.get("shim")) $("shimurl").value = q.get("shim");
   updateShim();
   updateShare();
+  // If a deep-linked image matches a known variant, reflect it in the picker.
+  const vm = $("image").value.match(/^([a-z0-9-]+):/);
+  if (vm && VARIANTS.some((v) => v.id === vm[1])) { $("variant").value = vm[1]; renderEditions(); }
+  syncEditionSelection();
   // Deep links prefill only — a page load must never start a multi-GB
   // pull by itself. Opt into auto-run with &autorun=1.
   if (q.get("image") && q.get("autorun") === "1") inspect();
