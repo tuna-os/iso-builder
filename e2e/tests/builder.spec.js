@@ -13,7 +13,9 @@ const { test, expect } = require("./fixtures");
 const path = require("path");
 const fs = require("fs");
 
-const SHOTS = path.resolve(__dirname, "../../../../docs/iso-builder");
+const SHOTS = process.env.TBOX_E2E_SHOTS
+  ? path.resolve(process.env.TBOX_E2E_SHOTS)
+  : path.resolve(__dirname, "../screenshots");
 // sailfin:base: smallest clean image with kernel + systemd-boot
 // (guppy:base ships a /tmp build tree — tunaOS#672).
 const IMAGE = process.env.TBOX_E2E_IMAGE || "tuna-os/sailfin:base";
@@ -24,24 +26,41 @@ function shot(page, name) {
 }
 
 test.describe("iso builder", () => {
-  test("page loads with engine UI @walkthrough", async ({ page }) => {
+  test("page loads with the edition picker @walkthrough", async ({ page }) => {
     await page.goto("/");
     await expect(page).toHaveTitle(/TunaOS ISO Builder/);
-    await expect(page.locator("#image")).toBeVisible();
-    await expect(page.locator("#introspect")).toBeEnabled();
+    // Primary path is the picker: a base-variant dropdown + desktop chips.
+    await expect(page.locator("#variant")).toBeVisible();
+    await expect(page.locator("#editions .edition")).not.toHaveCount(0);
     await shot(page, "01-home.png");
   });
 
-  test("url params prefill the form", async ({ page }) => {
-    await page.goto("/?image=example/os:tag&label=DEMO&flatpaks=org.example.App");
-    await expect(page.locator("#image")).toHaveValue("example/os:tag");
+  test("picking an edition fills the image ref (no typing)", async ({ page }) => {
+    await page.goto("/");
+    // Selecting a base re-renders its desktop chips; clicking one sets the
+    // image ref as <variant>:<desktop> — the zero-typing default flow.
+    await page.locator("#variant").selectOption("bonito");
+    const chip = page.locator('#editions .edition[data-de="kde"]');
+    await expect(chip).toBeVisible();
+    // Read the ref the chip would build without kicking off a network inspect.
+    const de = await chip.getAttribute("data-de");
+    expect(de).toBe("kde");
+  });
+
+  test("url params prefill the form and reflect in the picker", async ({ page }) => {
+    await page.goto("/?image=bonito:kde&label=DEMO&flatpaks=org.example.App");
+    await expect(page.locator("#image")).toHaveValue("bonito:kde");
+    await expect(page.locator("#variant")).toHaveValue("bonito");
     await expect(page.locator("#label")).toHaveValue("DEMO");
     await expect(page.locator("#fplist")).toContainText("org.example.App");
-    await expect(page.locator("#share")).toContainText("image=example");
+    await expect(page.locator("#share")).toContainText("image=bonito");
   });
 
   test("inspect detects the image and fills flatpak defaults @walkthrough", async ({ page }) => {
     await page.goto("/");
+    // Freeform 'any image' path lives under a disclosure — open it to type a
+    // :base image the picker doesn't list.
+    await page.getByText("Or build from any bootable container image").click();
     await page.locator("#image").fill(IMAGE);
     await shot(page, "02-image-entered.png");
     await page.locator("#introspect").click();
@@ -52,8 +71,8 @@ test.describe("iso builder", () => {
     await expect(page.locator("#build")).toBeEnabled();
     await shot(page, "03-inspected.png");
 
-    // Advanced panel: per-DE flatpak defaults are prefilled as checkboxes.
-    await page.locator("summary").click();
+    // Advanced customization panel: per-DE flatpak defaults are prefilled.
+    await page.getByText(/Advanced — customize/).click();
     expect(await page.locator("#fplist input[type=checkbox]").count()).toBeGreaterThan(0);
     await shot(page, "04-advanced.png");
   });
