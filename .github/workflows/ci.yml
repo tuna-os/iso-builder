@@ -51,7 +51,11 @@ jobs:
 
       - name: go test
         working-directory: native
-        run: go test -v ./...
+        run: go test -v -race -coverprofile=coverage.out ./...
+
+      - name: coverage summary
+        working-directory: native
+        run: go tool cover -func=coverage.out
 
       - name: go build
         working-directory: native
@@ -83,7 +87,11 @@ jobs:
       # its own -tags=integration suite.
       - name: go test
         working-directory: native
-        run: go test -v ./...
+        run: go test -v -race -coverprofile=coverage.out ./...
+
+      - name: coverage summary
+        working-directory: native
+        run: go tool cover -func=coverage.out
 
       - name: go build
         working-directory: native
@@ -108,7 +116,11 @@ jobs:
       # reason native-linux excludes its own -tags=integration suite.
       - name: go test
         working-directory: native
-        run: go test -v ./...
+        run: go test -v -race -coverprofile=coverage.out ./...
+
+      - name: coverage summary
+        working-directory: native
+        run: go tool cover -func=coverage.out
 
       - name: go build
         working-directory: native
