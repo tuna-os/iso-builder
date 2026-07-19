@@ -6,22 +6,13 @@ import (
 	"os/exec"
 )
 
-// Drive is a candidate write target, already filtered to what's safe to
-// offer a non-technical user.
-type Drive struct {
-	Path  string // e.g. /dev/sda
-	Model string
-	SizeH string // human-readable size, e.g. "32G"
-	Size  int64  // bytes
-}
-
 type lsblkDevice struct {
 	Name       string        `json:"name"`
 	Model      string        `json:"model"`
 	Size       int64         `json:"size"`
 	Type       string        `json:"type"`
-	RM         bool          `json:"rm"`   // removable
-	RO         bool          `json:"ro"`   // read-only
+	RM         bool          `json:"rm"` // removable
+	RO         bool          `json:"ro"` // read-only
 	MountPoint *string       `json:"mountpoint"`
 	Children   []lsblkDevice `json:"children"`
 }
@@ -97,17 +88,4 @@ func filterSafeDrives(devices []lsblkDevice) []Drive {
 		})
 	}
 	return safe
-}
-
-func humanSize(n int64) string {
-	const unit = 1024
-	if n < unit {
-		return fmt.Sprintf("%d B", n)
-	}
-	div, exp := int64(unit), 0
-	for m := n / unit; m >= unit; m /= unit {
-		div *= unit
-		exp++
-	}
-	return fmt.Sprintf("%.1f %ciB", float64(n)/float64(div), "KMGTPE"[exp])
 }

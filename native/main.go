@@ -11,10 +11,8 @@
 package main
 
 import (
-	"bufio"
 	"fmt"
 	"os"
-	"os/exec"
 	"path/filepath"
 
 	"fyne.io/fyne/v2"
@@ -185,18 +183,6 @@ func main() {
 	w.ShowAndRun()
 }
 
-// tackleboxPath resolves the tacklebox binary: next to this executable
-// first (bundled distribution), falling back to PATH (dev/CI use).
-func tackleboxPath() string {
-	if exe, err := os.Executable(); err == nil {
-		candidate := filepath.Join(filepath.Dir(exe), "tacklebox")
-		if _, err := os.Stat(candidate); err == nil {
-			return candidate
-		}
-	}
-	return "tacklebox"
-}
-
 // runBuild writes a single-env recipe for img directly to drive.Path via
 // `tacklebox build --yes`, erasing whatever was there before. Use runAdd
 // instead for an already-managed drive (tuna-os/iso-builder#3).
@@ -213,11 +199,13 @@ func runAdd(img curatedImage, drive Drive, log *widget.Entry, status *widget.Lab
 }
 
 // runRecipeCommand is the shared plumbing behind runBuild/runAdd: write a
-// temp recipe for img, run `tacklebox <subcommand> --yes <recipe> <drive>`,
-// and stream its output into log line by line. All UI updates go through
-// fyne.Do since this runs on a background goroutine — Fyne is not safe to
-// touch from anywhere else (see the fyne.Do threading-model warning this
-// code used to trigger before that was fixed).
+// temp recipe for img and hand off to executeTacklebox — the actual
+// platform-specific execution (blockdev_linux.go runs tacklebox directly;
+// vmbuild_darwin.go has to boot a Linux VM first, see that file's doc
+// comment for why). All UI updates go through fyne.Do since this runs on a
+// background goroutine — Fyne is not safe to touch from anywhere else (see
+// the fyne.Do threading-model warning this code used to trigger before
+// that was fixed).
 func runRecipeCommand(subcommand, verb string, img curatedImage, drive Drive, log *widget.Entry, status *widget.Label, done func()) {
 	recipe, err := writeTempRecipe(img)
 	if err != nil {
@@ -227,28 +215,11 @@ func runRecipeCommand(subcommand, verb string, img curatedImage, drive Drive, lo
 	}
 	defer os.Remove(recipe)
 
-	cmd := exec.Command("sudo", tackleboxPath(), subcommand, "--yes", recipe, drive.Path)
-	stdout, err := cmd.StdoutPipe()
-	if err != nil {
-		fyne.Do(func() { status.SetText("Failed to start " + subcommand + ": " + err.Error()) })
-		fyne.Do(done)
-		return
-	}
-	cmd.Stderr = cmd.Stdout
-
-	if err := cmd.Start(); err != nil {
-		fyne.Do(func() { status.SetText("Failed to start " + subcommand + ": " + err.Error()) })
-		fyne.Do(done)
-		return
-	}
-
-	scanner := bufio.NewScanner(stdout)
-	for scanner.Scan() {
-		line := scanner.Text()
+	onLine := func(line string) {
 		fyne.Do(func() { log.SetText(log.Text + line + "\n") })
 	}
 
-	if err := cmd.Wait(); err != nil {
+	if err := executeTacklebox(subcommand, recipe, drive.Path, onLine); err != nil {
 		fyne.Do(func() { status.SetText(verb + " failed: " + err.Error()) })
 	} else {
 		fyne.Do(func() { status.SetText("Done — " + drive.Path + " is ready.") })
