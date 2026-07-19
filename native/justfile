@@ -1,0 +1,32 @@
+# Packaging for tacklebox-app. See package/README.md for what's signed
+# vs. not, and why.
+
+# Linux: plain binary, no bundling needed beyond copying `tacklebox` next
+# to it (exec_linux.go's tackleboxPath() looks there first).
+build-linux:
+    go build -o dist/linux/tacklebox-app .
+    @echo "Copy a built tacklebox binary to dist/linux/tacklebox next to it, or leave PATH to provide one."
+
+# macOS: real .app bundle. Needs the actual build host to be macOS (cgo/Fyne
+# can't cross-compile from Linux — see package/README.md).
+build-macos-app:
+    mkdir -p dist/macos/TunaOS\ ISO\ Builder.app/Contents/MacOS
+    mkdir -p dist/macos/TunaOS\ ISO\ Builder.app/Contents/Resources
+    go build -o "dist/macos/TunaOS ISO Builder.app/Contents/MacOS/tacklebox-app" .
+    cp package/macos/Info.plist "dist/macos/TunaOS ISO Builder.app/Contents/Info.plist"
+    @echo "Built (unsigned) dist/macos/TunaOS ISO Builder.app — see package/README.md for Gatekeeper's first-launch bypass."
+
+# Windows: cross-compiles from Linux via mingw-w64 (`brew install
+# mingw-w64`) — this direction works even though macOS cross-compilation
+# doesn't, because a real Windows cgo cross-toolchain exists for Linux
+# hosts. IMPORTANT: run `go env -u CGO_CFLAGS CGO_LDFLAGS` first if this
+# host has ever set them for a native Linux Fyne build (see
+# native/README.md) — a leftover Linux-specific CGO_LDFLAGS silently
+# breaks this link with "cannot find -lX11" style errors that have
+# nothing to do with Windows.
+build-windows:
+    CGO_ENABLED=1 CC=x86_64-w64-mingw32-gcc GOOS=windows GOARCH=amd64 go build -o dist/windows/tacklebox-app.exe .
+    @echo "Built (unsigned) dist/windows/tacklebox-app.exe — see package/README.md for SmartScreen's first-launch bypass."
+
+clean:
+    rm -rf dist

@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>CFBundleName</key>
+	<string>TunaOS ISO Builder</string>
+	<key>CFBundleDisplayName</key>
+	<string>TunaOS ISO Builder</string>
+	<key>CFBundleIdentifier</key>
+	<string>org.tunaos.tacklebox-app</string>
+	<key>CFBundleVersion</key>
+	<string>0.1.0</string>
+	<key>CFBundleShortVersionString</key>
+	<string>0.1.0</string>
+	<key>CFBundlePackageType</key>
+	<string>APPL</string>
+	<key>CFBundleExecutable</key>
+	<string>tacklebox-app</string>
+	<key>CFBundleIconFile</key>
+	<string>AppIcon.icns</string>
+	<key>LSMinimumSystemVersion</key>
+	<string>13.0</string>
+	<key>NSHighResolutionCapable</key>
+	<true/>
+	<!--
+	  No entitlements/signing here — that needs a real Apple Developer
+	  account, which this project doesn't have yet (see
+	  native/package/README.md). Until then, this bundle is unsigned and
+	  Gatekeeper will block it on first launch; the README explains the
+	  right-click-Open bypass for now.
+	-->
+</dict>
+</plist>
