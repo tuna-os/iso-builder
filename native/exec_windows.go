@@ -35,25 +35,32 @@ import (
 	"time"
 )
 
-// executeTacklebox on Windows attaches drivePath into WSL2 via usbipd-win
-// and runs tacklebox inside the default WSL distro.
-func executeTacklebox(subcommand, recipePath, drivePath string, onLine func(string)) error {
+// attachDriveToWSL checks prerequisites, attaches drivePath into WSL2 via
+// usbipd-win, and returns the resulting guest block device path (e.g.
+// /dev/sdb). Shared by executeTacklebox, runTackleboxArgs, and
+// managed_windows.go's isManagedDrive — all three need the drive attached
+// before they can do anything else.
+func attachDriveToWSL(drivePath string, onLine func(string)) (string, error) {
 	if err := checkWSL2(); err != nil {
-		return err
+		return "", err
 	}
 	if _, err := exec.LookPath("usbipd"); err != nil {
-		return fmt.Errorf("usbipd-win not found — install it first (https://github.com/dorssel/usbipd-win/releases, or `winget install usbipd`)")
+		return "", &PrerequisiteError{
+			Message:  "This needs usbipd-win (lets WSL2 see USB drives) to write to USB drives, and it isn't installed yet.",
+			FixLabel: "Install usbipd-win",
+			Fix:      installUsbipd,
+		}
 	}
 
 	onLine("Locating " + drivePath + " on the USB bus...")
 	busID, err := findUsbipdBusID(drivePath)
 	if err != nil {
-		return fmt.Errorf("could not identify the USB bus ID for %s: %w", drivePath, err)
+		return "", fmt.Errorf("could not identify the USB bus ID for %s: %w", drivePath, err)
 	}
 
 	onLine("Attaching " + drivePath + " (bus " + busID + ") into WSL2...")
 	if err := runWindows(onLine, "usbipd", "attach", "--wsl", "--busid", busID); err != nil {
-		return fmt.Errorf("usbipd attach: %w", err)
+		return "", fmt.Errorf("usbipd attach: %w", err)
 	}
 	// The device needs a moment to enumerate inside the WSL2 kernel after
 	// attach — usbipd's own attach command returns once the USB layer is
@@ -62,39 +69,121 @@ func executeTacklebox(subcommand, recipePath, drivePath string, onLine func(stri
 
 	guestDevice, err := findNewBlockDeviceInWSL()
 	if err != nil {
-		return fmt.Errorf("drive attached but not found inside WSL2: %w", err)
+		return "", fmt.Errorf("drive attached but not found inside WSL2: %w", err)
 	}
 	onLine("Drive is visible inside WSL2 as " + guestDevice)
+	return guestDevice, nil
+}
+
+// executeTacklebox on Windows attaches drivePath into WSL2 via usbipd-win
+// and runs tacklebox build/add/update inside the default WSL distro (all
+// three share the `<subcommand> --yes <recipe> <drive>` shape). See
+// runTackleboxArgs for subcommands that don't fit it (verify, remove,
+// status).
+func executeTacklebox(subcommand, recipePath, drivePath string, onLine func(string)) error {
+	guestDevice, err := attachDriveToWSL(drivePath, onLine)
+	if err != nil {
+		return err
+	}
 
 	winRecipePath, err := wslCopyIn(recipePath)
 	if err != nil {
 		return fmt.Errorf("copy recipe into WSL2: %w", err)
 	}
 
-	setupScript := fmt.Sprintf(`set -e
+	script := wslTackleboxCloneAndBuild + fmt.Sprintf("sudo ./tacklebox %s --yes %s %s\n", subcommand, winRecipePath, guestDevice)
+	return runWSLScript(script, onLine)
+}
+
+// runTackleboxArgs attaches drivePath into WSL2 and runs
+// `sudo ./tacklebox <args...>` there, for subcommands that don't need a
+// recipe uploaded first (verify, remove, status — see
+// managed_windows.go). args should reference the guest device path
+// returned by attachDriveToWSL, not the Windows drivePath.
+func runTackleboxArgs(drivePath string, argsFn func(guestDevice string) []string, onLine func(string)) error {
+	guestDevice, err := attachDriveToWSL(drivePath, onLine)
+	if err != nil {
+		return err
+	}
+	args := argsFn(guestDevice)
+
+	script := wslTackleboxCloneAndBuild + "sudo ./tacklebox"
+	for _, a := range args {
+		script += " " + a
+	}
+	script += "\n"
+	return runWSLScript(script, onLine)
+}
+
+// wslTackleboxCloneAndBuild is the shell fragment every WSL2 remote command
+// needs first — clone tacklebox at the pinned ref and build the same
+// binary the Linux path already runs directly. Shared by executeTacklebox
+// (build/add) and isManagedDrive (status, managed_windows.go).
+const wslTackleboxCloneAndBuild = `set -e
 sudo apt-get update -qq
 sudo apt-get install -y -qq git golang-go podman skopeo gdisk dosfstools systemd-boot >/dev/null
 git clone --depth 1 --branch main https://github.com/tuna-os/tacklebox.git
 cd tacklebox
 go build -o tacklebox ./cmd/tacklebox
-sudo ./tacklebox %s --yes %s %s
-`, subcommand, winRecipePath, guestDevice)
+`
 
-	return runWSLScript(setupScript, onLine)
-}
-
-// checkWSL2 confirms a WSL2 distro is available. Does not attempt to
-// install one — `wsl --install` is a slow, reboot-prone operation that
-// shouldn't happen silently inside a build click.
+// checkWSL2 confirms a WSL2 distro is available. If not, it returns a
+// *PrerequisiteError carrying an automatic fix — this app's whole audience
+// is people who don't know what a command line is (see
+// tuna-os/iso-builder#1), so "go run wsl --install yourself" is not an
+// acceptable dead end. installWSL2 still can't avoid the one thing only
+// the user can do: acknowledge and sit through the required reboot.
 func checkWSL2() error {
 	out, err := exec.Command("wsl", "--status").CombinedOutput()
 	if err != nil {
-		return fmt.Errorf("WSL not available — run `wsl --install` first, then restart: %w", err)
+		return &PrerequisiteError{
+			Message:  "This needs WSL2 (a Windows feature for running Linux tools) to write to USB drives, and it isn't installed yet.",
+			FixLabel: "Install WSL2",
+			Fix:      installWSL2,
+		}
 	}
 	if !strings.Contains(string(out), "2") {
-		return fmt.Errorf("WSL is installed but not on version 2 — run `wsl --set-default-version 2`")
+		return &PrerequisiteError{
+			Message:  "WSL is installed but not set to version 2, which this app needs.",
+			FixLabel: "Switch to WSL2",
+			Fix: func(onLine func(string)) error {
+				return runWindows(onLine, "wsl", "--set-default-version", "2")
+			},
+		}
 	}
 	return nil
+}
+
+// installUsbipd installs usbipd-win via winget, which ships built into
+// Windows 10 2004+/11 (App Installer) — a safer default to shell out to
+// directly than Homebrew's curl-piped-to-a-shell install on macOS, so
+// unlike installQEMU this doesn't need a "the package manager itself is
+// missing" fallback path for the common case.
+func installUsbipd(onLine func(string)) error {
+	onLine("Installing usbipd-win via winget...")
+	if err := runWindows(onLine, "winget", "install", "--id", "dorssel.usbipd-win", "-e", "--accept-source-agreements", "--accept-package-agreements"); err != nil {
+		return fmt.Errorf("winget install failed (if winget itself is missing, get it from the Microsoft Store as \"App Installer\", or download usbipd-win directly from https://github.com/dorssel/usbipd-win/releases): %w", err)
+	}
+	return nil
+}
+
+// installWSL2 runs the elevated WSL2 install command. `wsl --install`
+// needs administrator rights; Start-Process -Verb RunAs triggers the
+// native Windows UAC elevation prompt for it rather than a custom dialog
+// this app would have to build (and rather than silently failing if the
+// app itself isn't already elevated).
+func installWSL2(onLine func(string)) error {
+	onLine("Requesting administrator permission to install WSL2...")
+	cmd := exec.Command("powershell", "-NoProfile", "-Command",
+		"Start-Process wsl -ArgumentList '--install','--no-distribution' -Verb RunAs -Wait")
+	out, err := cmd.CombinedOutput()
+	if len(out) > 0 {
+		onLine(string(out))
+	}
+	if err != nil {
+		return fmt.Errorf("WSL2 install failed to start (did you decline the permission prompt?): %w", err)
+	}
+	return fmt.Errorf("WSL2 is installing — your computer needs to restart once before this will work. Restart, then try again")
 }
 
 // findUsbipdBusID correlates a Win32_DiskDrive DeviceID with a USB bus ID

@@ -14,6 +14,7 @@
 package main
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -150,6 +151,32 @@ func main() {
 	logScroll := container.NewScroll(log)
 	logScroll.SetMinSize(fyne.NewSize(540, 200))
 
+	// busyGuard disables every button that mutates or reads a drive while
+	// an operation is running, shows the progress bar, and returns a
+	// "done" callback that undoes both — shared by every action below
+	// (build/add/verify/update/remove) so there's exactly one place that
+	// decides what "an operation is in flight" means for the UI, and a
+	// user can't e.g. click Update while a build is still running.
+	// allActionButtons is populated once every button exists (Go closures
+	// capture variables by reference, not value, so busyGuard reads
+	// whatever allActionButtons holds at call time — safe here because
+	// nothing invokes busyGuard until the event loop starts, well after
+	// main() finishes populating it below).
+	var allActionButtons []*widget.Button
+	busyGuard := func() func() {
+		for _, b := range allActionButtons {
+			b.Disable()
+		}
+		progress.Show()
+		log.SetText("")
+		return func() {
+			for _, b := range allActionButtons {
+				b.Enable()
+			}
+			progress.Hide()
+		}
+	}
+
 	var buildBtn *widget.Button
 	buildBtn = widget.NewButton("Write to drive", func() {
 		imgIdx := imageSelect.SelectedIndex()
@@ -162,19 +189,11 @@ func main() {
 		img := curatedImages[imgIdx]
 
 		start := func() {
-			buildBtn.Disable()
-			refreshBtn.Disable()
-			progress.Show()
-			log.SetText("")
-			done := func() {
-				buildBtn.Enable()
-				refreshBtn.Enable()
-				progress.Hide()
-			}
+			done := busyGuard()
 			if managed {
-				go runAdd(img, drive, log, status, done)
+				go runAdd(img, drive, log, status, w, done)
 			} else {
-				go runBuild(img, drive, log, status, done)
+				go runBuild(img, drive, log, status, w, done)
 			}
 		}
 
@@ -199,6 +218,59 @@ func main() {
 		)
 	})
 
+	verifyBtn := widget.NewButton("Verify", func() {
+		drvIdx := driveSelect.SelectedIndex()
+		if drvIdx < 0 {
+			return
+		}
+		drive := drives[drvIdx]
+		done := busyGuard()
+		go runVerify(drive, log, status, w, done)
+	})
+
+	updateBtn := widget.NewButton("Update", func() {
+		imgIdx, drvIdx := imageSelect.SelectedIndex(), driveSelect.SelectedIndex()
+		if imgIdx < 0 || drvIdx < 0 {
+			dialog.ShowInformation("Missing selection", "Choose an OS above first — Update re-installs it in place.", w)
+			return
+		}
+		drive, img := drives[drvIdx], curatedImages[imgIdx]
+		done := busyGuard()
+		go runUpdate(img, drive, log, status, w, done)
+	})
+
+	removeEnvEntry := widget.NewEntry()
+	removeEnvEntry.PlaceHolder = "environment id (see Verify/status output above)"
+	removeBtn := widget.NewButton("Remove", func() {
+		drvIdx := driveSelect.SelectedIndex()
+		envID := removeEnvEntry.Text
+		if drvIdx < 0 || envID == "" {
+			dialog.ShowInformation("Missing environment id", "Type the environment id to remove (shown in the drive status above).", w)
+			return
+		}
+		drive := drives[drvIdx]
+		dialog.ShowConfirm(
+			"Remove "+envID+"?",
+			fmt.Sprintf("This removes %s from %s and reclaims its space. Other environments on the drive are untouched.", envID, drive.Path),
+			func(confirmed bool) {
+				if !confirmed {
+					return
+				}
+				done := busyGuard()
+				go runRemove(envID, drive, log, status, w, done)
+			},
+			w,
+		)
+	})
+
+	allActionButtons = []*widget.Button{buildBtn, refreshBtn, verifyBtn, updateBtn, removeBtn}
+	managePanel := container.NewVBox(
+		widget.NewLabelWithStyle("Manage this drive", fyne.TextAlignLeading, fyne.TextStyle{Bold: true}),
+		container.NewHBox(verifyBtn, updateBtn),
+		container.NewBorder(nil, nil, nil, removeBtn, removeEnvEntry),
+	)
+	managePanel.Hide() // shown only once a managed drive is detected, see OnChanged below
+
 	driveSelect.OnChanged = func(string) {
 		drvIdx := driveSelect.SelectedIndex()
 		if drvIdx < 0 || drvIdx >= len(drives) {
@@ -207,6 +279,7 @@ func main() {
 		drive := drives[drvIdx]
 		driveInfo.SetText("Checking " + drive.Path + "…")
 		buildBtn.SetText("Write to drive")
+		managePanel.Hide()
 		go func() {
 			isManaged, out := isManagedDrive(drive.Path)
 			fyne.Do(func() {
@@ -214,6 +287,7 @@ func main() {
 				if isManaged {
 					driveInfo.SetText("Already has TunaOS on it:\n" + out)
 					buildBtn.SetText("Add to drive")
+					managePanel.Show()
 				} else {
 					driveInfo.SetText("Blank drive — writing will erase everything on it.")
 					buildBtn.SetText("Write to drive")
@@ -229,6 +303,7 @@ func main() {
 		container.NewBorder(nil, nil, nil, refreshBtn, driveSelect),
 		driveInfo,
 		buildBtn,
+		managePanel,
 		progress,
 		status,
 		widget.NewLabelWithStyle("Log", fyne.TextAlignLeading, fyne.TextStyle{Bold: true}),
@@ -240,30 +315,71 @@ func main() {
 	w.ShowAndRun()
 }
 
+// handlePrerequisiteError checks whether err is a *PrerequisiteError (a
+// missing dependency this app knows how to fix, e.g. WSL2 or QEMU — see
+// drive.go) and, if so, offers the user a one-click fix instead of a
+// dead-end error message. Returns true if it handled err (caller should
+// not also show a generic failure), false otherwise.
+func handlePrerequisiteError(err error, log *widget.Entry, status *widget.Label, w fyne.Window) bool {
+	var prereq *PrerequisiteError
+	if !errors.As(err, &prereq) {
+		return false
+	}
+	fyne.Do(func() {
+		status.SetText(prereq.Message)
+		dialog.ShowConfirm("Something's missing", prereq.Message+"\n\nClick \""+prereq.FixLabel+"\" to try fixing it automatically.", func(confirmed bool) {
+			if !confirmed {
+				return
+			}
+			go func() {
+				onLine := func(line string) { fyne.Do(func() { log.SetText(log.Text + line + "\n") }) }
+				fixErr := prereq.Fix(onLine)
+				fyne.Do(func() {
+					if fixErr != nil {
+						status.SetText(fixErr.Error())
+					} else {
+						status.SetText("Fixed — try again.")
+					}
+				})
+			}()
+		}, w)
+	})
+	return true
+}
+
 // runBuild writes a single-env recipe for img directly to drive.Path via
 // `tacklebox build --yes`, erasing whatever was there before. Use runAdd
 // instead for an already-managed drive (tuna-os/iso-builder#3).
-func runBuild(img curatedImage, drive Drive, log *widget.Entry, status *widget.Label, done func()) {
-	runRecipeCommand("build", "Build", img, drive, log, status, done)
+func runBuild(img curatedImage, drive Drive, log *widget.Entry, status *widget.Label, w fyne.Window, done func()) {
+	runRecipeCommand("build", "Build", img, drive, log, status, w, done)
 }
 
 // runAdd installs img onto drive.Path alongside whatever's already there,
 // via `tacklebox add --yes` — no reformatting. This is the actual
 // differentiator over a one-shot ISO burner (tuna-os/iso-builder#3): a
 // drive tacklebox manages can grow instead of being replaced.
-func runAdd(img curatedImage, drive Drive, log *widget.Entry, status *widget.Label, done func()) {
-	runRecipeCommand("add", "Add", img, drive, log, status, done)
+func runAdd(img curatedImage, drive Drive, log *widget.Entry, status *widget.Label, w fyne.Window, done func()) {
+	runRecipeCommand("add", "Add", img, drive, log, status, w, done)
 }
 
-// runRecipeCommand is the shared plumbing behind runBuild/runAdd: write a
-// temp recipe for img and hand off to executeTacklebox — the actual
-// platform-specific execution (blockdev_linux.go runs tacklebox directly;
-// vmbuild_darwin.go has to boot a Linux VM first, see that file's doc
-// comment for why). All UI updates go through fyne.Do since this runs on a
-// background goroutine — Fyne is not safe to touch from anywhere else (see
-// the fyne.Do threading-model warning this code used to trigger before
-// that was fixed).
-func runRecipeCommand(subcommand, verb string, img curatedImage, drive Drive, log *widget.Entry, status *widget.Label, done func()) {
+// runUpdate re-installs img on drive.Path in place, via `tacklebox update
+// --yes` — refreshes an already-installed environment to match the
+// current image, rotating BLS entries and extracting new kernels/initrd
+// as needed (tuna-os/iso-builder#2).
+func runUpdate(img curatedImage, drive Drive, log *widget.Entry, status *widget.Label, w fyne.Window, done func()) {
+	runRecipeCommand("update", "Update", img, drive, log, status, w, done)
+}
+
+// runRecipeCommand is the shared plumbing behind runBuild/runAdd/runUpdate:
+// write a temp recipe for img and hand off to executeTacklebox — the
+// actual platform-specific execution (exec_linux.go runs tacklebox
+// directly; exec_darwin.go/exec_windows.go have to reach a real Linux
+// environment first, see those files' doc comments for why). All UI
+// updates go through fyne.Do since this runs on a background goroutine —
+// Fyne is not safe to touch from anywhere else (see the fyne.Do
+// threading-model warning this code used to trigger before that was
+// fixed).
+func runRecipeCommand(subcommand, verb string, img curatedImage, drive Drive, log *widget.Entry, status *widget.Label, w fyne.Window, done func()) {
 	recipe, err := writeTempRecipe(img)
 	if err != nil {
 		fyne.Do(func() { status.SetText("Failed to prepare recipe: " + err.Error()) })
@@ -277,9 +393,52 @@ func runRecipeCommand(subcommand, verb string, img curatedImage, drive Drive, lo
 	}
 
 	if err := executeTacklebox(subcommand, recipe, drive.Path, onLine); err != nil {
-		fyne.Do(func() { status.SetText(verb + " failed: " + err.Error()) })
+		if !handlePrerequisiteError(err, log, status, w) {
+			fyne.Do(func() { status.SetText(verb + " failed: " + err.Error()) })
+		}
 	} else {
 		fyne.Do(func() { status.SetText("Done — " + drive.Path + " is ready.") })
+	}
+	fyne.Do(done)
+}
+
+// runVerify checks a drive's integrity via `tacklebox verify` — no recipe
+// involved, so it goes through runTackleboxArgs rather than
+// runRecipeCommand (tuna-os/iso-builder#2).
+func runVerify(drive Drive, log *widget.Entry, status *widget.Label, w fyne.Window, done func()) {
+	onLine := func(line string) {
+		fyne.Do(func() { log.SetText(log.Text + line + "\n") })
+	}
+	err := runTackleboxArgs(drive.Path, func(device string) []string {
+		return []string{"verify", device}
+	}, onLine)
+	if err != nil {
+		if !handlePrerequisiteError(err, log, status, w) {
+			fyne.Do(func() { status.SetText("Verify failed: " + err.Error()) })
+		}
+	} else {
+		fyne.Do(func() { status.SetText(drive.Path + " passed verification.") })
+	}
+	fyne.Do(done)
+}
+
+// runRemove removes envID from drive.Path via `tacklebox remove --yes`,
+// reclaiming its space without touching the rest of the drive
+// (tuna-os/iso-builder#2 — the actual "manage a persistent drive" lifecycle,
+// not just build/add).
+func runRemove(envID string, drive Drive, log *widget.Entry, status *widget.Label, w fyne.Window, done func()) {
+	onLine := func(line string) {
+		fyne.Do(func() { log.SetText(log.Text + line + "\n") })
+	}
+	err := runTackleboxArgs(drive.Path, func(device string) []string {
+		return []string{"remove", envID, device, "--yes"}
+	}, onLine)
+	if err != nil {
+		if !handlePrerequisiteError(err, log, status, w) {
+			fyne.Do(func() { status.SetText("Remove failed: " + err.Error()) })
+		}
+	} else {
+		fyne.Do(func() { status.SetText("Removed " + envID + " from " + drive.Path + ".") })
 	}
 	fyne.Do(done)
 }

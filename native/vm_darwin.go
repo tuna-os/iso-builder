@@ -123,10 +123,28 @@ users:
 	return nil
 }
 
-// waitForSSH polls localhost:vmSSHPort until an SSH handshake succeeds as
-// the "tbox" user, or timeout elapses. The VM takes real time to boot —
-// this is expected to loop for a while, not fail fast.
-func waitForSSH(ctx context.Context, signer ssh.Signer, timeout time.Duration) (*ssh.Client, error) {
+// freeLocalPort asks the OS for an unused TCP port by binding to port 0 and
+// reading back what it picked. There's a small unavoidable race (something
+// else could grab the port between this closing and QEMU binding it), but
+// that's the standard way to do this and far better than a fixed port two
+// concurrent/orphaned VMs can collide on.
+func freeLocalPort() (int, error) {
+	l, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		return 0, err
+	}
+	defer l.Close()
+	return l.Addr().(*net.TCPAddr).Port, nil
+}
+
+// waitForSSH polls localhost:port until an SSH handshake succeeds as the
+// "tbox" user, or timeout elapses, or qemuExited fires first — the VM
+// takes real time to boot so this is expected to loop for a while, but if
+// the QEMU process has already died (port conflict, startup error, ...)
+// there's no point waiting out the full timeout for a connection that will
+// never come; that wastes minutes of the user's time on a generic timeout
+// instead of surfacing the real error.
+func waitForSSH(ctx context.Context, signer ssh.Signer, port int, timeout time.Duration, qemuExited <-chan error) (*ssh.Client, error) {
 	deadline := time.Now().Add(timeout)
 	config := &ssh.ClientConfig{
 		User:            "tbox",
@@ -134,12 +152,17 @@ func waitForSSH(ctx context.Context, signer ssh.Signer, timeout time.Duration) (
 		HostKeyCallback: ssh.InsecureIgnoreHostKey(), // ephemeral VM, ephemeral host key — nothing to pin
 		Timeout:         5 * time.Second,
 	}
-	addr := fmt.Sprintf("127.0.0.1:%d", vmSSHPort)
+	addr := fmt.Sprintf("127.0.0.1:%d", port)
 
 	for time.Now().Before(deadline) {
 		select {
 		case <-ctx.Done():
 			return nil, ctx.Err()
+		case err := <-qemuExited:
+			if err != nil {
+				return nil, fmt.Errorf("VM process exited before becoming reachable: %w", err)
+			}
+			return nil, fmt.Errorf("VM process exited before becoming reachable")
 		default:
 		}
 		conn, err := net.DialTimeout("tcp", addr, 3*time.Second)
