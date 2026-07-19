@@ -167,15 +167,28 @@ func installUsbipd(onLine func(string)) error {
 	return nil
 }
 
-// installWSL2 runs the elevated WSL2 install command. `wsl --install`
-// needs administrator rights; Start-Process -Verb RunAs triggers the
-// native Windows UAC elevation prompt for it rather than a custom dialog
-// this app would have to build (and rather than silently failing if the
-// app itself isn't already elevated).
+// installWSL2 enables the underlying Windows features WSL2 needs.
+//
+// Originally this just ran `wsl --install --no-distribution`, the
+// documented simple path. Live-tested against a real Windows 11 VM (see
+// tuna-os/tacklebox#107): it did not work — the WSL optional feature
+// stayed Disabled afterward, with no error surfaced to explain why. The
+// lower-level DISM equivalent (Enable-WindowsOptionalFeature, run
+// directly here) was tested against the same VM and did work
+// (Online: True, RestartNeeded: True). Not every Windows edition/build
+// supports the simplified `wsl --install` flow the same way, so this
+// goes straight to the primitive that's actually confirmed reliable
+// rather than trying the documented-but-unverified path first.
+//
+// Start-Process -Verb RunAs triggers the native Windows UAC elevation
+// prompt rather than a custom dialog this app would have to build (and
+// rather than silently failing if the app itself isn't already elevated).
 func installWSL2(onLine func(string)) error {
 	onLine("Requesting administrator permission to install WSL2...")
+	script := `Enable-WindowsOptionalFeature -Online -FeatureName Microsoft-Windows-Subsystem-Linux -NoRestart; ` +
+		`Enable-WindowsOptionalFeature -Online -FeatureName VirtualMachinePlatform -NoRestart`
 	cmd := exec.Command("powershell", "-NoProfile", "-Command",
-		"Start-Process wsl -ArgumentList '--install','--no-distribution' -Verb RunAs -Wait")
+		fmt.Sprintf("Start-Process powershell -ArgumentList '-NoProfile','-Command','%s' -Verb RunAs -Wait", script))
 	out, err := cmd.CombinedOutput()
 	if len(out) > 0 {
 		onLine(string(out))
