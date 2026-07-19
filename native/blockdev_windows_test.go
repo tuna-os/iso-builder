@@ -76,7 +76,7 @@ func TestParseWin32DiskDrives_Array(t *testing.T) {
 func TestExtractVidPid(t *testing.T) {
 	cases := map[string]string{
 		`USB\VID_0951&PID_1666\E0D55EA6DC7C61114182`: "0951:1666",
-		`SCSI\Disk&Ven_NVMe&Prod_Samsung`:             "",
+		`SCSI\Disk&Ven_NVMe&Prod_Samsung`:            "",
 	}
 	for pnpID, want := range cases {
 		if got := extractVidPid(pnpID); got != want {

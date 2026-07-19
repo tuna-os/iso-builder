@@ -171,7 +171,7 @@ func scpFile(client *ssh.Client, localPath, remotePath string) error {
 	if err != nil {
 		return err
 	}
-	if err := session.Start("cat > " + remotePath); err != nil {
+	if err := session.Start(fmt.Sprintf("cat > %q", remotePath)); err != nil {
 		return err
 	}
 	if _, err := stdin.Write(data); err != nil {
