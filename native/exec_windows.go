@@ -28,8 +28,13 @@ package main
 
 import (
 	"bufio"
+	"encoding/json"
 	"fmt"
+	"io"
+	"net/http"
+	"os"
 	"os/exec"
+	"path/filepath"
 	"regexp"
 	"strings"
 	"time"
@@ -167,7 +172,8 @@ func installUsbipd(onLine func(string)) error {
 	return nil
 }
 
-// installWSL2 enables the underlying Windows features WSL2 needs.
+// installWSL2 enables the underlying Windows features WSL2 needs and
+// installs the separate WSL2 Linux kernel update package.
 //
 // Originally this just ran `wsl --install --no-distribution`, the
 // documented simple path. Live-tested against a real Windows 11 VM (see
@@ -179,6 +185,13 @@ func installUsbipd(onLine func(string)) error {
 // supports the simplified `wsl --install` flow the same way, so this
 // goes straight to the primitive that's actually confirmed reliable
 // rather than trying the documented-but-unverified path first.
+//
+// Enabling the two optional features is not sufficient by itself: also
+// live-tested against the same VM, `wsl --status` kept failing with "WSL
+// is not installed" even after both features showed Enabled and a
+// reboot. The missing piece is the WSL2 Linux kernel itself, which on a
+// from-scratch machine ships as a separate MSI, not as part of either
+// Windows feature — installKernelUpdate below fetches and runs it.
 //
 // Start-Process -Verb RunAs triggers the native Windows UAC elevation
 // prompt rather than a custom dialog this app would have to build (and
@@ -196,7 +209,103 @@ func installWSL2(onLine func(string)) error {
 	if err != nil {
 		return fmt.Errorf("WSL2 install failed to start (did you decline the permission prompt?): %w", err)
 	}
+
+	if err := installKernelUpdate(onLine); err != nil {
+		return fmt.Errorf("Windows features enabled, but installing the WSL2 kernel update failed: %w", err)
+	}
+
 	return fmt.Errorf("WSL2 is installing — your computer needs to restart once before this will work. Restart, then try again")
+}
+
+// wslKernelReleasesURL is the GitHub API endpoint for the WSL2 kernel
+// update package's latest release. Deliberately not a static
+// .../releases/latest/download/wsl.x64.msi URL: that alias assumes a
+// fixed asset filename, but the real filename is versioned (e.g.
+// wsl.2.7.10.0.x64.msi as of this writing) and changes with every
+// release — confirmed live when the static-alias URL silently redirected
+// to GitHub's HTML release page instead of the MSI. Querying the API and
+// picking the matching asset by pattern survives future version bumps.
+const wslKernelReleasesURL = "https://api.github.com/repos/microsoft/WSL/releases/latest"
+
+var wslKernelAssetRe = regexp.MustCompile(`^wsl\..*\.x64\.msi$`)
+
+// installKernelUpdate downloads and silently installs the WSL2 Linux
+// kernel update MSI. This is separate from (and in addition to) the
+// Windows optional features enabled in installWSL2 — see that function's
+// doc comment for why both are required.
+func installKernelUpdate(onLine func(string)) error {
+	onLine("Looking up the latest WSL2 kernel update...")
+	assetURL, err := latestWSLKernelMSIURL()
+	if err != nil {
+		return fmt.Errorf("could not find the WSL2 kernel update download: %w", err)
+	}
+
+	msiPath := filepath.Join(os.TempDir(), "wsl-kernel-update.msi")
+	onLine("Downloading WSL2 kernel update from " + assetURL + "...")
+	if err := downloadFileHTTP(assetURL, msiPath); err != nil {
+		return fmt.Errorf("download: %w", err)
+	}
+	defer os.Remove(msiPath)
+
+	onLine("Installing WSL2 kernel update...")
+	return runWindows(onLine, "msiexec", "/i", msiPath, "/qn", "/norestart")
+}
+
+// latestWSLKernelMSIURL queries the GitHub API for the current WSL2
+// kernel update release and returns the x64 MSI asset's download URL.
+func latestWSLKernelMSIURL() (string, error) {
+	resp, err := http.Get(wslKernelReleasesURL)
+	if err != nil {
+		return "", err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return "", fmt.Errorf("GitHub API returned %s", resp.Status)
+	}
+
+	var release struct {
+		Assets []struct {
+			Name               string `json:"name"`
+			BrowserDownloadURL string `json:"browser_download_url"`
+		} `json:"assets"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&release); err != nil {
+		return "", err
+	}
+
+	for _, a := range release.Assets {
+		if wslKernelAssetRe.MatchString(strings.ToLower(a.Name)) {
+			return a.BrowserDownloadURL, nil
+		}
+	}
+	return "", fmt.Errorf("no x64 MSI asset found in latest release (got %d assets)", len(release.Assets))
+}
+
+// downloadFileHTTP downloads url to destPath. Windows' bundled PowerShell
+// on older images defaults to TLS 1.0/1.1 for Invoke-WebRequest, which
+// GitHub's servers reject outright (confirmed live: "The request was
+// aborted: The connection was closed unexpectedly") — shelling out to
+// PowerShell to fetch this would inherit that problem. Downloading here
+// in the Go binary itself sidesteps it: Go's net/http negotiates TLS 1.2+
+// by default.
+func downloadFileHTTP(url, destPath string) error {
+	resp, err := http.Get(url)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("HTTP %s", resp.Status)
+	}
+
+	out, err := os.Create(destPath)
+	if err != nil {
+		return err
+	}
+	defer out.Close()
+
+	_, err = io.Copy(out, resp.Body)
+	return err
 }
 
 // findUsbipdBusID correlates a Win32_DiskDrive DeviceID with a USB bus ID
