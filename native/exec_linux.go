@@ -7,14 +7,24 @@ import (
 	"path/filepath"
 )
 
-// tackleboxPath resolves the tacklebox binary: next to this executable
-// first (bundled distribution), falling back to PATH (dev/CI use).
+// tackleboxPath resolves the tacklebox binary to an absolute path: next
+// to this executable first (bundled distribution), falling back to PATH
+// (dev/CI use). Real bug caught in testing: returning the bare string
+// "tacklebox" for the PATH-fallback case breaks under sudo, because sudo
+// sanitizes its own PATH (secure_path) independently of the invoking
+// shell's — a "tacklebox" that's genuinely on the calling user's PATH
+// still comes back "command not found" once sudo re-execs with its own
+// PATH. Resolving to an absolute path here up front sidesteps that
+// entirely, since sudo doesn't need to look anything up.
 func tackleboxPath() string {
 	if exe, err := os.Executable(); err == nil {
 		candidate := filepath.Join(filepath.Dir(exe), "tacklebox")
 		if _, err := os.Stat(candidate); err == nil {
 			return candidate
 		}
+	}
+	if resolved, err := exec.LookPath("tacklebox"); err == nil {
+		return resolved
 	}
 	return "tacklebox"
 }
