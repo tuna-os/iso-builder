@@ -30,10 +30,16 @@ type curatedImage struct {
 	Image string // <repo>:<tag>
 }
 
+// Small hand-picked subset of the full variant×desktop matrix the browser
+// app exposes (../app/public/app.js VARIANTS/DESKTOPS) — real tuna-os
+// image IDs (fish-themed codenames, not a coincidence), same
+// ghcr.io/tuna-os/<id>:<desktop> convention that app.js resolves through
+// the relay shim.
 var curatedImages = []curatedImage{
-	{"Bluefin (GNOME)", "ghcr.io/ublue-os/bluefin:latest"},
-	{"Bazzite (KDE)", "ghcr.io/ublue-os/bazzite:latest"},
-	{"Aurora (KDE)", "ghcr.io/ublue-os/aurora:latest"},
+	{"AlmaLinux Kitten 10 — GNOME", "ghcr.io/tuna-os/yellowfin:gnome"},
+	{"AlmaLinux Kitten 10 — KDE Plasma", "ghcr.io/tuna-os/yellowfin:kde"},
+	{"Fedora 44 — GNOME", "ghcr.io/tuna-os/bonito:gnome"},
+	{"Fedora 44 — KDE Plasma", "ghcr.io/tuna-os/bonito:kde"},
 }
 
 func main() {
