@@ -8,9 +8,14 @@ on:
     branches: [main]
   pull_request:
   workflow_dispatch:
+    inputs:
+      run_full:
+        description: "Run full ISO build tests (@full)"
+        type: boolean
+        default: false
   schedule:
     # Weekly: the app talks to live infra (relay, GHCR) that can drift.
-    - cron: '40 5 * * 1'
+    - cron: "40 5 * * 1"
 
 jobs:
   e2e:
@@ -18,17 +23,49 @@ jobs:
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
+
       - uses: actions/setup-node@v4
         with:
           node-version: 22
+          cache: "npm"
+          cache-dependency-path: e2e/package-lock.json
+
+      - name: Cache Playwright browsers
+        uses: actions/cache@v4
+        id: playwright-cache
+        with:
+          path: ~/.cache/ms-playwright
+          key: ${{ runner.os }}-playwright-${{ hashFiles('e2e/package-lock.json') }}
+
       - name: install deps + chromium
         working-directory: e2e
         run: |
-          npm ci || npm install --no-audit --no-fund
-          npx playwright install --with-deps chromium
+          npm ci
+          if [ "${{ steps.playwright-cache.outputs.cache-hit }}" != "true" ]; then
+            npx playwright install --with-deps chromium
+          else
+            npx playwright install-deps chromium
+          fi
+
       - name: run e2e (inspect flow, real network)
         working-directory: e2e
-        run: npx playwright test --grep-invert @full
+        env:
+          TBOX_E2E_FULL: ${{ github.event.inputs.run_full == 'true' && '1' || '' }}
+        run: |
+          if [ "${{ github.event.inputs.run_full }}" = "true" ]; then
+            npx playwright test
+          else
+            npx playwright test --grep-invert @full
+          fi
+
+      - name: upload screenshots
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: e2e-screenshots
+          path: e2e/screenshots/
+          if-no-files-found: ignore
+
       - name: upload report
         if: always()
         uses: actions/upload-artifact@v4
@@ -36,3 +73,4 @@ jobs:
           name: playwright-report
           path: e2e/playwright-report/
           if-no-files-found: warn
+
