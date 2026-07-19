@@ -75,10 +75,16 @@ func run(onLine func(string), name string, args ...string) error {
 // research that raw is the one to use for throughput — the buffered node
 // is what diskutil/enumeration reports, not what a real write should
 // target.
+//
+// Paths that aren't shaped like a macOS disk device (e.g. a plain file
+// used as a stand-in target during testing, see
+// exec_darwin_integration_test.go) pass through unchanged rather than
+// erroring — QEMU's raw block driver treats a regular file and a device
+// node the same way, so there's nothing disk-specific to convert.
 func rawDeviceNode(path string) (string, error) {
 	dir, name := filepath.Split(path)
 	if !strings.HasPrefix(name, "disk") {
-		return "", fmt.Errorf("unexpected device path %q", path)
+		return path, nil
 	}
 	return dir + "r" + name, nil
 }
