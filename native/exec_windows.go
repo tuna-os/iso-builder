@@ -263,6 +263,15 @@ func installKernelUpdate(onLine func(string)) error {
 	return err
 }
 
+// wslReleaseAsset mirrors the fields this app needs from a GitHub release
+// asset. Kept as a named type (rather than inline in latestWSLKernelMSIURL)
+// so selectWSLKernelAsset's matching logic is testable independent of any
+// real HTTP call.
+type wslReleaseAsset struct {
+	Name               string `json:"name"`
+	BrowserDownloadURL string `json:"browser_download_url"`
+}
+
 // latestWSLKernelMSIURL queries the GitHub API for the current WSL2
 // kernel update release and returns the x64 MSI asset's download URL.
 func latestWSLKernelMSIURL() (string, error) {
@@ -276,21 +285,27 @@ func latestWSLKernelMSIURL() (string, error) {
 	}
 
 	var release struct {
-		Assets []struct {
-			Name               string `json:"name"`
-			BrowserDownloadURL string `json:"browser_download_url"`
-		} `json:"assets"`
+		Assets []wslReleaseAsset `json:"assets"`
 	}
 	if err := json.NewDecoder(resp.Body).Decode(&release); err != nil {
 		return "", err
 	}
 
-	for _, a := range release.Assets {
+	return selectWSLKernelAsset(release.Assets)
+}
+
+// selectWSLKernelAsset picks the x64 MSI out of a release's asset list.
+// Split out from latestWSLKernelMSIURL so this matching logic — the part
+// most likely to break silently as Microsoft's naming conventions shift —
+// has a real unit test instead of only ever being exercised by a live
+// GitHub API call.
+func selectWSLKernelAsset(assets []wslReleaseAsset) (string, error) {
+	for _, a := range assets {
 		if wslKernelAssetRe.MatchString(strings.ToLower(a.Name)) {
 			return a.BrowserDownloadURL, nil
 		}
 	}
-	return "", fmt.Errorf("no x64 MSI asset found in latest release (got %d assets)", len(release.Assets))
+	return "", fmt.Errorf("no x64 MSI asset found in latest release (got %d assets)", len(assets))
 }
 
 // downloadFileHTTP downloads url to destPath. Windows' bundled PowerShell

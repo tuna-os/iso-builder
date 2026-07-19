@@ -102,6 +102,35 @@ func TestParseUsbipdBusID(t *testing.T) {
 	}
 }
 
+func TestSelectWSLKernelAsset(t *testing.T) {
+	// Real shape of a WSL release's asset list as of this writing: an
+	// arm64 MSI, an x64 MSI, and an msixbundle covering both — the
+	// static .../releases/latest/download/wsl.x64.msi alias silently
+	// stopped working because the real filename is versioned
+	// (wsl.2.7.10.0.x64.msi), confirmed live against the actual API.
+	assets := []wslReleaseAsset{
+		{Name: "Microsoft.WSL_2.7.10.0_x64_ARM64.msixbundle", BrowserDownloadURL: "https://example.com/msixbundle"},
+		{Name: "wsl.2.7.10.0.arm64.msi", BrowserDownloadURL: "https://example.com/arm64.msi"},
+		{Name: "wsl.2.7.10.0.x64.msi", BrowserDownloadURL: "https://example.com/x64.msi"},
+	}
+	got, err := selectWSLKernelAsset(assets)
+	if err != nil {
+		t.Fatalf("selectWSLKernelAsset: %v", err)
+	}
+	if got != "https://example.com/x64.msi" {
+		t.Errorf("got %q, want the x64 MSI URL", got)
+	}
+}
+
+func TestSelectWSLKernelAsset_NoMatch(t *testing.T) {
+	assets := []wslReleaseAsset{
+		{Name: "wsl.2.7.10.0.arm64.msi", BrowserDownloadURL: "https://example.com/arm64.msi"},
+	}
+	if _, err := selectWSLKernelAsset(assets); err == nil {
+		t.Error("expected an error when no x64 MSI asset is present")
+	}
+}
+
 func TestToWSLPath(t *testing.T) {
 	cases := map[string]string{
 		`C:\Users\tbox\recipe.json`: "/mnt/c/Users/tbox/recipe.json",

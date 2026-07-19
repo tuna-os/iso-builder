@@ -18,7 +18,17 @@ on:
     - cron: "40 5 * * 1"
 
 jobs:
-  native:
+  # Three OS-native jobs, not one cross-compiled one: exec_windows.go,
+  # exec_darwin.go, blockdev_windows.go, blockdev_darwin.go,
+  # managed_windows.go, managed_darwin.go, and vm_darwin.go all carry
+  # _windows.go/_darwin.go filename suffixes, which are Go build
+  # constraints — go vet/test/build on ubuntu-latest silently never
+  # touches any of them (confirmed via `go list -f '{{.GoFiles}}'` on
+  # Linux: only the _linux.go set appears). A broken commit to any
+  # Windows- or macOS-only file would merge with fully green CI under
+  # the old single-job setup. Real native runners close that gap outright
+  # instead of fighting cross-compiled cgo/vet limitations.
+  native-linux:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
@@ -39,6 +49,63 @@ jobs:
         working-directory: native
         run: go vet ./...
 
+      - name: go test
+        working-directory: native
+        run: go test -v ./...
+
+      - name: go build
+        working-directory: native
+        run: go build -o tacklebox-app .
+
+  native-windows:
+    runs-on: windows-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: native/go.mod
+
+      # windows-latest images generally ship a usable mingw already, but
+      # pinning it explicitly here means this job doesn't quietly start
+      # failing (or quietly stop testing anything real) if a future image
+      # revision drops or relocates it.
+      - name: ensure mingw-w64 gcc is available
+        run: choco install mingw -y --no-progress
+
+      - name: go vet
+        working-directory: native
+        run: go vet ./...
+
+      # -tags=integration needs real WSL2/usbipd hardware wiring (see
+      # exec_windows.go) — excluded here same as native-linux excludes
+      # its own -tags=integration suite.
+      - name: go test
+        working-directory: native
+        run: go test -v ./...
+
+      - name: go build
+        working-directory: native
+        run: go build -o tacklebox-app.exe .
+
+  native-macos:
+    runs-on: macos-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: native/go.mod
+
+      - name: go vet
+        working-directory: native
+        run: go vet ./...
+
+      # -tags=integration needs a real QEMU helper VM boot (see
+      # exec_darwin_integration_test.go) — excluded here for the same
+      # reason native-linux excludes its own -tags=integration suite.
       - name: go test
         working-directory: native
         run: go test -v ./...
