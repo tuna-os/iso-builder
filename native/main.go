@@ -177,6 +177,16 @@ func main() {
 		}
 	}
 
+	// bootCheckBox offers an optional post-write boot verification (see
+	// bootcheck_linux.go — tuna-os/tacklebox#104's "Milestone 5"). Only
+	// shown where it's actually supported: the macOS/Windows write paths
+	// already run inside a VM/WSL2, so nesting a second boot check there
+	// isn't attempted (see bootcheck_darwin.go/bootcheck_windows.go).
+	bootCheckBox := widget.NewCheck("Verify by booting in a VM after writing (slower)", nil)
+	if !bootCheckSupported() {
+		bootCheckBox.Hide()
+	}
+
 	var buildBtn *widget.Button
 	buildBtn = widget.NewButton("Write to drive", func() {
 		imgIdx := imageSelect.SelectedIndex()
@@ -187,13 +197,14 @@ func main() {
 		}
 		drive := drives[drvIdx]
 		img := curatedImages[imgIdx]
+		verifyBoot := bootCheckBox.Checked
 
 		start := func() {
 			done := busyGuard()
 			if managed {
-				go runAdd(img, drive, log, status, w, done)
+				go runAdd(img, drive, verifyBoot, log, status, w, done)
 			} else {
-				go runBuild(img, drive, log, status, w, done)
+				go runBuild(img, drive, verifyBoot, log, status, w, done)
 			}
 		}
 
@@ -236,7 +247,7 @@ func main() {
 		}
 		drive, img := drives[drvIdx], curatedImages[imgIdx]
 		done := busyGuard()
-		go runUpdate(img, drive, log, status, w, done)
+		go runUpdate(img, drive, bootCheckBox.Checked, log, status, w, done)
 	})
 
 	removeEnvEntry := widget.NewEntry()
@@ -302,6 +313,7 @@ func main() {
 		widget.NewLabelWithStyle("2. Choose a drive", fyne.TextAlignLeading, fyne.TextStyle{Bold: true}),
 		container.NewBorder(nil, nil, nil, refreshBtn, driveSelect),
 		driveInfo,
+		bootCheckBox,
 		buildBtn,
 		managePanel,
 		progress,
@@ -350,24 +362,24 @@ func handlePrerequisiteError(err error, log *widget.Entry, status *widget.Label,
 // runBuild writes a single-env recipe for img directly to drive.Path via
 // `tacklebox build --yes`, erasing whatever was there before. Use runAdd
 // instead for an already-managed drive (tuna-os/iso-builder#3).
-func runBuild(img curatedImage, drive Drive, log *widget.Entry, status *widget.Label, w fyne.Window, done func()) {
-	runRecipeCommand("build", "Build", img, drive, log, status, w, done)
+func runBuild(img curatedImage, drive Drive, verifyBoot bool, log *widget.Entry, status *widget.Label, w fyne.Window, done func()) {
+	runRecipeCommand("build", "Build", img, drive, verifyBoot, log, status, w, done)
 }
 
 // runAdd installs img onto drive.Path alongside whatever's already there,
 // via `tacklebox add --yes` — no reformatting. This is the actual
 // differentiator over a one-shot ISO burner (tuna-os/iso-builder#3): a
 // drive tacklebox manages can grow instead of being replaced.
-func runAdd(img curatedImage, drive Drive, log *widget.Entry, status *widget.Label, w fyne.Window, done func()) {
-	runRecipeCommand("add", "Add", img, drive, log, status, w, done)
+func runAdd(img curatedImage, drive Drive, verifyBoot bool, log *widget.Entry, status *widget.Label, w fyne.Window, done func()) {
+	runRecipeCommand("add", "Add", img, drive, verifyBoot, log, status, w, done)
 }
 
 // runUpdate re-installs img on drive.Path in place, via `tacklebox update
 // --yes` — refreshes an already-installed environment to match the
 // current image, rotating BLS entries and extracting new kernels/initrd
 // as needed (tuna-os/iso-builder#2).
-func runUpdate(img curatedImage, drive Drive, log *widget.Entry, status *widget.Label, w fyne.Window, done func()) {
-	runRecipeCommand("update", "Update", img, drive, log, status, w, done)
+func runUpdate(img curatedImage, drive Drive, verifyBoot bool, log *widget.Entry, status *widget.Label, w fyne.Window, done func()) {
+	runRecipeCommand("update", "Update", img, drive, verifyBoot, log, status, w, done)
 }
 
 // runRecipeCommand is the shared plumbing behind runBuild/runAdd/runUpdate:
@@ -379,7 +391,13 @@ func runUpdate(img curatedImage, drive Drive, log *widget.Entry, status *widget.
 // Fyne is not safe to touch from anywhere else (see the fyne.Do
 // threading-model warning this code used to trigger before that was
 // fixed).
-func runRecipeCommand(subcommand, verb string, img curatedImage, drive Drive, log *widget.Entry, status *widget.Label, w fyne.Window, done func()) {
+//
+// verifyBoot, when true and bootCheckSupported() (only Linux for now —
+// see bootcheck_linux.go), boots the just-written drive in a throwaway
+// QEMU VM after a successful write and confirms it actually reaches
+// userspace, rather than trusting that "tacklebox exited 0" is the whole
+// story.
+func runRecipeCommand(subcommand, verb string, img curatedImage, drive Drive, verifyBoot bool, log *widget.Entry, status *widget.Label, w fyne.Window, done func()) {
 	recipe, err := writeTempRecipe(img)
 	if err != nil {
 		fyne.Do(func() { status.SetText("Failed to prepare recipe: " + err.Error()) })
@@ -396,6 +414,20 @@ func runRecipeCommand(subcommand, verb string, img curatedImage, drive Drive, lo
 		if !handlePrerequisiteError(err, log, status, w) {
 			fyne.Do(func() { status.SetText(verb + " failed: " + err.Error()) })
 		}
+		fyne.Do(done)
+		return
+	}
+
+	if verifyBoot {
+		fyne.Do(func() { status.SetText("Verifying by booting " + drive.Path + " in a VM...") })
+		if err := runBootCheck(drive.Path, onLine); err != nil {
+			if !handlePrerequisiteError(err, log, status, w) {
+				fyne.Do(func() { status.SetText(verb + " succeeded, but the boot check failed: " + err.Error()) })
+			}
+			fyne.Do(done)
+			return
+		}
+		fyne.Do(func() { status.SetText("Done — " + drive.Path + " is ready and confirmed bootable.") })
 	} else {
 		fyne.Do(func() { status.SetText("Done — " + drive.Path + " is ready.") })
 	}
