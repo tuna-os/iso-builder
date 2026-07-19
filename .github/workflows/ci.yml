@@ -18,6 +18,35 @@ on:
     - cron: "40 5 * * 1"
 
 jobs:
+  native:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: native/go.mod
+
+      - name: install GUI toolkit deps
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            libgl1-mesa-dev xorg-dev libxxf86vm-dev \
+            libwayland-dev libxkbcommon-dev
+
+      - name: go vet
+        working-directory: native
+        run: go vet ./...
+
+      - name: go test
+        working-directory: native
+        run: go test -v ./...
+
+      - name: go build
+        working-directory: native
+        run: go build -o tacklebox-app .
+
   e2e:
     runs-on: ubuntu-latest
     timeout-minutes: 30
