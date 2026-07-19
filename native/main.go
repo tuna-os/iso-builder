@@ -4,10 +4,13 @@
 // using the real tacklebox binary — the actual differentiator over a
 // plain ISO burner (see tuna-os/iso-builder#3).
 //
-// This is the Linux-native slice (tuna-os/iso-builder#1): it shells out to
-// a `tacklebox` binary that must be on PATH or next to this executable.
-// Windows/macOS need tuna-os/tacklebox#107/#108's VM-backed write paths
-// before this can build on those platforms — see those issues for why.
+// Execution is platform-specific (executeTacklebox, implemented in
+// exec_linux.go/exec_darwin.go/exec_windows.go): Linux runs tacklebox
+// directly, since it already has the real Linux kernel bootc install
+// needs; macOS and Windows both boot/attach a real Linux environment
+// first (a bundled QEMU VM on macOS, WSL2 on Windows) and run the same
+// tacklebox flow inside it — see tuna-os/tacklebox#106/#107/#108 for why
+// that's necessary rather than a native reimplementation.
 package main
 
 import (
@@ -30,16 +33,64 @@ type curatedImage struct {
 	Image string // <repo>:<tag>
 }
 
-// Small hand-picked subset of the full variant×desktop matrix the browser
-// app exposes (../app/public/app.js VARIANTS/DESKTOPS) — real tuna-os
-// image IDs (fish-themed codenames, not a coincidence), same
-// ghcr.io/tuna-os/<id>:<desktop> convention that app.js resolves through
-// the relay shim.
-var curatedImages = []curatedImage{
-	{"AlmaLinux Kitten 10 — GNOME", "ghcr.io/tuna-os/yellowfin:gnome"},
-	{"AlmaLinux Kitten 10 — KDE Plasma", "ghcr.io/tuna-os/yellowfin:kde"},
-	{"Fedora 44 — GNOME", "ghcr.io/tuna-os/bonito:gnome"},
-	{"Fedora 44 — KDE Plasma", "ghcr.io/tuna-os/bonito:kde"},
+// desktopName maps a desktop ID to its display name — copied from
+// ../app/public/app.js's DESKTOPS map (source of truth; keep in sync by
+// hand, there are only 5). Deliberately dropping app.js's emoji: this is a
+// native desktop app, not a web picker skinned to match the browser one.
+var desktopName = map[string]string{
+	"gnome":  "GNOME",
+	"kde":    "KDE Plasma",
+	"cosmic": "COSMIC",
+	"niri":   "Niri",
+	"xfce":   "XFCE",
+}
+
+// variant is one base OS in the image matrix, copied from
+// ../app/public/app.js's VARIANTS array — real tuna-os image IDs
+// (fish-themed codenames, not a coincidence). Community desktops
+// (kde/cosmic/niri/xfce) aren't published as ISOs there either, so this
+// app is one of the only ways to get them, same as the browser picker.
+type variant struct {
+	id       string
+	name     string
+	desktops []string
+}
+
+var variants = []variant{
+	{"yellowfin", "AlmaLinux Kitten 10 (flagship)", []string{"gnome", "kde", "cosmic", "niri"}},
+	{"bonito", "Fedora 44", []string{"gnome", "kde", "cosmic", "niri", "xfce"}},
+	{"sailfin", "openSUSE Tumbleweed", []string{"gnome", "kde", "niri", "xfce"}},
+	{"flounder", "Debian 13 Trixie", []string{"gnome", "kde", "cosmic", "niri", "xfce"}},
+	{"grouper", "Ubuntu 26.04", []string{"gnome", "kde", "niri", "xfce"}},
+	{"marlin", "Arch Linux", []string{"gnome", "kde", "cosmic", "niri", "xfce"}},
+	{"skipjack", "CentOS Stream 10", []string{"gnome", "kde", "cosmic", "niri"}},
+	{"albacore", "AlmaLinux 10", []string{"gnome", "kde", "cosmic", "niri"}},
+	{"guppy", "Gentoo (source-based)", []string{"gnome", "kde"}},
+}
+
+// curatedImages is the full variant×desktop matrix, generated from
+// variants/desktopName rather than hand-typed — the fabricated-image-list
+// bug this replaced happened specifically because a hand-typed list wasn't
+// checked against the source of truth (app.js) until after the fact.
+// Generating it from the same structured data app.js itself iterates over
+// makes that class of bug structurally harder to reintroduce.
+var curatedImages = buildCuratedImages()
+
+func buildCuratedImages() []curatedImage {
+	var out []curatedImage
+	for _, v := range variants {
+		for _, de := range v.desktops {
+			name := desktopName[de]
+			if name == "" {
+				name = de
+			}
+			out = append(out, curatedImage{
+				Name:  v.name + " — " + name,
+				Image: fmt.Sprintf("ghcr.io/tuna-os/%s:%s", v.id, de),
+			})
+		}
+	}
+	return out
 }
 
 func main() {
