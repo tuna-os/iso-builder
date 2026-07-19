@@ -57,6 +57,10 @@ func main() {
 	driveSelect.PlaceHolder = "Choose a drive"
 	var drives []Drive
 
+	driveInfo := widget.NewLabel("")
+	driveInfo.Wrapping = fyne.TextWrapWord
+	managed := false // whether the currently-selected drive is already tacklebox-managed
+
 	refreshDrives := func() {
 		found, err := SafeWriteTargets()
 		if err != nil {
@@ -100,34 +104,75 @@ func main() {
 			return
 		}
 		drive := drives[drvIdx]
+		img := curatedImages[imgIdx]
 
+		start := func() {
+			buildBtn.Disable()
+			refreshBtn.Disable()
+			progress.Show()
+			log.SetText("")
+			done := func() {
+				buildBtn.Enable()
+				refreshBtn.Enable()
+				progress.Hide()
+			}
+			if managed {
+				go runAdd(img, drive, log, status, done)
+			} else {
+				go runBuild(img, drive, log, status, done)
+			}
+		}
+
+		// A blank/foreign drive needs the destructive "erase everything"
+		// confirmation. An already-managed drive doesn't — adding an OS to
+		// it is the whole point of tuna-os/iso-builder#3's default UX, and
+		// asking "are you sure you want to erase" would be actively wrong.
+		if managed {
+			start()
+			return
+		}
 		dialog.ShowConfirm(
 			"This will ERASE "+drive.Path,
 			fmt.Sprintf("Everything on %s (%s) will be permanently erased and replaced with %s.\n\nThis cannot be undone.",
-				drive.Path, drive.SizeH, curatedImages[imgIdx].Name),
+				drive.Path, drive.SizeH, img.Name),
 			func(confirmed bool) {
-				if !confirmed {
-					return
+				if confirmed {
+					start()
 				}
-				buildBtn.Disable()
-				refreshBtn.Disable()
-				progress.Show()
-				log.SetText("")
-				go runBuild(curatedImages[imgIdx], drive, log, status, func() {
-					buildBtn.Enable()
-					refreshBtn.Enable()
-					progress.Hide()
-				})
 			},
 			w,
 		)
 	})
+
+	driveSelect.OnChanged = func(string) {
+		drvIdx := driveSelect.SelectedIndex()
+		if drvIdx < 0 || drvIdx >= len(drives) {
+			return
+		}
+		drive := drives[drvIdx]
+		driveInfo.SetText("Checking " + drive.Path + "…")
+		buildBtn.SetText("Write to drive")
+		go func() {
+			isManaged, out := isManagedDrive(drive.Path)
+			fyne.Do(func() {
+				managed = isManaged
+				if isManaged {
+					driveInfo.SetText("Already has TunaOS on it:\n" + out)
+					buildBtn.SetText("Add to drive")
+				} else {
+					driveInfo.SetText("Blank drive — writing will erase everything on it.")
+					buildBtn.SetText("Write to drive")
+				}
+			})
+		}()
+	}
 
 	content := container.NewVBox(
 		widget.NewLabelWithStyle("1. Choose an OS", fyne.TextAlignLeading, fyne.TextStyle{Bold: true}),
 		imageSelect,
 		widget.NewLabelWithStyle("2. Choose a drive", fyne.TextAlignLeading, fyne.TextStyle{Bold: true}),
 		container.NewBorder(nil, nil, nil, refreshBtn, driveSelect),
+		driveInfo,
 		buildBtn,
 		progress,
 		status,
@@ -153,10 +198,27 @@ func tackleboxPath() string {
 }
 
 // runBuild writes a single-env recipe for img directly to drive.Path via
-// `tacklebox build --yes`, streaming output into log line by line. Calls
-// done on the UI thread-safe path when finished (Fyne widgets are safe to
-// update from any goroutine as of the driver used here).
+// `tacklebox build --yes`, erasing whatever was there before. Use runAdd
+// instead for an already-managed drive (tuna-os/iso-builder#3).
 func runBuild(img curatedImage, drive Drive, log *widget.Entry, status *widget.Label, done func()) {
+	runRecipeCommand("build", "Build", img, drive, log, status, done)
+}
+
+// runAdd installs img onto drive.Path alongside whatever's already there,
+// via `tacklebox add --yes` — no reformatting. This is the actual
+// differentiator over a one-shot ISO burner (tuna-os/iso-builder#3): a
+// drive tacklebox manages can grow instead of being replaced.
+func runAdd(img curatedImage, drive Drive, log *widget.Entry, status *widget.Label, done func()) {
+	runRecipeCommand("add", "Add", img, drive, log, status, done)
+}
+
+// runRecipeCommand is the shared plumbing behind runBuild/runAdd: write a
+// temp recipe for img, run `tacklebox <subcommand> --yes <recipe> <drive>`,
+// and stream its output into log line by line. All UI updates go through
+// fyne.Do since this runs on a background goroutine — Fyne is not safe to
+// touch from anywhere else (see the fyne.Do threading-model warning this
+// code used to trigger before that was fixed).
+func runRecipeCommand(subcommand, verb string, img curatedImage, drive Drive, log *widget.Entry, status *widget.Label, done func()) {
 	recipe, err := writeTempRecipe(img)
 	if err != nil {
 		fyne.Do(func() { status.SetText("Failed to prepare recipe: " + err.Error()) })
@@ -165,17 +227,17 @@ func runBuild(img curatedImage, drive Drive, log *widget.Entry, status *widget.L
 	}
 	defer os.Remove(recipe)
 
-	cmd := exec.Command("sudo", tackleboxPath(), "build", "--yes", recipe, drive.Path)
+	cmd := exec.Command("sudo", tackleboxPath(), subcommand, "--yes", recipe, drive.Path)
 	stdout, err := cmd.StdoutPipe()
 	if err != nil {
-		fyne.Do(func() { status.SetText("Failed to start build: " + err.Error()) })
+		fyne.Do(func() { status.SetText("Failed to start " + subcommand + ": " + err.Error()) })
 		fyne.Do(done)
 		return
 	}
 	cmd.Stderr = cmd.Stdout
 
 	if err := cmd.Start(); err != nil {
-		fyne.Do(func() { status.SetText("Failed to start build: " + err.Error()) })
+		fyne.Do(func() { status.SetText("Failed to start " + subcommand + ": " + err.Error()) })
 		fyne.Do(done)
 		return
 	}
@@ -187,7 +249,7 @@ func runBuild(img curatedImage, drive Drive, log *widget.Entry, status *widget.L
 	}
 
 	if err := cmd.Wait(); err != nil {
-		fyne.Do(func() { status.SetText("Build failed: " + err.Error()) })
+		fyne.Do(func() { status.SetText(verb + " failed: " + err.Error()) })
 	} else {
 		fyne.Do(func() { status.SetText("Done — " + drive.Path + " is ready.") })
 	}
