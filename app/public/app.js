@@ -326,7 +326,11 @@ async function build() {
         const h = await showSaveFilePicker({ suggestedName: name, types: [{ description: "ISO image", accept: { "application/x-iso9660-image": [".iso"] } }] });
         sink = await h.createWritable();
       } catch (e) {
-        if (e.name === "AbortError") { log("save dialog dismissed — using download fallback"); }
+        if (e.name === "AbortError") {
+          log("Build cancelled by user.");
+          $("stage").textContent = "Build cancelled.";
+          return;
+        }
         else throw e;
       }
     }
