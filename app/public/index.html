@@ -70,6 +70,11 @@
   .edition small { color: var(--dim); font-weight: 400; font-size: .72rem; }
   .variant-select { margin-top: .4rem; padding: .5rem .6rem; border-radius: 8px; border: 1px solid var(--border);
     background: var(--bg); color: var(--fg); font-size: .95rem; width: 100%; max-width: 340px; }
+  .tabs { display: flex; gap: .4rem; border-bottom: 1px solid var(--border); padding-bottom: .4rem; margin-top: .8rem; }
+  .tab-btn { background: transparent; color: var(--dim); border: none; font-size: .88rem; font-weight: 600; padding: .3rem .6rem; cursor: pointer; border-radius: 6px; }
+  .tab-btn:hover { color: var(--fg); background: var(--bg); }
+  .tab-btn.active { color: var(--fg); background: var(--border); }
+  .tab-content { font-size: .88rem; line-height: 1.6; }
 </style>
 </head>
 <body>
@@ -159,6 +164,57 @@
     <div class="note hidden" id="browsernote"></div>
     <div class="note hidden" id="initrdnote"></div>
     <div id="log"></div>
+  </div>
+
+  <div class="card hidden" id="postcard">
+    <h3 style="margin-top:0">🎉 ISO Build Complete!</h3>
+    <p class="sub" style="margin-top:-.4rem;margin-bottom:1rem">Your custom TunaOS ISO is ready. Now you need to write it to a USB drive to make it bootable.</p>
+    
+    <div class="tabs">
+      <button class="tab-btn active" onclick="switchTab(event, 'etcher')">BalenaEtcher</button>
+      <button class="tab-btn" onclick="switchTab(event, 'ventoy')">Ventoy</button>
+      <button class="tab-btn" onclick="switchTab(event, 'rufus')">Rufus</button>
+      <button class="tab-btn" onclick="switchTab(event, 'dd')">Terminal (dd)</button>
+    </div>
+    
+    <div id="tab-etcher" class="tab-content" style="margin-top:1rem">
+      <ol style="padding-left:1.2rem;margin:0">
+        <li>Download and install <a href="https://etcher.balena.io/" target="_blank" rel="noopener">BalenaEtcher</a> (supports Windows, macOS, and Linux).</li>
+        <li>Plug in your USB flash drive (minimum 4GB).</li>
+        <li>Open Etcher, click <b>Flash from file</b> and select your downloaded TunaOS ISO.</li>
+        <li>Select your USB target and click <b>Flash!</b>.</li>
+      </ol>
+    </div>
+    
+    <div id="tab-ventoy" class="tab-content hidden" style="margin-top:1rem">
+      <ol style="padding-left:1.2rem;margin:0">
+        <li>Install <a href="https://www.ventoy.net/" target="_blank" rel="noopener">Ventoy</a> onto your USB flash drive (non-destructive; you only do this once).</li>
+        <li>Once Ventoy is installed, your USB drive will show up as a normal partition named <code>Ventoy</code>.</li>
+        <li>Simply <b>drag and drop</b> your downloaded TunaOS ISO file directly onto the USB partition.</li>
+        <li>Reboot your PC, boot from the USB drive, and choose the ISO from the Ventoy menu.</li>
+      </ol>
+    </div>
+
+    <div id="tab-rufus" class="tab-content hidden" style="margin-top:1rem">
+      <ol style="padding-left:1.2rem;margin:0">
+        <li>Download and open <a href="https://rufus.ie/" target="_blank" rel="noopener">Rufus</a> (Windows only).</li>
+        <li>Select your USB drive under <b>Device</b>.</li>
+        <li>Click <b>SELECT</b> and choose your downloaded TunaOS ISO.</li>
+        <li>Keep default settings (GPT, UEFI) and click <b>START</b>.</li>
+        <li>If prompted for write mode, select <b>Write in ISO Image mode</b>.</li>
+      </ol>
+    </div>
+
+    <div id="tab-dd" class="tab-content hidden" style="margin-top:1rem">
+      <p style="margin:0 0 .5rem;font-size:.85rem;color:var(--warn)">⚠️ Warning: Writing to the wrong drive can wipe your computer's main storage drive!</p>
+      <ol style="padding-left:1.2rem;margin:0">
+        <li>Identify your USB drive name (e.g. <code>/dev/sdX</code> on Linux, <code>/dev/diskN</code> on macOS).</li>
+        <li>Run the following command in your terminal:
+          <pre style="background:var(--border);padding:.5rem;border-radius:6px;overflow-x:auto;margin:.4rem 0;font:12px monospace"><code>sudo dd if=path/to/tunaos.iso of=/dev/sdX bs=4M status=progress oflag=sync</code></pre>
+        </li>
+        <li>Wait for the write command to complete and safely eject the drive.</li>
+      </ol>
+    </div>
   </div>
 
   <p class="sub" style="margin-top:1rem">Share a preset:

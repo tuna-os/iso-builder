@@ -258,6 +258,7 @@ async function inspect() {
   askNotify();
   $("introspect").disabled = true;
   $("buildcard").classList.remove("hidden");
+  $("postcard").classList.add("hidden");
   try {
     // Persistent origin storage: multi-GB images live in OPFS during the
     // build; persist() exempts them from eviction (best-effort), and the
@@ -305,6 +306,7 @@ async function build() {
   updateShim();
   askNotify();
   $("build").disabled = true;
+  $("postcard").classList.add("hidden");
   const label = ($("label").value || "TUNAOS").toUpperCase().replace(/[^A-Z0-9_]/g, "_");
   let initrd = null;
   const iurl = $("initrdurl").value.trim();
@@ -351,6 +353,7 @@ async function build() {
     $("stage").textContent = `Done — ${(bytes / 1e9).toFixed(2)} GB in ${dt}s.`;
     notify("ISO ready 🐟", `${(bytes / 1e9).toFixed(2)} GB written in ${dt}s`);
     log(`iso written: ${bytes} bytes`);
+    $("postcard").classList.remove("hidden");
   } catch (e) {
     log("error: " + e);
     $("stage").textContent = "Build failed.";
@@ -489,3 +492,14 @@ if (!window.showSaveFilePicker) {
     note.classList.remove("hidden");
   }
 }
+
+globalThis.switchTab = (e, id) => {
+  const container = e.target.closest(".card");
+  for (const btn of container.querySelectorAll(".tab-btn")) {
+    btn.classList.toggle("active", btn === e.target);
+  }
+  for (const content of container.querySelectorAll(".tab-content")) {
+    content.classList.toggle("hidden", content.id !== `tab-${id}`);
+  }
+};
+
