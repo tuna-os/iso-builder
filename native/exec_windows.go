@@ -247,8 +247,20 @@ func installKernelUpdate(onLine func(string)) error {
 	}
 	defer os.Remove(msiPath)
 
-	onLine("Installing WSL2 kernel update...")
-	return runWindows(onLine, "msiexec", "/i", msiPath, "/qn", "/norestart")
+	// The kernel update installs machine-wide and needs admin, same as
+	// the optional-feature enable above — msiexec run un-elevated fails
+	// silently for a non-admin user. (This didn't surface during live
+	// testing because the test harness drove the whole flow through QGA,
+	// which runs as SYSTEM — already privileged enough to mask a missing
+	// elevation request that a real, non-admin user account would hit.)
+	onLine("Installing WSL2 kernel update (requesting administrator permission)...")
+	cmd := exec.Command("powershell", "-NoProfile", "-Command",
+		fmt.Sprintf("Start-Process msiexec.exe -ArgumentList '/i','%s','/qn','/norestart' -Verb RunAs -Wait", msiPath))
+	out, err := cmd.CombinedOutput()
+	if len(out) > 0 {
+		onLine(string(out))
+	}
+	return err
 }
 
 // latestWSLKernelMSIURL queries the GitHub API for the current WSL2
