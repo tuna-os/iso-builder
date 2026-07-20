@@ -307,6 +307,24 @@ func main() {
 		}()
 	}
 
+	// viewVMBtn is a debugging escape hatch (tuna-os/iso-builder#12):
+	// macOS's write path boots a headless VM, and if something goes
+	// wrong inside it in a way that doesn't come through cleanly as an
+	// SSH-streamed log line, there was previously no way to just look
+	// at what the VM was doing. Deliberately NOT added to
+	// allActionButtons — busyGuard disables those during an operation,
+	// but this button is meant to be clicked WHILE one is in progress
+	// (that's the only time a VM exists to view). Hidden entirely on
+	// platforms with nothing to view.
+	viewVMBtn := widget.NewButton("View VM console (debug)", func() {
+		if err := openVMViewer(); err != nil {
+			dialog.ShowError(err, w)
+		}
+	})
+	if !vmViewerSupported() {
+		viewVMBtn.Hide()
+	}
+
 	content := container.NewVBox(
 		widget.NewLabelWithStyle("1. Choose an OS", fyne.TextAlignLeading, fyne.TextStyle{Bold: true}),
 		imageSelect,
@@ -315,6 +333,7 @@ func main() {
 		driveInfo,
 		bootCheckBox,
 		buildBtn,
+		viewVMBtn,
 		managePanel,
 		progress,
 		status,

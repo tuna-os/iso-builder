@@ -23,9 +23,22 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"sync"
 	"time"
 
 	"golang.org/x/crypto/ssh"
+)
+
+// currentVNCAddr tracks the running helper VM's VNC listener, if any —
+// "" when no VM is up. Read by openVMViewer (see vncviewer_darwin.go) so
+// the optional debug viewer button knows where to point noVNC's
+// WebSocket proxy. Package-level rather than threaded through
+// bootHelperVM's return values because the viewer button is a separate,
+// independent UI action, not part of the write/verify/update/remove
+// call chain — see tuna-os/iso-builder#12.
+var (
+	currentVNCMu   sync.Mutex
+	currentVNCAddr string
 )
 
 const (
@@ -155,6 +168,25 @@ func bootHelperVM(drivePath string, onLine func(string)) (client *ssh.Client, cl
 		return nil, nil, fmt.Errorf("find a free port for the VM: %w", err)
 	}
 
+	// VNC always listens (localhost-only — QEMU's -vnc binds all
+	// interfaces by default unless the address is prefixed like this,
+	// so this deliberately isn't reachable off the machine). The
+	// connection is idle until something actually opens the viewer, so
+	// this costs nothing when nobody uses it — see
+	// tuna-os/iso-builder#12 for why headless-by-default plus this
+	// on-demand escape hatch beats always showing a window.
+	vncPort, err := freeLocalPort()
+	if err != nil {
+		cleanupWork()
+		return nil, nil, fmt.Errorf("find a free port for the VM's VNC listener: %w", err)
+	}
+	// QEMU's -vnc display number N maps to TCP port 5900+N, so to bind
+	// the specific free port picked above, the display number is that
+	// port minus 5900 — arithmetic, not a lookup, and works for any
+	// port freeLocalPort() realistically returns (ephemeral ports are
+	// far above 5900).
+	vncDisplay := vncPort - 5900
+
 	onLine("Starting helper VM (this takes a few minutes on first run)...")
 	qemuArgs := []string{
 		"-machine", "q35",
@@ -167,6 +199,7 @@ func bootHelperVM(drivePath string, onLine func(string)) (client *ssh.Client, cl
 		"-netdev", fmt.Sprintf("user,id=net0,hostfwd=tcp::%d-:22", sshPort),
 		"-device", "virtio-net,netdev=net0",
 		"-display", "none",
+		"-vnc", fmt.Sprintf("127.0.0.1:%d", vncDisplay),
 	}
 	ctx, cancel := context.WithCancel(context.Background())
 	qemuCmd := exec.CommandContext(ctx, "qemu-system-x86_64", qemuArgs...)
@@ -191,7 +224,15 @@ func bootHelperVM(drivePath string, onLine func(string)) (client *ssh.Client, cl
 	}
 	onLine("VM is up.")
 
+	currentVNCMu.Lock()
+	currentVNCAddr = fmt.Sprintf("127.0.0.1:%d", vncPort)
+	currentVNCMu.Unlock()
+
 	cleanup = func() {
+		currentVNCMu.Lock()
+		currentVNCAddr = ""
+		currentVNCMu.Unlock()
+
 		sshClient.Close()
 		cancel()
 		<-qemuExited // wait for the process to actually exit before removing its disk files
