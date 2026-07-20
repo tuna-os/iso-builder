@@ -17,6 +17,16 @@ on:
     # Weekly: the app talks to live infra (relay, GHCR) that can drift.
     - cron: "40 5 * * 1"
 
+# Without this, every push to a ref (including repeated Renovate rebases of
+# the same open PR) queues a brand-new run instead of superseding the last
+# one. tacklebox hit exactly this — 26+ stale queued runs piled up and
+# starved the shared macOS/Windows runner pool for hours (tuna-os/tacklebox#139).
+# github.head_ref is empty on push/schedule, so this falls back to
+# github.ref and still groups correctly for every trigger type.
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.head_ref || github.ref }}
+  cancel-in-progress: true
+
 jobs:
   # Three OS-native jobs, not one cross-compiled one: exec_windows.go,
   # exec_darwin.go, blockdev_windows.go, blockdev_darwin.go,
