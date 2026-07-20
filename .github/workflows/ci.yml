@@ -64,7 +64,14 @@ jobs:
 
   native-windows:
     runs-on: windows-latest
-    timeout-minutes: 15
+    # 15 was too tight — a real run hit exactly that ceiling and got
+    # cancelled outright (mid-build, not a hang) while every other job
+    # in the same run passed cleanly; past clean runs varied from ~10 to
+    # ~14.5 min. mingw/cgo + Fyne's dependency tree on windows-latest is
+    # just inherently slower and more variable than the other two
+    # platforms, so this gets real headroom instead of a repeat of the
+    # same borderline timeout.
+    timeout-minutes: 25
     steps:
       - uses: actions/checkout@v7
 
