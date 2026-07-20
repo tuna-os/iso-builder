@@ -37,6 +37,7 @@ jobs:
       - uses: actions/setup-go@v7
         with:
           go-version-file: native/go.mod
+          cache-dependency-path: native/go.sum
 
       - name: install GUI toolkit deps
         run: |
@@ -70,6 +71,7 @@ jobs:
       - uses: actions/setup-go@v7
         with:
           go-version-file: native/go.mod
+          cache-dependency-path: native/go.sum
 
       # windows-latest images generally ship a usable mingw already, but
       # pinning it explicitly here means this job doesn't quietly start
@@ -106,6 +108,7 @@ jobs:
       - uses: actions/setup-go@v7
         with:
           go-version-file: native/go.mod
+          cache-dependency-path: native/go.sum
 
       - name: go vet
         working-directory: native
