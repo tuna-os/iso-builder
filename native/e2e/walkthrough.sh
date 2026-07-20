@@ -83,17 +83,32 @@ click() {
   sleep 0.5
 }
 
+# scroll <x> <y> <ticks>: the OS picker is a real scrollable list (see
+# catalog.go), not a dropdown — scroll wheel ticks are how you move
+# through it. ~73px/row in the default layout; the multi-org catalog
+# entries sit after TunaOS's own ~40-entry variant×desktop matrix.
+scroll() {
+  local x="$1" y="$2" ticks="$3"
+  for _ in $(seq 1 "$ticks"); do
+    DISPLAY="$DISPLAY_NUM" xdotool mousemove "$x" "$y" click 5
+  done
+  sleep 0.3
+}
+
 echo ">>> 01-home: initial state"
 capture 01-home
 
-echo ">>> 02-os-catalog: OS dropdown open"
-click 280 60
-sleep 0.3
+echo ">>> 02-os-catalog: scrolled to show a card mid-catalog"
+scroll 280 150 20
 capture 02-os-catalog
 
-echo ">>> 03-os-selected: an OS chosen"
-click 100 173
+echo ">>> 03-os-selected: an OS card clicked (selection highlight)"
+click 280 150
 sleep 0.3
 capture 03-os-selected
+
+echo ">>> 05-multi-org-catalog: scrolled to the curated multi-org entries"
+scroll 280 150 290
+capture 05-multi-org-catalog
 
 echo ">>> Done. Screenshots in $OUT_DIR"

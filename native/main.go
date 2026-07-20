@@ -21,93 +21,59 @@ import (
 
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/app"
+	"fyne.io/fyne/v2/canvas"
 	"fyne.io/fyne/v2/container"
 	"fyne.io/fyne/v2/dialog"
 	"fyne.io/fyne/v2/widget"
 )
 
-// curatedImage is one entry in the hand-picked image list. This mirrors the
-// browser app's edition picker (../app/public) rather than exposing raw
-// recipe JSON — see tuna-os/iso-builder#3's Guided/Advanced split.
-type curatedImage struct {
-	Name  string
-	Image string // <repo>:<tag>
-}
-
-// desktopName maps a desktop ID to its display name — copied from
-// ../app/public/app.js's DESKTOPS map (source of truth; keep in sync by
-// hand, there are only 5). Deliberately dropping app.js's emoji: this is a
-// native desktop app, not a web picker skinned to match the browser one.
-var desktopName = map[string]string{
-	"gnome":  "GNOME",
-	"kde":    "KDE Plasma",
-	"cosmic": "COSMIC",
-	"niri":   "Niri",
-	"xfce":   "XFCE",
-}
-
-// variant is one base OS in the image matrix, copied from
-// ../app/public/app.js's VARIANTS array — real tuna-os image IDs
-// (fish-themed codenames, not a coincidence). Community desktops
-// (kde/cosmic/niri/xfce) aren't published as ISOs there either, so this
-// app is one of the only ways to get them, same as the browser picker.
-type variant struct {
-	id       string
-	name     string
-	desktops []string
-}
-
-var variants = []variant{
-	{"yellowfin", "AlmaLinux Kitten 10 (flagship)", []string{"gnome", "kde", "cosmic", "niri"}},
-	{"bonito", "Fedora 44", []string{"gnome", "kde", "cosmic", "niri", "xfce"}},
-	{"sailfin", "openSUSE Tumbleweed", []string{"gnome", "kde", "niri", "xfce"}},
-	{"flounder", "Debian 13 Trixie", []string{"gnome", "kde", "cosmic", "niri", "xfce"}},
-	{"grouper", "Ubuntu 26.04", []string{"gnome", "kde", "niri", "xfce"}},
-	{"marlin", "Arch Linux", []string{"gnome", "kde", "cosmic", "niri", "xfce"}},
-	{"skipjack", "CentOS Stream 10", []string{"gnome", "kde", "cosmic", "niri"}},
-	{"albacore", "AlmaLinux 10", []string{"gnome", "kde", "cosmic", "niri"}},
-	{"guppy", "Gentoo (source-based)", []string{"gnome", "kde"}},
-}
-
-// curatedImages is the full variant×desktop matrix, generated from
-// variants/desktopName rather than hand-typed — the fabricated-image-list
-// bug this replaced happened specifically because a hand-typed list wasn't
-// checked against the source of truth (app.js) until after the fact.
-// Generating it from the same structured data app.js itself iterates over
-// makes that class of bug structurally harder to reintroduce.
-var curatedImages = buildCuratedImages()
-
-func buildCuratedImages() []curatedImage {
-	var out []curatedImage
-	for _, v := range variants {
-		for _, de := range v.desktops {
-			name := desktopName[de]
-			if name == "" {
-				name = de
-			}
-			out = append(out, curatedImage{
-				Name:  v.name + " — " + name,
-				Image: fmt.Sprintf("ghcr.io/tuna-os/%s:%s", v.id, de),
-			})
-		}
-	}
-	return out
-}
-
 func main() {
 	a := app.NewWithID("org.tunaos.tacklebox-app")
 	w := a.NewWindow("TunaOS ISO Builder")
-	w.Resize(fyne.NewSize(560, 420))
+	w.Resize(fyne.NewSize(560, 640))
 
 	status := widget.NewLabel("")
 	status.Wrapping = fyne.TextWrapWord
 
-	imageNames := make([]string, len(curatedImages))
-	for i, img := range curatedImages {
-		imageNames[i] = img.Name
-	}
-	imageSelect := widget.NewSelect(imageNames, func(string) {})
-	imageSelect.PlaceHolder = "Choose an OS"
+	// imageList replaces a plain text dropdown with a real card per
+	// entry — logo, name, and a short description — so a catalog
+	// spanning multiple projects (TunaOS's own images, plus curated
+	// entries from Project Bluefin/Universal Blue/Zirconium — see
+	// catalog.go) reads as "which OS is this" rather than an
+	// undifferentiated wall of similar-looking names. widget.Select
+	// has no way to render more than plain text per row, hence the
+	// switch to widget.List with a custom item template.
+	selectedImageIdx := -1
+	imageList := widget.NewList(
+		func() int { return len(curatedImages) },
+		func() fyne.CanvasObject {
+			icon := canvas.NewImageFromResource(nil)
+			icon.FillMode = canvas.ImageFillContain
+			icon.SetMinSize(fyne.NewSize(32, 32))
+			name := widget.NewLabelWithStyle("", fyne.TextAlignLeading, fyne.TextStyle{Bold: true})
+			sub := widget.NewLabel("")
+			sub.Wrapping = fyne.TextWrapWord
+			sub.TextStyle = fyne.TextStyle{Italic: true}
+			return container.NewBorder(nil, nil, icon, nil,
+				container.NewVBox(name, sub))
+		},
+		func(id widget.ListItemID, obj fyne.CanvasObject) {
+			img := curatedImages[id]
+			row := obj.(*fyne.Container)
+			icon := row.Objects[1].(*canvas.Image)
+			icon.Resource = catalogLogo(img.LogoAsset)
+			icon.Refresh()
+			text := row.Objects[0].(*fyne.Container)
+			name := text.Objects[0].(*widget.Label)
+			sub := text.Objects[1].(*widget.Label)
+			name.SetText(img.Name)
+			sub.SetText(img.Org + " — " + img.Description)
+		},
+	)
+	imageList.OnSelected = func(id widget.ListItemID) { selectedImageIdx = id }
+	imageList.OnUnselected = func(widget.ListItemID) { selectedImageIdx = -1 }
+	imageListScroll := container.NewScroll(imageList)
+	imageListScroll.SetMinSize(fyne.NewSize(540, 220))
 
 	driveSelect := widget.NewSelect(nil, func(string) {})
 	driveSelect.PlaceHolder = "Choose a drive"
@@ -189,7 +155,7 @@ func main() {
 
 	var buildBtn *widget.Button
 	buildBtn = widget.NewButton("Write to drive", func() {
-		imgIdx := imageSelect.SelectedIndex()
+		imgIdx := selectedImageIdx
 		drvIdx := driveSelect.SelectedIndex()
 		if imgIdx < 0 || drvIdx < 0 {
 			dialog.ShowInformation("Missing selection", "Choose both an OS and a drive first.", w)
@@ -240,7 +206,7 @@ func main() {
 	})
 
 	updateBtn := widget.NewButton("Update", func() {
-		imgIdx, drvIdx := imageSelect.SelectedIndex(), driveSelect.SelectedIndex()
+		imgIdx, drvIdx := selectedImageIdx, driveSelect.SelectedIndex()
 		if imgIdx < 0 || drvIdx < 0 {
 			dialog.ShowInformation("Missing selection", "Choose an OS above first — Update re-installs it in place.", w)
 			return
@@ -327,7 +293,7 @@ func main() {
 
 	content := container.NewVBox(
 		widget.NewLabelWithStyle("1. Choose an OS", fyne.TextAlignLeading, fyne.TextStyle{Bold: true}),
-		imageSelect,
+		imageListScroll,
 		widget.NewLabelWithStyle("2. Choose a drive", fyne.TextAlignLeading, fyne.TextStyle{Bold: true}),
 		container.NewBorder(nil, nil, nil, refreshBtn, driveSelect),
 		driveInfo,

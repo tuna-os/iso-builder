@@ -8,3 +8,4 @@ e2e/.cache/
 .DS_Store
 .wrangler/
 native/e2e/screenshots/
+.claude/
