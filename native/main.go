@@ -18,17 +18,20 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/app"
 	"fyne.io/fyne/v2/canvas"
 	"fyne.io/fyne/v2/container"
 	"fyne.io/fyne/v2/dialog"
+	"fyne.io/fyne/v2/theme"
 	"fyne.io/fyne/v2/widget"
 )
 
 func main() {
 	a := app.NewWithID("org.tunaos.tacklebox-app")
+	a.Settings().SetTheme(adwaitaTheme{}) // GNOME/Adwaita look + readable log
 	w := a.NewWindow("TunaOS ISO Builder")
 	w.Resize(fyne.NewSize(560, 640))
 
@@ -43,9 +46,15 @@ func main() {
 	// undifferentiated wall of similar-looking names. widget.Select
 	// has no way to render more than plain text per row, hence the
 	// switch to widget.List with a custom item template.
+	// visible is the currently-shown subset of curatedImages (all of it until
+	// the user types in the search box). The list, selection and the build/
+	// update actions all index into visible, never curatedImages directly.
 	selectedImageIdx := -1
+	visible := make([]curatedImage, len(curatedImages))
+	copy(visible, curatedImages)
+
 	imageList := widget.NewList(
-		func() int { return len(curatedImages) },
+		func() int { return len(visible) },
 		func() fyne.CanvasObject {
 			icon := canvas.NewImageFromResource(nil)
 			icon.FillMode = canvas.ImageFillContain
@@ -58,7 +67,7 @@ func main() {
 				container.NewVBox(name, sub))
 		},
 		func(id widget.ListItemID, obj fyne.CanvasObject) {
-			img := curatedImages[id]
+			img := visible[id]
 			row := obj.(*fyne.Container)
 			icon := row.Objects[1].(*canvas.Image)
 			icon.Resource = catalogLogo(img.LogoAsset)
@@ -74,6 +83,29 @@ func main() {
 	imageList.OnUnselected = func(widget.ListItemID) { selectedImageIdx = -1 }
 	imageListScroll := container.NewScroll(imageList)
 	imageListScroll.SetMinSize(fyne.NewSize(540, 220))
+
+	// searchEntry filters the (long) catalog by name, project or description —
+	// the list spans every variant×desktop plus curated external images, too
+	// many to scroll comfortably.
+	searchEntry := widget.NewEntry()
+	searchEntry.PlaceHolder = "Search images by name, project, or description…"
+	searchEntry.OnChanged = func(q string) {
+		q = strings.ToLower(strings.TrimSpace(q))
+		visible = visible[:0]
+		for _, img := range curatedImages {
+			if q == "" ||
+				strings.Contains(strings.ToLower(img.Name), q) ||
+				strings.Contains(strings.ToLower(img.Org), q) ||
+				strings.Contains(strings.ToLower(img.Description), q) {
+				visible = append(visible, img)
+			}
+		}
+		selectedImageIdx = -1
+		imageList.UnselectAll()
+		imageList.Refresh()
+		imageList.ScrollToTop()
+	}
+	searchBox := container.NewBorder(nil, nil, widget.NewIcon(theme.SearchIcon()), nil, searchEntry)
 
 	driveSelect := widget.NewSelect(nil, func(string) {})
 	driveSelect.PlaceHolder = "Choose a drive"
@@ -113,7 +145,8 @@ func main() {
 	progress.Hide()
 
 	log := widget.NewMultiLineEntry()
-	log.Disable()
+	log.TextStyle = fyne.TextStyle{Monospace: true} // terminal feel (Adwaita Mono via theme)
+	log.Disable()                                   // read-only; theme gives it a legible colour
 	logScroll := container.NewScroll(log)
 	logScroll.SetMinSize(fyne.NewSize(540, 200))
 
@@ -157,12 +190,12 @@ func main() {
 	buildBtn = widget.NewButton("Write to drive", func() {
 		imgIdx := selectedImageIdx
 		drvIdx := driveSelect.SelectedIndex()
-		if imgIdx < 0 || drvIdx < 0 {
+		if imgIdx < 0 || imgIdx >= len(visible) || drvIdx < 0 {
 			dialog.ShowInformation("Missing selection", "Choose both an OS and a drive first.", w)
 			return
 		}
 		drive := drives[drvIdx]
-		img := curatedImages[imgIdx]
+		img := visible[imgIdx]
 		verifyBoot := bootCheckBox.Checked
 
 		start := func() {
@@ -207,11 +240,11 @@ func main() {
 
 	updateBtn := widget.NewButton("Update", func() {
 		imgIdx, drvIdx := selectedImageIdx, driveSelect.SelectedIndex()
-		if imgIdx < 0 || drvIdx < 0 {
+		if imgIdx < 0 || imgIdx >= len(visible) || drvIdx < 0 {
 			dialog.ShowInformation("Missing selection", "Choose an OS above first — Update re-installs it in place.", w)
 			return
 		}
-		drive, img := drives[drvIdx], curatedImages[imgIdx]
+		drive, img := drives[drvIdx], visible[imgIdx]
 		done := busyGuard()
 		go runUpdate(img, drive, bootCheckBox.Checked, log, status, w, done)
 	})
@@ -293,6 +326,7 @@ func main() {
 
 	content := container.NewVBox(
 		widget.NewLabelWithStyle("1. Choose an OS", fyne.TextAlignLeading, fyne.TextStyle{Bold: true}),
+		searchBox,
 		imageListScroll,
 		widget.NewLabelWithStyle("2. Choose a drive", fyne.TextAlignLeading, fyne.TextStyle{Bold: true}),
 		container.NewBorder(nil, nil, nil, refreshBtn, driveSelect),
