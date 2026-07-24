@@ -85,6 +85,8 @@ github.com/tuna-os/tacklebox v0.0.0-20260720174313-23cdc6e9aa94 h1:P5kBKdaXY17uR
 github.com/tuna-os/tacklebox v0.0.0-20260720174313-23cdc6e9aa94/go.mod h1:eTAZ2rfXN435755hRzoXMb2DH97F1tj6xpNVd2Wbk00=
 github.com/tuna-os/tacklebox v0.0.0-20260723220726-720128c0dc61 h1:hi/prSHPtHaZg64OVl857yDTMwdczLEvd/17CPdTJhc=
 github.com/tuna-os/tacklebox v0.0.0-20260723220726-720128c0dc61/go.mod h1:eTAZ2rfXN435755hRzoXMb2DH97F1tj6xpNVd2Wbk00=
+github.com/tuna-os/tacklebox v0.0.0-20260724062040-e1daf9cc2310 h1:Tu1tDtONEB8kCCxKDRDVvGPzFBrE2K1eStyCUch2gFo=
+github.com/tuna-os/tacklebox v0.0.0-20260724062040-e1daf9cc2310/go.mod h1:eTAZ2rfXN435755hRzoXMb2DH97F1tj6xpNVd2Wbk00=
 github.com/yuin/goldmark v1.8.2 h1:kEGpgqJXdgbkhcOgBxkC0X0PmoPG1ZyoZ117rDVp4zE=
 github.com/yuin/goldmark v1.8.2/go.mod h1:ip/1k0VRfGynBgxOz0yCqHrbZXhcjxyuS66Brc7iBKg=
 golang.org/x/crypto v0.54.0 h1:YLIA59K4fiNzHzjnZt2tUJQjQtUWfWbeHBqKtk3eScw=
