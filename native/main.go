@@ -186,6 +186,20 @@ func main() {
 		bootCheckBox.Hide()
 	}
 
+	// modeSelect chooses what kind of drive to write. Persistent (default) is
+	// the desktop app's differentiator — an updatable multi-boot drive with
+	// shared storage. Installer environment is an ephemeral live session that
+	// autologins and runs the installer to put TunaOS on another disk.
+	// (The browser ISO builder only makes installer-environment ISOs — it
+	// can't set up persistence — so persistence lives here.)
+	const (
+		modePersistent = "Persistent multi-boot drive — keeps files, shared storage, updatable"
+		modeInstaller  = "Live installer environment — install TunaOS to another disk (nothing persists)"
+	)
+	modeSelect := widget.NewRadioGroup([]string{modePersistent, modeInstaller}, nil)
+	modeSelect.SetSelected(modePersistent)
+	isPersistent := func() bool { return modeSelect.Selected != modeInstaller }
+
 	var buildBtn *widget.Button
 	buildBtn = widget.NewButton("Write to drive", func() {
 		imgIdx := selectedImageIdx
@@ -198,12 +212,13 @@ func main() {
 		img := visible[imgIdx]
 		verifyBoot := bootCheckBox.Checked
 
+		persistent := isPersistent()
 		start := func() {
 			done := busyGuard()
 			if managed {
-				go runAdd(img, drive, verifyBoot, log, status, w, done)
+				go runAdd(img, drive, verifyBoot, persistent, log, status, w, done)
 			} else {
-				go runBuild(img, drive, verifyBoot, log, status, w, done)
+				go runBuild(img, drive, verifyBoot, persistent, log, status, w, done)
 			}
 		}
 
@@ -246,7 +261,7 @@ func main() {
 		}
 		drive, img := drives[drvIdx], visible[imgIdx]
 		done := busyGuard()
-		go runUpdate(img, drive, bootCheckBox.Checked, log, status, w, done)
+		go runUpdate(img, drive, bootCheckBox.Checked, isPersistent(), log, status, w, done)
 	})
 
 	removeEnvEntry := widget.NewEntry()
@@ -331,6 +346,8 @@ func main() {
 		widget.NewLabelWithStyle("2. Choose a drive", fyne.TextAlignLeading, fyne.TextStyle{Bold: true}),
 		container.NewBorder(nil, nil, nil, refreshBtn, driveSelect),
 		driveInfo,
+		widget.NewLabelWithStyle("3. How to write it", fyne.TextAlignLeading, fyne.TextStyle{Bold: true}),
+		modeSelect,
 		bootCheckBox,
 		buildBtn,
 		viewVMBtn,
@@ -381,24 +398,24 @@ func handlePrerequisiteError(err error, log *widget.Entry, status *widget.Label,
 // runBuild writes a single-env recipe for img directly to drive.Path via
 // `tacklebox build --yes`, erasing whatever was there before. Use runAdd
 // instead for an already-managed drive (tuna-os/iso-builder#3).
-func runBuild(img curatedImage, drive Drive, verifyBoot bool, log *widget.Entry, status *widget.Label, w fyne.Window, done func()) {
-	runRecipeCommand("build", "Build", img, drive, verifyBoot, log, status, w, done)
+func runBuild(img curatedImage, drive Drive, verifyBoot, persistent bool, log *widget.Entry, status *widget.Label, w fyne.Window, done func()) {
+	runRecipeCommand("build", "Build", img, drive, verifyBoot, persistent, log, status, w, done)
 }
 
 // runAdd installs img onto drive.Path alongside whatever's already there,
 // via `tacklebox add --yes` — no reformatting. This is the actual
 // differentiator over a one-shot ISO burner (tuna-os/iso-builder#3): a
 // drive tacklebox manages can grow instead of being replaced.
-func runAdd(img curatedImage, drive Drive, verifyBoot bool, log *widget.Entry, status *widget.Label, w fyne.Window, done func()) {
-	runRecipeCommand("add", "Add", img, drive, verifyBoot, log, status, w, done)
+func runAdd(img curatedImage, drive Drive, verifyBoot, persistent bool, log *widget.Entry, status *widget.Label, w fyne.Window, done func()) {
+	runRecipeCommand("add", "Add", img, drive, verifyBoot, persistent, log, status, w, done)
 }
 
 // runUpdate re-installs img on drive.Path in place, via `tacklebox update
 // --yes` — refreshes an already-installed environment to match the
 // current image, rotating BLS entries and extracting new kernels/initrd
 // as needed (tuna-os/iso-builder#2).
-func runUpdate(img curatedImage, drive Drive, verifyBoot bool, log *widget.Entry, status *widget.Label, w fyne.Window, done func()) {
-	runRecipeCommand("update", "Update", img, drive, verifyBoot, log, status, w, done)
+func runUpdate(img curatedImage, drive Drive, verifyBoot, persistent bool, log *widget.Entry, status *widget.Label, w fyne.Window, done func()) {
+	runRecipeCommand("update", "Update", img, drive, verifyBoot, persistent, log, status, w, done)
 }
 
 // runRecipeCommand is the shared plumbing behind runBuild/runAdd/runUpdate:
@@ -416,8 +433,8 @@ func runUpdate(img curatedImage, drive Drive, verifyBoot bool, log *widget.Entry
 // QEMU VM after a successful write and confirms it actually reaches
 // userspace, rather than trusting that "tacklebox exited 0" is the whole
 // story.
-func runRecipeCommand(subcommand, verb string, img curatedImage, drive Drive, verifyBoot bool, log *widget.Entry, status *widget.Label, w fyne.Window, done func()) {
-	recipe, err := writeTempRecipe(img)
+func runRecipeCommand(subcommand, verb string, img curatedImage, drive Drive, verifyBoot, persistent bool, log *widget.Entry, status *widget.Label, w fyne.Window, done func()) {
+	recipe, err := writeTempRecipe(img, persistent)
 	if err != nil {
 		fyne.Do(func() { status.SetText("Failed to prepare recipe: " + err.Error()) })
 		fyne.Do(done)
@@ -497,7 +514,16 @@ func runRemove(envID string, drive Drive, log *widget.Entry, status *widget.Labe
 // writeTempRecipe writes a minimal single-env tacklebox recipe for img to a
 // temp file and returns its path. Matches the shape of tacklebox's own
 // fixtures (see tuna-os/tacklebox/fixtures/simple.json).
-func writeTempRecipe(img curatedImage) (string, error) {
+//
+// persistent selects the drive's character:
+//   - true  → the "vendor alternative": a persistent, updatable multi-boot
+//     drive with a shared ext4 store (modes live+persistent). Files and
+//     added environments survive reboots — the desktop app's differentiator
+//     over a plain ISO burner (tuna-os/iso-builder#3).
+//   - false → a Live installer environment: an ephemeral live session
+//     (mode live only, no shared store) that autologins and runs the
+//     installer, for installing TunaOS onto another disk. Nothing persists.
+func writeTempRecipe(img curatedImage, persistent bool) (string, error) {
 	f, err := os.CreateTemp("", "tacklebox-recipe-*.json")
 	if err != nil {
 		return "", err
@@ -505,14 +531,18 @@ func writeTempRecipe(img curatedImage) (string, error) {
 	defer f.Close()
 
 	envID := filepath.Base(img.Image)
+	sharedStore, modes := "", `["live"]`
+	if persistent {
+		sharedStore = "\n  \"shared_store\": {\"format\": \"ext4\"},"
+		modes = `["live", "persistent"]`
+	}
 	recipe := fmt.Sprintf(`{
   "media_name": "TUNAOS",
-  "size": "16G",
-  "shared_store": {"format": "ext4"},
+  "size": "16G",%s
   "bootable_environments": [
-    {"id": %q, "image": %q, "modes": ["live", "persistent"]}
+    {"id": %q, "image": %q, "modes": %s}
   ]
-}`, envID, img.Image)
+}`, sharedStore, envID, img.Image, modes)
 
 	if _, err := f.WriteString(recipe); err != nil {
 		return "", err
