@@ -1,0 +1,7 @@
+# Build output
+tacklebox-app
+tacklebox-app.exe
+
+# Embedded CLI binary staged for -tags embedtacklebox builds (produced by the
+# release pipeline; never committed).
+/tacklebox

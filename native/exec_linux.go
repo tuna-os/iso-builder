@@ -17,6 +17,11 @@ import (
 // PATH. Resolving to an absolute path here up front sidesteps that
 // entirely, since sudo doesn't need to look anything up.
 func tackleboxPath() string {
+	// Single-binary distribution builds (-tags embedtacklebox) carry the CLI
+	// inside the app; extract-and-use it before any next-to-exe/PATH lookup.
+	if p := embeddedTackleboxPath(); p != "" {
+		return p
+	}
 	if exe, err := os.Executable(); err == nil {
 		candidate := filepath.Join(filepath.Dir(exe), "tacklebox")
 		if _, err := os.Stat(candidate); err == nil {

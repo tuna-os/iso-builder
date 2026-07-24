@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os/exec"
+	"strings"
 )
 
 type lsblkDevice struct {
@@ -11,8 +12,10 @@ type lsblkDevice struct {
 	Model      string        `json:"model"`
 	Size       int64         `json:"size"`
 	Type       string        `json:"type"`
-	RM         bool          `json:"rm"` // removable
-	RO         bool          `json:"ro"` // read-only
+	RM         bool          `json:"rm"`      // removable
+	RO         bool          `json:"ro"`      // read-only
+	HotPlug    bool          `json:"hotplug"` // hot-pluggable bus
+	Tran       string        `json:"tran"`    // transport: usb, nvme, sata, …
 	MountPoint *string       `json:"mountpoint"`
 	Children   []lsblkDevice `json:"children"`
 }
@@ -21,19 +24,51 @@ type lsblkOutput struct {
 	BlockDevices []lsblkDevice `json:"blockdevices"`
 }
 
-// hasSystemMount reports whether d or any descendant partition is mounted
-// at a path that would make d unsafe to overwrite (root, /boot, /home,
-// swap, etc). This is the same category of check as
-// darwin.IsSafeWriteTarget in the tacklebox macOS work — see
-// tuna-os/tacklebox#106 for why this check has to be conservative.
+// removableMountRoots are where desktops auto-mount user-removable media. A
+// mount under one of these is the *target drive mounting itself* (GNOME/
+// Bluefin auto-mount every USB on insert), NOT the disk being in system use —
+// so it must not disqualify the drive, or the user's intended target is
+// invisible (observed on dilli: a USB SSD auto-mounted at /run/media/…).
+var removableMountRoots = []string{"/run/media/", "/media/", "/mnt/"}
+
+// hasSystemMount reports whether d or any descendant is mounted somewhere
+// that means the disk is in use by the running system (root, /boot, /sysroot,
+// swap, /home, …) — anything NOT under a removable-media root. Such a disk
+// must never be a write target. A drive auto-mounted only under a removable
+// root is still eligible (the writer unmounts it before writing).
 func hasSystemMount(d lsblkDevice) bool {
-	if d.MountPoint != nil && *d.MountPoint != "" {
+	if mp := d.MountPoint; mp != nil && *mp != "" && !isRemovableMount(*mp) {
 		return true
 	}
 	for _, c := range d.Children {
 		if hasSystemMount(c) {
 			return true
 		}
+	}
+	return false
+}
+
+func isRemovableMount(mp string) bool {
+	for _, root := range removableMountRoots {
+		if strings.HasPrefix(mp, root) {
+			return true
+		}
+	}
+	return false
+}
+
+// isExternalDisk reports whether d is an external/removable disk (a legitimate
+// write target) as opposed to an internal system disk. `rm` alone is wrong:
+// USB SSD enclosures report rm=0, so keying on it hides them. The reliable
+// signal is the transport bus — usb is external, nvme/sata are internal. rm
+// still covers classic USB sticks/SD; hotplug is trusted only when the bus
+// isn't a known-internal one (some internal NVMe bays report hotplug=1).
+func isExternalDisk(d lsblkDevice) bool {
+	if d.Tran == "usb" || d.RM {
+		return true
+	}
+	if d.HotPlug && d.Tran != "nvme" && d.Tran != "sata" {
+		return true
 	}
 	return false
 }
@@ -47,7 +82,7 @@ func hasSystemMount(d lsblkDevice) bool {
 // code path for a non-technical audience, and has to be independently
 // testable from the live OS call).
 func SafeWriteTargets() ([]Drive, error) {
-	out, err := exec.Command("lsblk", "-J", "-b", "-o", "NAME,MODEL,SIZE,TYPE,RM,RO,MOUNTPOINT").Output()
+	out, err := exec.Command("lsblk", "-J", "-b", "-o", "NAME,MODEL,SIZE,TYPE,RM,RO,HOTPLUG,TRAN,MOUNTPOINT").Output()
 	if err != nil {
 		return nil, fmt.Errorf("lsblk: %w", err)
 	}
@@ -58,9 +93,10 @@ func SafeWriteTargets() ([]Drive, error) {
 	return filterSafeDrives(parsed.BlockDevices), nil
 }
 
-// filterSafeDrives is the pure safety filter: type "disk" (not a
-// partition), removable, not read-only, no mounted partitions anywhere in
-// its tree, and non-zero size. No I/O, no root required — fully
+// filterSafeDrives is the pure safety filter: a whole "disk" (not a
+// partition), external (USB/removable, never an internal system disk), not
+// read-only, non-zero size, and not in use by the running system (no
+// non-removable-media mounts in its tree). No I/O, no root required — fully
 // unit-testable.
 func filterSafeDrives(devices []lsblkDevice) []Drive {
 	var safe []Drive
@@ -68,8 +104,8 @@ func filterSafeDrives(devices []lsblkDevice) []Drive {
 		if d.Type != "disk" {
 			continue
 		}
-		if !d.RM {
-			continue // not removable
+		if !isExternalDisk(d) {
+			continue // internal system disk — never a write target
 		}
 		if d.RO {
 			continue
