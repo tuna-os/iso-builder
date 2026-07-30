@@ -33,8 +33,15 @@ on:
 # starved the shared macOS/Windows runner pool for hours (tuna-os/tacklebox#139).
 # github.head_ref is empty on push/schedule, so this falls back to
 # github.ref and still groups correctly for every trigger type.
+#
+# Dispatch runs get their own group keyed on run_id, so they neither cancel
+# nor get cancelled. A full-matrix sweep is ~40 min of deliberate,
+# hand-triggered work across nine cells, and under a shared branch key a
+# single push to the PR wipes it out — that is exactly what happened to
+# run 30510986807, where six cells died mid-pull as "The operation was
+# canceled" and the sweep taught us nothing about those bases.
 concurrency:
-  group: ci-${{ github.workflow }}-${{ github.head_ref || github.ref }}
+  group: ci-${{ github.workflow }}-${{ github.event_name == 'workflow_dispatch' && github.run_id || github.head_ref || github.ref }}
   cancel-in-progress: true
 
 jobs:
