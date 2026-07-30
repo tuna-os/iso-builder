@@ -1,6 +1,35 @@
 # E2E for the browser ISO builder: Playwright drives the real WASM engine
-# (real registry pulls through the relay). --grep-invert @full keeps the
-# default run fast; the @full build+QEMU-boot proof is dispatch-only.
+# (real registry pulls through the relay).
+#
+# Two tiers, deliberately split:
+#   e2e         — always runs, --grep-invert @full. Page load + inspect only,
+#                 ~2 min, no ISO written. This is the merge gate.
+#   full-matrix — dispatch-only, one cell per base variant, each actually
+#                 building and validating a multi-GB ISO.
+#
+# @full is a *format* proof, not a boot proof: it asserts size >100 MB and
+# the ISO9660 CD001 magic at sector 16. Nothing here boots the image — the
+# QEMU machinery lives in native/, and browser/CI boot parity is tracked in
+# tuna-os/tunaOS#673. Don't read a green full-matrix as "these ISOs boot".
+#
+# Expect this job to be mostly red today, and don't "fix" it by raising
+# budgets. Re-running the failures with linear memory sampled found *two*
+# independent engine bugs, not one (an earlier revision of this comment
+# blamed the ceiling for all of them, which measurement refuted):
+#
+#   1. A non-deterministic hang fetching layers. bonito:kde froze at layer
+#      38/65 on 114 MB, yellowfin:gnome at 50/65 on 121 MB — and at 47/65 in
+#      CI, i.e. a different layer per run. Go's js/wasm streamReader.Read
+#      selects only on the read promise, with no context case, so a stalled
+#      response body blocks forever and no deadline can break it.
+#   2. The wasm32 4 GiB ceiling. Go targets 32-bit linear memory, so the
+#      unpacked tree, the EROFS image and the ISO share one address space.
+#      flounder:xfce is the *smallest* edition and therefore the only one to
+#      survive (1) and reach authoring, where it dies with
+#      `runtime: out of memory ... 4252303360 in use` at 4094 MB.
+#
+# (1) blocks large editions before (2) can, so fixing either alone unblocks
+# almost nothing. Both live in tacklebox's engine — tuna-os/tacklebox#156.
 name: CI
 
 on:
@@ -13,6 +42,10 @@ on:
         description: "Run full ISO build tests (@full)"
         type: boolean
         default: false
+      only:
+        description: "Limit full-matrix to one edition slug (e.g. yellowfin-gnome). Empty = all."
+        type: string
+        default: ""
   schedule:
     # Weekly: the app talks to live infra (relay, GHCR) that can drift.
     - cron: "40 5 * * 1"
@@ -23,8 +56,15 @@ on:
 # starved the shared macOS/Windows runner pool for hours (tuna-os/tacklebox#139).
 # github.head_ref is empty on push/schedule, so this falls back to
 # github.ref and still groups correctly for every trigger type.
+#
+# Dispatch runs get their own group keyed on run_id, so they neither cancel
+# nor get cancelled. A full-matrix sweep is ~40 min of deliberate,
+# hand-triggered work across nine cells, and under a shared branch key a
+# single push to the PR wipes it out — that is exactly what happened to
+# run 30510986807, where six cells died mid-pull as "The operation was
+# canceled" and the sweep taught us nothing about those bases.
 concurrency:
-  group: ci-${{ github.workflow }}-${{ github.head_ref || github.ref }}
+  group: ci-${{ github.workflow }}-${{ github.event_name == 'workflow_dispatch' && github.run_id || github.head_ref || github.ref }}
   cancel-in-progress: true
 
 jobs:
@@ -146,11 +186,89 @@ jobs:
         working-directory: native
         run: go build -o tacklebox-app .
 
+  # Build the engine instead of trusting the committed app/public/tbox.wasm.
+  #
+  # That blob is refreshed by hand ("chore(wasm): rebuild tbox.wasm ...") and
+  # has already shipped stale once — see 039ce59, "actually ship the
+  # udev-fallback wasm (prior commit captured stale binary)". At the time of
+  # writing the committed binary is 12,905,395 bytes against 12,908,590 built
+  # from the pinned tacklebox, so the engine users run is not the engine the
+  # source describes, and an engine fix cannot be proven from this repo.
+  #
+  # The version comes from native/go.mod's existing tacklebox pin, so
+  # Renovate's digest bumps now move the CLI, the native app and the web
+  # engine together instead of letting the wasm drift on its own.
+  wasm:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: native/go.mod
+          cache-dependency-path: native/go.sum
+
+      # Building from native/'s module doesn't work: cmd/tbwasm pulls in
+      # packages native/ never imports, so its go.sum has no entries for them.
+      # Build from tacklebox's own module at the pinned commit instead.
+      # A Go pseudo-version carries a 12-char abbreviated commit, and
+      # actions/checkout cannot resolve one — it fetches the ref verbatim and
+      # git exits 1. Expand it to the full SHA via the API first.
+      - name: resolve pinned tacklebox commit
+        id: pin
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          ver=$(go list -m -f '{{.Version}}' github.com/tuna-os/tacklebox)
+          short=${ver##*-}
+          full=$(gh api "repos/tuna-os/tacklebox/commits/${short}" --jq .sha)
+          echo "commit=${full}" >> "$GITHUB_OUTPUT"
+          echo "pinned tacklebox ${ver} -> ${short} -> ${full}"
+        working-directory: native
+
+      - uses: actions/checkout@v7
+        with:
+          repository: tuna-os/tacklebox
+          ref: ${{ steps.pin.outputs.commit }}
+          path: .tacklebox
+
+      - name: build tbox.wasm
+        working-directory: .tacklebox
+        run: GOOS=js GOARCH=wasm go build -o "$GITHUB_WORKSPACE/app/public/tbox.wasm" ./cmd/tbwasm
+
+      # wasm_exec.js is the toolchain's own shim and must match the compiler
+      # that produced the binary; it is a second committed blob that can skew
+      # independently, so take it from the same toolchain rather than git.
+      - name: sync wasm_exec.js from the toolchain
+        run: cp "$(go env GOROOT)/lib/wasm/wasm_exec.js" app/public/wasm_exec.js
+
+      - name: report
+        run: |
+          ls -l app/public/tbox.wasm app/public/wasm_exec.js
+          git diff --stat -- app/public/tbox.wasm app/public/wasm_exec.js || true
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: engine
+          path: |
+            app/public/tbox.wasm
+            app/public/wasm_exec.js
+
   e2e:
+    needs: wasm
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@v7
+
+      # Overwrites the committed blobs with the freshly built engine, so the
+      # suite tests the current source rather than whatever was last checked in.
+      - uses: actions/download-artifact@v7
+        with:
+          name: engine
+          path: app/public/
 
       - uses: actions/setup-node@v7
         with:
@@ -175,16 +293,11 @@ jobs:
             npx playwright install-deps chromium
           fi
 
+      # @full lives in full-matrix now — this job stays the fast merge gate
+      # on every push/PR rather than sometimes ballooning into an ISO build.
       - name: run e2e (inspect flow, real network)
         working-directory: e2e
-        env:
-          TBOX_E2E_FULL: ${{ github.event.inputs.run_full == 'true' && '1' || '' }}
-        run: |
-          if [ "${{ github.event.inputs.run_full }}" = "true" ]; then
-            npx playwright test
-          else
-            npx playwright test --grep-invert @full
-          fi
+        run: npx playwright test --grep-invert @full
 
       - name: upload screenshots
         if: always()
@@ -202,13 +315,145 @@ jobs:
           path: e2e/playwright-report/
           if-no-files-found: warn
 
+  # Resolves e2e/editions.json into the matrix, honouring the `only` input.
+  # gh cannot dispatch a single matrix cell, and re-running nine multi-GB
+  # pulls to iterate on one edition is indefensible — the first sweep did
+  # exactly that and spent eight cells learning one thing.
+  full-plan:
+    if: github.event_name == 'workflow_dispatch' && github.event.inputs.run_full == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      editions: ${{ steps.pick.outputs.editions }}
+      count: ${{ steps.pick.outputs.count }}
+    steps:
+      - uses: actions/checkout@v7
+      - id: pick
+        env:
+          ONLY: ${{ github.event.inputs.only }}
+        run: |
+          python3 - <<'PY' >> "$GITHUB_OUTPUT"
+          import json, os
+          eds = json.load(open("e2e/editions.json"))
+          only = os.environ.get("ONLY", "").strip()
+          if only:
+              eds = [e for e in eds if e["slug"] == only]
+              if not eds:
+                  raise SystemExit(f"no edition with slug {only!r} in e2e/editions.json")
+          print("editions=" + json.dumps(eds))
+          print("count=" + str(len(eds)))
+          PY
+      - run: echo "Building ${{ steps.pick.outputs.count }} edition(s)"
+
+  # One cell per base variant — the editions the picker actually offers.
+  # Coverage is per-*base*, not per-desktop, on purpose: the browser-side
+  # risk (compression codec, tar quirks, where the kernel/initramfs live,
+  # image size) tracks the base distro, while the desktop mostly changes
+  # payload size. Nine cells covers every base; 37 would mostly re-prove
+  # the same unpack path at ~4x the runner cost.
+  #
+  # Dispatch-only: each cell pulls a multi-GB image and writes a multi-GB
+  # ISO, so this is not a per-push gate.
+  full-matrix:
+    needs: [full-plan, wasm]
+    runs-on: ubuntu-latest
+    # Two 20-min phase budgets plus install/checkout, under the per-test cap
+    # so Playwright is what trips first and names the stage that stalled.
+    timeout-minutes: 60
+    strategy:
+      # A coverage sweep is worthless if the first red cell cancels the
+      # rest — the whole point is learning which bases are broken.
+      fail-fast: false
+      # Each cell pulls gigabytes through the relay; don't stampede it.
+      max-parallel: 3
+      # ref is what the picker builds; slug is the same with ':' dropped,
+      # because artifact names reject it and GitHub expressions have no
+      # replace() to derive one.
+      matrix:
+        edition: ${{ fromJSON(needs.full-plan.outputs.editions) }}
+    steps:
+      - uses: actions/checkout@v7
+
+      # The whole point of this job is testing the engine, so it must be the
+      # built one, not the committed blob.
+      - uses: actions/download-artifact@v7
+        with:
+          name: engine
+          path: app/public/
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: "npm"
+          cache-dependency-path: e2e/package-lock.json
+
+      - name: Cache Playwright browsers
+        uses: actions/cache@v6
+        id: playwright-cache
+        with:
+          path: ~/.cache/ms-playwright
+          key: ${{ runner.os }}-playwright-${{ hashFiles('e2e/package-lock.json') }}
+
+      - name: install deps + chromium
+        working-directory: e2e
+        run: |
+          npm ci
+          if [ "${{ steps.playwright-cache.outputs.cache-hit }}" != "true" ]; then
+            npx playwright install --with-deps chromium
+          else
+            npx playwright install-deps chromium
+          fi
+
+      - name: build ${{ matrix.edition.ref }} (${{ matrix.edition.base }})
+        working-directory: e2e
+        env:
+          TBOX_E2E_FULL: "1"
+          TBOX_E2E_IMAGE: tuna-os/${{ matrix.edition.ref }}
+        # The config's 900s per-test cap was sized against sailfin:base
+        # (2.5 GB, 4.2 min). Desktop editions are several times that, so
+        # the default would time out on payload size rather than on a bug.
+        # Kept under the 60-min job cap so the timeout that fires is
+        # Playwright's, which prints which stage stalled. The spec's own
+        # per-phase budget (TBOX_E2E_WAIT_MS, 20 min for inspect and again
+        # for the build) bounds work that is slow; its watchdogs abort in
+        # seconds once the engine is provably dead, or after a few minutes
+        # of a frozen progress bar, so a broken cell reports the reason
+        # instead of buying 20 idle minutes of runner time.
+        run: npx playwright test --grep @full --timeout=2700000
+
+      - name: disk after build
+        if: always()
+        run: df -h /
+
+      # test-results/ holds Playwright's only-on-failure screenshot and
+      # error-context.md. The first sweep uploaded just screenshots/ and
+      # every failing cell reported "No files were found" — the actual
+      # evidence was in test-results/ and got discarded.
+      - name: upload diagnostics
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: full-${{ matrix.edition.slug }}-diag
+          path: |
+            e2e/screenshots/
+            e2e/test-results/
+          if-no-files-found: ignore
+
   deploy:
-    needs: e2e
+    needs: [e2e, wasm]
     if: github.ref == 'refs/heads/main' && github.event_name == 'push'
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v7
+
+      # iso.tunaos.org gets the engine CI just built and tested. Deploying the
+      # committed blob instead is how a hand-refreshed binary reaches users
+      # without ever having been run.
+      - uses: actions/download-artifact@v7
+        with:
+          name: engine
+          path: app/public/
 
       - name: deploy app (iso.tunaos.org)
         uses: cloudflare/wrangler-action@v4

@@ -1,0 +1,11 @@
+[
+  { "ref": "yellowfin:gnome", "slug": "yellowfin-gnome", "base": "AlmaLinux Kitten 10 (flagship)" },
+  { "ref": "bonito:kde", "slug": "bonito-kde", "base": "Fedora 44" },
+  { "ref": "sailfin:gnome", "slug": "sailfin-gnome", "base": "openSUSE Tumbleweed" },
+  { "ref": "flounder:xfce", "slug": "flounder-xfce", "base": "Debian 13 Trixie" },
+  { "ref": "grouper:gnome", "slug": "grouper-gnome", "base": "Ubuntu 26.04" },
+  { "ref": "marlin:niri", "slug": "marlin-niri", "base": "Arch Linux" },
+  { "ref": "skipjack:gnome", "slug": "skipjack-gnome", "base": "CentOS Stream 10" },
+  { "ref": "albacore:gnome", "slug": "albacore-gnome", "base": "AlmaLinux 10" },
+  { "ref": "guppy:gnome", "slug": "guppy-gnome", "base": "Gentoo" }
+]
