@@ -265,7 +265,7 @@ jobs:
 
       # Overwrites the committed blobs with the freshly built engine, so the
       # suite tests the current source rather than whatever was last checked in.
-      - uses: actions/download-artifact@v7
+      - uses: actions/download-artifact@v8
         with:
           name: engine
           path: app/public/
@@ -376,7 +376,7 @@ jobs:
 
       # The whole point of this job is testing the engine, so it must be the
       # built one, not the committed blob.
-      - uses: actions/download-artifact@v7
+      - uses: actions/download-artifact@v8
         with:
           name: engine
           path: app/public/
@@ -450,7 +450,7 @@ jobs:
       # iso.tunaos.org gets the engine CI just built and tested. Deploying the
       # committed blob instead is how a hand-refreshed binary reaches users
       # without ever having been run.
-      - uses: actions/download-artifact@v7
+      - uses: actions/download-artifact@v8
         with:
           name: engine
           path: app/public/
