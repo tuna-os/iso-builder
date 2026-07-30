@@ -25,6 +25,9 @@ function shot(page, name) {
   return page.screenshot({ path: path.join(SHOTS, name), fullPage: true });
 }
 
+// "tuna-os/bonito:kde" -> "bonito-kde", for filenames.
+const slug = (ref) => ref.replace(/^.*\//, "").replace(/[^a-zA-Z0-9]+/g, "-");
+
 test.describe("iso builder", () => {
   test("page loads with the edition picker @walkthrough", async ({ page }) => {
     await page.goto("/");
@@ -80,8 +83,33 @@ test.describe("iso builder", () => {
   test("full build streams a bootable ISO @full", async ({ page }) => {
     test.skip(!process.env.TBOX_E2E_FULL, "set TBOX_E2E_FULL=1 for the full build");
     const initrd = process.env.TBOX_E2E_INITRD_URL || "";
+
+    // Without these, a stalled inspect reports only `Received: disabled` —
+    // identical output whether the unpack is merely slow or threw. The
+    // engine's own diagnostics all go to console / #stage / #log.
+    page.on("console", (m) => console.log(`[browser:${m.type()}] ${m.text()}`));
+    page.on("pageerror", (e) => console.log(`[pageerror] ${e.message}`));
+
     await page.goto(`/?image=${encodeURIComponent(IMAGE)}&autodl=1&autorun=1${initrd ? `&initrd=${encodeURIComponent(initrd)}` : ""}`);
-    await expect(page.locator("#build")).toBeEnabled({ timeout: 600_000 });
+
+    // Heartbeat: proves whether the unpack is advancing or wedged, which is
+    // the thing the bare assertion can't distinguish.
+    const stageText = () => page.locator("#stage").textContent().catch(() => "<unreadable>");
+    const beat = setInterval(async () => console.log(`[stage] ${await stageText()}`), 30_000);
+    try {
+      await expect(page.locator("#build")).toBeEnabled({ timeout: 600_000 });
+    } catch (e) {
+      const stage = await stageText();
+      const logText = (await page.locator("#log").textContent().catch(() => "")) || "";
+      await shot(page, `05-inspect-stalled-${slug(IMAGE)}.png`);
+      throw new Error(
+        `inspect never enabled #build for ${IMAGE}\n` +
+          `  last stage: ${stage}\n` +
+          `  log tail:\n${logText.split("\n").slice(-40).join("\n")}\n\n${e.message}`,
+      );
+    } finally {
+      clearInterval(beat);
+    }
 
     const download = page.waitForEvent("download", { timeout: 600_000 });
     await page.locator("#build").click();

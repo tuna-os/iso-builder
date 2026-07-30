@@ -295,12 +295,18 @@ jobs:
         if: always()
         run: df -h /
 
-      - name: upload screenshots
+      # test-results/ holds Playwright's only-on-failure screenshot and
+      # error-context.md. The first sweep uploaded just screenshots/ and
+      # every failing cell reported "No files were found" — the actual
+      # evidence was in test-results/ and got discarded.
+      - name: upload diagnostics
         if: always()
         uses: actions/upload-artifact@v7
         with:
-          name: full-${{ matrix.edition.slug }}-screenshots
-          path: e2e/screenshots/
+          name: full-${{ matrix.edition.slug }}-diag
+          path: |
+            e2e/screenshots/
+            e2e/test-results/
           if-no-files-found: ignore
 
   deploy:
