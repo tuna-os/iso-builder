@@ -241,10 +241,50 @@ function loadWasm() {
   return wasmReady;
 }
 
+let lastProgressAt = 0;
 globalThis.tboxOnProgress = (stage, i, n) => {
   $("stage").textContent = { resolve: "Resolving manifest…", unpack: `Unpacking layer ${i}/${n}`, initrd: "Appending tbox initramfs overlay…", erofs: "Authoring EROFS live root…", esp: "Authoring EFI system partition…", iso: "Streaming ISO…" }[stage] || stage;
   $("bar").max = n; $("bar").value = i;
+  lastProgressAt = Date.now();
 };
+
+// The engine runs out of address space long before the machine runs out of
+// RAM, and when it does it usually says nothing at all: the heap parks just
+// under 4 GiB, the GC thrashes, and the progress bar simply stops. Users saw
+// an indefinite freeze with no message (tuna-os/tacklebox#156).
+//
+// This only *reports*. By the time linear memory is at the ceiling the Go
+// side is already dead or thrashing, and nothing here can cancel it or free
+// it — the tab has to be reloaded. Saying so beats a frozen bar.
+const WASM32_LIMIT_MB = 4096;
+const WASM_WARN_MB = 3400; // still climbing, but the outcome is rarely in doubt
+const WASM_WEDGED_MB = 3900; // parked here + no progress == out of address space
+const WEDGE_AFTER_MS = 120_000; // must outlast a genuinely slow ISO-streaming stage
+
+function watchEngineMemory() {
+  let warned = false;
+  let done = false;
+  lastProgressAt = Date.now();
+  const timer = setInterval(() => {
+    const mb = globalThis.tboxWasmMB();
+    if (mb < 0 || done) return;
+    if (!warned && mb >= WASM_WARN_MB) {
+      warned = true;
+      log(`warning: engine memory ${Math.round(mb)} MB of a ~${WASM32_LIMIT_MB} MB hard limit — large images can exhaust it`);
+    }
+    if (mb >= WASM_WEDGED_MB && Date.now() - lastProgressAt > WEDGE_AFTER_MS) {
+      done = true;
+      clearInterval(timer);
+      const msg = `Out of memory — this image is too large for the browser engine (used ${Math.round(mb)} MB of its ~${WASM32_LIMIT_MB} MB limit).`;
+      $("stage").textContent = msg;
+      log(`error: ${msg}`);
+      log("the engine cannot recover from this — reload the page to start over.");
+      log("tracking: https://github.com/tuna-os/tacklebox/issues/156");
+      notify("ISO build failed", "Image too large for the browser engine");
+    }
+  }, 5_000);
+  return () => { done = true; clearInterval(timer); };
+}
 
 // "tuna-os/x:y" → ghcr via shim; "quay.io/a/b:c" → that registry direct.
 function parseImage(raw) {
@@ -270,6 +310,7 @@ async function inspect() {
   $("introspect").disabled = true;
   $("buildcard").classList.remove("hidden");
   $("postcard").classList.add("hidden");
+  let stopWatch = () => {};
   try {
     // Persistent origin storage: multi-GB images live in OPFS during the
     // build; persist() exempts them from eviction (best-effort), and the
@@ -280,6 +321,7 @@ async function inspect() {
       log(`storage quota ≈ ${((quota - usage) / 1e9).toFixed(1)} GB free`);
     }
     await loadWasm();
+    stopWatch = watchEngineMemory();
     const { registry, image } = parseImage(raw);
     log(`inspecting ${image} via ${registry}`);
     facts = JSON.parse(await tboxIntrospect(image, registry));
@@ -309,6 +351,7 @@ async function inspect() {
     $("stage").textContent = "Inspect failed.";
     notify("Inspect failed", String(e).slice(0, 120));
   } finally {
+    stopWatch();
     $("introspect").disabled = false;
   }
 }
@@ -321,7 +364,12 @@ async function build() {
   const label = ($("label").value || "TUNAOS").toUpperCase().replace(/[^A-Z0-9_]/g, "_");
   let initrd = null;
   const iurl = $("initrdurl").value.trim();
+  // flounder:xfce died here, not in inspect: EROFS/ESP/ISO authoring
+  // allocates on top of the already-unpacked tree, so the build phase can
+  // exhaust the address space even when the unpack fitted comfortably.
+  let stopWatch = () => {};
   try {
+    stopWatch = watchEngineMemory();
     if (iurl) {
       log("fetching tbox initramfs…");
       const r = await fetch(iurl);
@@ -370,6 +418,7 @@ async function build() {
     $("stage").textContent = "Build failed.";
     notify("ISO build failed", String(e).slice(0, 120));
   } finally {
+    stopWatch();
     $("build").disabled = false;
   }
 }
