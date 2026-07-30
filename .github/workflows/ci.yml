@@ -1,6 +1,16 @@
 # E2E for the browser ISO builder: Playwright drives the real WASM engine
-# (real registry pulls through the relay). --grep-invert @full keeps the
-# default run fast; the @full build+QEMU-boot proof is dispatch-only.
+# (real registry pulls through the relay).
+#
+# Two tiers, deliberately split:
+#   e2e         — always runs, --grep-invert @full. Page load + inspect only,
+#                 ~2 min, no ISO written. This is the merge gate.
+#   full-matrix — dispatch-only, one cell per base variant, each actually
+#                 building and validating a multi-GB ISO.
+#
+# @full is a *format* proof, not a boot proof: it asserts size >100 MB and
+# the ISO9660 CD001 magic at sector 16. Nothing here boots the image — the
+# QEMU machinery lives in native/, and browser/CI boot parity is tracked in
+# tuna-os/tunaOS#673. Don't read a green full-matrix as "these ISOs boot".
 name: CI
 
 on:
@@ -175,16 +185,11 @@ jobs:
             npx playwright install-deps chromium
           fi
 
+      # @full lives in full-matrix now — this job stays the fast merge gate
+      # on every push/PR rather than sometimes ballooning into an ISO build.
       - name: run e2e (inspect flow, real network)
         working-directory: e2e
-        env:
-          TBOX_E2E_FULL: ${{ github.event.inputs.run_full == 'true' && '1' || '' }}
-        run: |
-          if [ "${{ github.event.inputs.run_full }}" = "true" ]; then
-            npx playwright test
-          else
-            npx playwright test --grep-invert @full
-          fi
+        run: npx playwright test --grep-invert @full
 
       - name: upload screenshots
         if: always()
@@ -201,6 +206,102 @@ jobs:
           name: playwright-report
           path: e2e/playwright-report/
           if-no-files-found: warn
+
+  # One cell per base variant — the editions the picker actually offers.
+  # Coverage is per-*base*, not per-desktop, on purpose: the browser-side
+  # risk (compression codec, tar quirks, where the kernel/initramfs live,
+  # image size) tracks the base distro, while the desktop mostly changes
+  # payload size. Nine cells covers every base; 37 would mostly re-prove
+  # the same unpack path at ~4x the runner cost.
+  #
+  # Dispatch-only: each cell pulls a multi-GB image and writes a multi-GB
+  # ISO, so this is not a per-push gate.
+  full-matrix:
+    if: github.event_name == 'workflow_dispatch' && github.event.inputs.run_full == 'true'
+    runs-on: ubuntu-latest
+    # Baseline (sailfin:base, 2.5 GB) built in 4.2 min. Desktop editions are
+    # several times larger, and a cold relay/GHCR pull dominates. Real
+    # headroom rather than a repeat of the native-windows squeeze.
+    timeout-minutes: 60
+    strategy:
+      # A coverage sweep is worthless if the first red cell cancels the
+      # rest — the whole point is learning which bases are broken.
+      fail-fast: false
+      # Each cell pulls gigabytes through the relay; don't stampede it.
+      max-parallel: 3
+      # ref is what the picker builds; slug is the same thing with the ':'
+      # dropped, because artifact names reject it and GitHub expressions
+      # have no replace() to derive one.
+      matrix:
+        edition:
+          - { ref: "yellowfin:gnome", slug: yellowfin-gnome, base: "AlmaLinux Kitten 10 (flagship)" }
+          - { ref: "bonito:kde", slug: bonito-kde, base: "Fedora 44" }
+          - { ref: "sailfin:gnome", slug: sailfin-gnome, base: "openSUSE Tumbleweed" }
+          - { ref: "flounder:xfce", slug: flounder-xfce, base: "Debian 13 Trixie" }
+          - { ref: "grouper:gnome", slug: grouper-gnome, base: "Ubuntu 26.04" }
+          - { ref: "marlin:niri", slug: marlin-niri, base: "Arch Linux" }
+          - { ref: "skipjack:gnome", slug: skipjack-gnome, base: "CentOS Stream 10" }
+          - { ref: "albacore:gnome", slug: albacore-gnome, base: "AlmaLinux 10" }
+          - { ref: "guppy:gnome", slug: guppy-gnome, base: "Gentoo" }
+    steps:
+      - uses: actions/checkout@v7
+
+      # A desktop edition unpacks into OPFS *and* streams an ISO out, both
+      # on the runner's root disk. ubuntu-latest ships ~21 GB free, which a
+      # large edition can exhaust mid-build; these caches are dead weight
+      # here and buy back well over 20 GB.
+      - name: reclaim disk
+        run: |
+          sudo rm -rf /usr/local/lib/android /usr/share/dotnet /opt/ghc \
+                      /usr/local/share/boost /usr/local/lib/node_modules
+          df -h /
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: "npm"
+          cache-dependency-path: e2e/package-lock.json
+
+      - name: Cache Playwright browsers
+        uses: actions/cache@v6
+        id: playwright-cache
+        with:
+          path: ~/.cache/ms-playwright
+          key: ${{ runner.os }}-playwright-${{ hashFiles('e2e/package-lock.json') }}
+
+      - name: install deps + chromium
+        working-directory: e2e
+        run: |
+          npm ci
+          if [ "${{ steps.playwright-cache.outputs.cache-hit }}" != "true" ]; then
+            npx playwright install --with-deps chromium
+          else
+            npx playwright install-deps chromium
+          fi
+
+      - name: build ${{ matrix.edition.ref }} (${{ matrix.edition.base }})
+        working-directory: e2e
+        env:
+          TBOX_E2E_FULL: "1"
+          TBOX_E2E_IMAGE: tuna-os/${{ matrix.edition.ref }}
+        # The config's 900s per-test cap was sized against sailfin:base
+        # (2.5 GB, 4.2 min). Desktop editions are several times that, so
+        # the default would time out on payload size rather than on a bug.
+        # Kept under the 60-min job cap so the timeout that fires is
+        # Playwright's, which prints which stage stalled.
+        run: npx playwright test --grep @full --timeout=2700000
+
+      - name: disk after build
+        if: always()
+        run: df -h /
+
+      - name: upload screenshots
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: full-${{ matrix.edition.slug }}-screenshots
+          path: e2e/screenshots/
+          if-no-files-found: ignore
 
   deploy:
     needs: e2e
