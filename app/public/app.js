@@ -222,11 +222,22 @@ function addRepo() {
   repoRender();
 }
 
+// Go builds to wasm32, so the engine's linear memory is capped well below
+// what the host has free. Large editions wedge mid-unpack with no error and
+// no console output — see tboxWasmMB, which is the only way to watch the
+// engine approach that ceiling from outside.
+let wasmMemory = null;
+globalThis.tboxWasmMB = () => (wasmMemory ? wasmMemory.buffer.byteLength / 1048576 : -1);
+
 function loadWasm() {
   if (wasmReady) return wasmReady;
   const go = new Go();
   wasmReady = WebAssembly.instantiateStreaming(fetch("tbox.wasm"), go.importObject)
-    .then((r) => { go.run(r.instance); log("engine loaded (tacklebox wasm)"); });
+    .then((r) => {
+      wasmMemory = r.instance.exports.mem || go.mem || null;
+      go.run(r.instance);
+      log("engine loaded (tacklebox wasm)");
+    });
   return wasmReady;
 }
 

@@ -103,7 +103,13 @@ test.describe("iso builder", () => {
     // Heartbeat: proves whether the unpack is advancing or wedged, which is
     // the thing the bare assertion can't distinguish.
     const stageText = () => page.locator("#stage").textContent().catch(() => "<unreadable>");
-    const beat = setInterval(async () => console.log(`[stage] ${await stageText()}`), 30_000);
+    // Engine linear memory alongside the stage: a stall that plateaus at a
+    // fixed MB figure is the wasm32 ceiling, not a slow network.
+    const wasmMB = () => page.evaluate(() => globalThis.tboxWasmMB?.() ?? -1).catch(() => -1);
+    const beat = setInterval(
+      async () => console.log(`[stage] ${await stageText()}  wasm=${Math.round(await wasmMB())} MB`),
+      30_000,
+    );
     try {
       await expect(page.locator("#build")).toBeEnabled({ timeout: WAIT_MS });
     } catch (e) {
