@@ -288,7 +288,9 @@ jobs:
         # (2.5 GB, 4.2 min). Desktop editions are several times that, so
         # the default would time out on payload size rather than on a bug.
         # Kept under the 60-min job cap so the timeout that fires is
-        # Playwright's, which prints which stage stalled.
+        # Playwright's, which prints which stage stalled. The spec's own
+        # per-phase budget (TBOX_E2E_WAIT_MS, 20 min for inspect and again
+        # for the build) normally trips first and names the stage.
         run: npx playwright test --grep @full --timeout=2700000
 
       - name: disk after build

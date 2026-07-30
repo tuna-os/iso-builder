@@ -19,6 +19,14 @@ const SHOTS = process.env.TBOX_E2E_SHOTS
 // sailfin:base: smallest clean image with kernel + systemd-boot
 // (guppy:base ships a /tmp build tree — tunaOS#672).
 const IMAGE = process.env.TBOX_E2E_IMAGE || "tuna-os/sailfin:base";
+// Per-phase budget for @full: one for inspect (pull + unpack), one for the
+// build. Both scale with payload, and the first sweep proved 10 min only
+// ever fit the baseline — sailfin:base is 1.5 GB of compressed layers and
+// inspects in ~4 min, but the editions the picker offers run to 4.8 GB
+// (bonito:kde) and 3.8 GB (yellowfin:gnome). Those two cells timed out on
+// image size with 35 of the job's 45 minutes of Playwright budget unused.
+// Two phases at this budget still fit under that per-test cap.
+const WAIT_MS = Number(process.env.TBOX_E2E_WAIT_MS || 1_200_000);
 
 function shot(page, name) {
   fs.mkdirSync(SHOTS, { recursive: true });
@@ -97,7 +105,7 @@ test.describe("iso builder", () => {
     const stageText = () => page.locator("#stage").textContent().catch(() => "<unreadable>");
     const beat = setInterval(async () => console.log(`[stage] ${await stageText()}`), 30_000);
     try {
-      await expect(page.locator("#build")).toBeEnabled({ timeout: 600_000 });
+      await expect(page.locator("#build")).toBeEnabled({ timeout: WAIT_MS });
     } catch (e) {
       const stage = await stageText();
       const logText = (await page.locator("#log").textContent().catch(() => "")) || "";
@@ -111,7 +119,7 @@ test.describe("iso builder", () => {
       clearInterval(beat);
     }
 
-    const download = page.waitForEvent("download", { timeout: 600_000 });
+    const download = page.waitForEvent("download", { timeout: WAIT_MS });
     await page.locator("#build").click();
     await shot(page, "05-building.png");
     const dl = await download;
