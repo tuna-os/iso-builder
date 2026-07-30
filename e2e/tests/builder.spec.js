@@ -26,7 +26,41 @@ const IMAGE = process.env.TBOX_E2E_IMAGE || "tuna-os/sailfin:base";
 // (bonito:kde) and 3.8 GB (yellowfin:gnome). Those two cells timed out on
 // image size with 35 of the job's 45 minutes of Playwright budget unused.
 // Two phases at this budget still fit under that per-test cap.
+//
+// This is an upper bound for work that is slow, not a wait for work that is
+// dead. See the watchdogs below.
 const WAIT_MS = Number(process.env.TBOX_E2E_WAIT_MS || 1_200_000);
+// The engine is a Go binary on wasm32, so the unpacked tree, the EROFS
+// image and the ISO all share one 4 GiB linear-memory address space. Every
+// red cell in the first full sweep was that one ceiling:
+//
+//   flounder:xfce    `runtime: out of memory: cannot allocate 4194304-byte
+//                    block (4257021952 in use)` + `exit code: 2` while
+//                    authoring the ISO: 3.97 GiB in use, 1.0 GB of layers.
+//   bonito:kde       counter frozen at layer 38/65, silently, forever.
+//   yellowfin:gnome  same, at 47/65. Both had consumed ~1.9 GB of
+//                    compressed layers, which is where this image set
+//                    expands past 4 GiB.
+//   sailfin:gnome    1.6 GB, the only edition that fits. Passes in 5 min.
+//
+// Both shapes are terminal, and a dead engine still serves DOM queries, so
+// waiting one out just relabels it: `Received: disabled` after 20 min, or a
+// download that never comes after 20 more. These two watchdogs cut that to
+// the moment the engine says it died, or to the moment progress stops.
+//
+// A frozen counter means wedged, not slow: unpack ticks once per layer and
+// the fastest edition clears all 65 in ~2 min, so this only has to outlast
+// the single largest layer (556 MB in bonito:kde).
+const STALL_MS = Number(process.env.TBOX_E2E_STALL_MS || 300_000);
+// The build phase gets a looser budget on purpose. Its stages (EROFS
+// authoring, ESP, ISO streaming) hold one label for minutes and only the
+// progress bar moves underneath, and how finely the engine ticks it there
+// isn't something a green run has ever shown, because the old heartbeat
+// stopped at the end of inspect, so every passing build was unobserved. The
+// death detector is what actually caught the build-phase OOM; this is a
+// backstop, and a backstop that fails a healthy 5 GB build is worse than
+// one that takes 10 min to fire.
+const BUILD_STALL_MS = Number(process.env.TBOX_E2E_BUILD_STALL_MS || 600_000);
 
 function shot(page, name) {
   fs.mkdirSync(SHOTS, { recursive: true });
@@ -95,40 +129,139 @@ test.describe("iso builder", () => {
     // Without these, a stalled inspect reports only `Received: disabled` —
     // identical output whether the unpack is merely slow or threw. The
     // engine's own diagnostics all go to console / #stage / #log.
-    page.on("console", (m) => console.log(`[browser:${m.type()}] ${m.text()}`));
-    page.on("pageerror", (e) => console.log(`[pageerror] ${e.message}`));
+    //
+    // wasm_exec.js relays the Go runtime's fatal output verbatim, so the
+    // panic that kills the engine arrives here as ordinary console lines.
+    // Catching it is the difference between "OOM at 3.97 GiB while authoring
+    // the ISO" and a bare 20-minute timeout on a download event.
+    //
+    // Matched narrowly, on the Go runtime's own fatal markers and a non-zero
+    // wasm exit: console errors are not automatically fatal here (the green
+    // sailfin:gnome cell logs a benign resource 404), and treating them as
+    // fatal would fail healthy builds. A pageerror does count, because
+    // inspect() and build() catch their own failures into #log, so an
+    // exception escaping to window.onerror leaves nothing to recover.
+    let death = null;
+    const watchLine = (line) => {
+      if (!death && /fatal error:|runtime: out of memory|^\[pageerror\]|panic: |exit code: [1-9]/m.test(line)) {
+        death = line.trim();
+      }
+    };
+    page.on("console", (m) => {
+      const line = `[browser:${m.type()}] ${m.text()}`;
+      console.log(line);
+      watchLine(line);
+    });
+    page.on("pageerror", (e) => {
+      const line = `[pageerror] ${e.message}`;
+      console.log(line);
+      watchLine(line);
+    });
 
     await page.goto(`/?image=${encodeURIComponent(IMAGE)}&autodl=1&autorun=1${initrd ? `&initrd=${encodeURIComponent(initrd)}` : ""}`);
 
-    // Heartbeat: proves whether the unpack is advancing or wedged, which is
-    // the thing the bare assertion can't distinguish.
     const stageText = () => page.locator("#stage").textContent().catch(() => "<unreadable>");
     // Engine linear memory alongside the stage: a stall that plateaus at a
-    // fixed MB figure is the wasm32 ceiling, not a slow network.
+    // fixed MB figure is the wasm32 ceiling, not a slow network. flounder's
+    // panic put a number on that ceiling (3.97 GiB in use), so a wedge
+    // parked near ~4000 MB here is the same wall reached quietly.
     const wasmMB = () => page.evaluate(() => globalThis.tboxWasmMB?.() ?? -1).catch(() => -1);
-    const beat = setInterval(
-      async () => console.log(`[stage] ${await stageText()}  wasm=${Math.round(await wasmMB())} MB`),
-      30_000,
-    );
-    try {
-      await expect(page.locator("#build")).toBeEnabled({ timeout: WAIT_MS });
-    } catch (e) {
-      const stage = await stageText();
-      const logText = (await page.locator("#log").textContent().catch(() => "")) || "";
-      await shot(page, `05-inspect-stalled-${slug(IMAGE)}.png`);
-      throw new Error(
-        `inspect never enabled #build for ${IMAGE}\n` +
-          `  last stage: ${stage}\n` +
-          `  log tail:\n${logText.split("\n").slice(-40).join("\n")}\n\n${e.message}`,
-      );
-    } finally {
-      clearInterval(beat);
+    // #stage is the human label; #bar is the only thing that moves inside a
+    // long stage (the app assigns .value, which never reflects to the
+    // attribute, hence evaluate rather than getAttribute). A crashed page
+    // makes this throw, which reads as "not advancing", which it isn't.
+    const progress = () =>
+      page
+        .evaluate(() => {
+          const b = document.getElementById("bar");
+          const s = document.getElementById("stage");
+          return `${s ? s.textContent : "?"}|${b ? `${b.value}/${b.max}` : "?"}`;
+        })
+        .catch(() => "<unreadable>");
+
+    // Heartbeat + watchdogs. The 30 s [stage] log is what proves after the
+    // fact whether a phase was advancing or wedged; the rejection is what
+    // stops a terminal failure from eating the whole per-phase budget.
+    function watch(what, stallMs) {
+      let cancel = () => {};
+      const promise = new Promise((_, reject) => {
+        let last = null;
+        let moved = Date.now();
+        let ticks = 0;
+        const stop = (err) => {
+          clearInterval(tick);
+          reject(err);
+        };
+        const tick = setInterval(async () => {
+          const sig = await progress();
+          if (++ticks % 6 === 0) {
+            console.log(`[stage] ${await stageText()}  wasm=${Math.round(await wasmMB())} MB`);
+          }
+          if (death) return stop(new Error(`engine died during ${what}: ${death}`));
+          if (sig !== last) {
+            last = sig;
+            moved = Date.now();
+          } else if (Date.now() - moved > stallMs) {
+            const budget =
+              stallMs >= 60_000
+                ? `${Math.round(stallMs / 60_000)} min`
+                : `${Math.round(stallMs / 1000)} s`;
+            stop(
+              new Error(
+                `${what} wedged: no progress for ${budget} at ${sig}` +
+                  ` (wasm=${Math.round(await wasmMB())} MB)`,
+              ),
+            );
+          }
+        }, 5_000);
+        cancel = () => clearInterval(tick);
+      });
+      // Whichever side loses the race is never awaited.
+      promise.catch(() => {});
+      return { promise, cancel };
     }
 
-    const download = page.waitForEvent("download", { timeout: WAIT_MS });
-    await page.locator("#build").click();
-    await shot(page, "05-building.png");
-    const dl = await download;
+    // Both phases fail the same way and deserve the same evidence: the last
+    // stage, the app's own log tail, and a screenshot. The first sweep only
+    // instrumented inspect, so flounder:xfce's build-phase OOM surfaced as a
+    // naked `waitForEvent: Timeout 1200000ms exceeded` with the panic that
+    // caused it 19 minutes upstream in the log.
+    const describe = async (what, e) => {
+      const stage = await stageText();
+      const logText = (await page.locator("#log").textContent().catch(() => "")) || "";
+      await shot(page, `05-${what}-stalled-${slug(IMAGE)}.png`);
+      return new Error(
+        `${what} never completed for ${IMAGE}\n` +
+          `  last stage: ${stage}  (wasm=${Math.round(await wasmMB())} MB)\n` +
+          (death ? `  engine died: ${death}\n` : "") +
+          `  log tail:\n${logText.split("\n").slice(-40).join("\n")}\n\n${e.message}`,
+      );
+    };
+
+    const inspectWatch = watch("inspect", STALL_MS);
+    try {
+      await Promise.race([
+        expect(page.locator("#build")).toBeEnabled({ timeout: WAIT_MS }),
+        inspectWatch.promise,
+      ]);
+    } catch (e) {
+      throw await describe("inspect", e);
+    } finally {
+      inspectWatch.cancel();
+    }
+
+    const buildWatch = watch("build", BUILD_STALL_MS);
+    let dl;
+    try {
+      const download = page.waitForEvent("download", { timeout: WAIT_MS });
+      await page.locator("#build").click();
+      await shot(page, "05-building.png");
+      dl = await Promise.race([download, buildWatch.promise]);
+    } catch (e) {
+      throw await describe("build", e);
+    } finally {
+      buildWatch.cancel();
+    }
     const out = process.env.TBOX_E2E_ISO_OUT || path.join(SHOTS, "..", "iso-builder-e2e-output.iso");
     console.log("saving iso to:", out, "(env override:", process.env.TBOX_E2E_ISO_OUT || "none", ")");
     await dl.saveAs(out);

@@ -11,6 +11,15 @@
 # the ISO9660 CD001 magic at sector 16. Nothing here boots the image — the
 # QEMU machinery lives in native/, and browser/CI boot parity is tracked in
 # tuna-os/tunaOS#673. Don't read a green full-matrix as "these ISOs boot".
+#
+# Expect this job to be mostly red today, and don't "fix" it by raising
+# budgets. The first real sweep (run 30511889755) found one cause behind
+# every failure: the engine is Go on wasm32, so the unpacked tree, the EROFS
+# image and the ISO share a single 4 GiB linear-memory address space, and
+# only sailfin:gnome (1.6 GB of layers) fits. Bigger editions either panic
+# (`runtime: out of memory ... 4257021952 in use`) or wedge mid-unpack
+# around 1.9 GB of consumed layers. That ceiling is in tacklebox's wasm
+# engine, not in this workflow; tbox.wasm here is a prebuilt artifact.
 name: CI
 
 on:
@@ -311,7 +320,10 @@ jobs:
         # Kept under the 60-min job cap so the timeout that fires is
         # Playwright's, which prints which stage stalled. The spec's own
         # per-phase budget (TBOX_E2E_WAIT_MS, 20 min for inspect and again
-        # for the build) normally trips first and names the stage.
+        # for the build) bounds work that is slow; its watchdogs abort in
+        # seconds once the engine is provably dead, or after a few minutes
+        # of a frozen progress bar, so a broken cell reports the reason
+        # instead of buying 20 idle minutes of runner time.
         run: npx playwright test --grep @full --timeout=2700000
 
       - name: disk after build
