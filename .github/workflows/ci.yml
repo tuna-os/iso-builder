@@ -13,13 +13,23 @@
 # tuna-os/tunaOS#673. Don't read a green full-matrix as "these ISOs boot".
 #
 # Expect this job to be mostly red today, and don't "fix" it by raising
-# budgets. The first real sweep (run 30511889755) found one cause behind
-# every failure: the engine is Go on wasm32, so the unpacked tree, the EROFS
-# image and the ISO share a single 4 GiB linear-memory address space, and
-# only sailfin:gnome (1.6 GB of layers) fits. Bigger editions either panic
-# (`runtime: out of memory ... 4257021952 in use`) or wedge mid-unpack
-# around 1.9 GB of consumed layers. That ceiling is in tacklebox's wasm
-# engine, not in this workflow; tbox.wasm here is a prebuilt artifact.
+# budgets. Re-running the failures with linear memory sampled found *two*
+# independent engine bugs, not one (an earlier revision of this comment
+# blamed the ceiling for all of them, which measurement refuted):
+#
+#   1. A non-deterministic hang fetching layers. bonito:kde froze at layer
+#      38/65 on 114 MB, yellowfin:gnome at 50/65 on 121 MB — and at 47/65 in
+#      CI, i.e. a different layer per run. Go's js/wasm streamReader.Read
+#      selects only on the read promise, with no context case, so a stalled
+#      response body blocks forever and no deadline can break it.
+#   2. The wasm32 4 GiB ceiling. Go targets 32-bit linear memory, so the
+#      unpacked tree, the EROFS image and the ISO share one address space.
+#      flounder:xfce is the *smallest* edition and therefore the only one to
+#      survive (1) and reach authoring, where it dies with
+#      `runtime: out of memory ... 4252303360 in use` at 4094 MB.
+#
+# (1) blocks large editions before (2) can, so fixing either alone unblocks
+# almost nothing. Both live in tacklebox's engine — tuna-os/tacklebox#156.
 name: CI
 
 on:
@@ -176,11 +186,83 @@ jobs:
         working-directory: native
         run: go build -o tacklebox-app .
 
+  # Build the engine instead of trusting the committed app/public/tbox.wasm.
+  #
+  # That blob is refreshed by hand ("chore(wasm): rebuild tbox.wasm ...") and
+  # has already shipped stale once — see 039ce59, "actually ship the
+  # udev-fallback wasm (prior commit captured stale binary)". At the time of
+  # writing the committed binary is 12,905,395 bytes against 12,908,590 built
+  # from the pinned tacklebox, so the engine users run is not the engine the
+  # source describes, and an engine fix cannot be proven from this repo.
+  #
+  # The version comes from native/go.mod's existing tacklebox pin, so
+  # Renovate's digest bumps now move the CLI, the native app and the web
+  # engine together instead of letting the wasm drift on its own.
+  wasm:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: native/go.mod
+          cache-dependency-path: native/go.sum
+
+      # Building from native/'s module doesn't work: cmd/tbwasm pulls in
+      # packages native/ never imports, so its go.sum has no entries for them.
+      # Build from tacklebox's own module at the pinned commit instead.
+      - name: resolve pinned tacklebox commit
+        id: pin
+        run: |
+          set -euo pipefail
+          ver=$(go list -m -f '{{.Version}}' github.com/tuna-os/tacklebox)
+          # Pseudo-version tail is the commit: v0.0.0-<ts>-<commit>
+          echo "commit=${ver##*-}" >> "$GITHUB_OUTPUT"
+          echo "pinned tacklebox ${ver} -> ${ver##*-}"
+        working-directory: native
+
+      - uses: actions/checkout@v7
+        with:
+          repository: tuna-os/tacklebox
+          ref: ${{ steps.pin.outputs.commit }}
+          path: .tacklebox
+
+      - name: build tbox.wasm
+        working-directory: .tacklebox
+        run: GOOS=js GOARCH=wasm go build -o "$GITHUB_WORKSPACE/app/public/tbox.wasm" ./cmd/tbwasm
+
+      # wasm_exec.js is the toolchain's own shim and must match the compiler
+      # that produced the binary; it is a second committed blob that can skew
+      # independently, so take it from the same toolchain rather than git.
+      - name: sync wasm_exec.js from the toolchain
+        run: cp "$(go env GOROOT)/lib/wasm/wasm_exec.js" app/public/wasm_exec.js
+
+      - name: report
+        run: |
+          ls -l app/public/tbox.wasm app/public/wasm_exec.js
+          git diff --stat -- app/public/tbox.wasm app/public/wasm_exec.js || true
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: engine
+          path: |
+            app/public/tbox.wasm
+            app/public/wasm_exec.js
+
   e2e:
+    needs: wasm
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@v7
+
+      # Overwrites the committed blobs with the freshly built engine, so the
+      # suite tests the current source rather than whatever was last checked in.
+      - uses: actions/download-artifact@v7
+        with:
+          name: engine
+          path: app/public/
 
       - uses: actions/setup-node@v7
         with:
@@ -267,7 +349,7 @@ jobs:
   # Dispatch-only: each cell pulls a multi-GB image and writes a multi-GB
   # ISO, so this is not a per-push gate.
   full-matrix:
-    needs: full-plan
+    needs: [full-plan, wasm]
     runs-on: ubuntu-latest
     # Two 20-min phase budgets plus install/checkout, under the per-test cap
     # so Playwright is what trips first and names the stage that stalled.
@@ -285,6 +367,13 @@ jobs:
         edition: ${{ fromJSON(needs.full-plan.outputs.editions) }}
     steps:
       - uses: actions/checkout@v7
+
+      # The whole point of this job is testing the engine, so it must be the
+      # built one, not the committed blob.
+      - uses: actions/download-artifact@v7
+        with:
+          name: engine
+          path: app/public/
 
       - uses: actions/setup-node@v7
         with:
@@ -345,12 +434,20 @@ jobs:
           if-no-files-found: ignore
 
   deploy:
-    needs: e2e
+    needs: [e2e, wasm]
     if: github.ref == 'refs/heads/main' && github.event_name == 'push'
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v7
+
+      # iso.tunaos.org gets the engine CI just built and tested. Deploying the
+      # committed blob instead is how a hand-refreshed binary reaches users
+      # without ever having been run.
+      - uses: actions/download-artifact@v7
+        with:
+          name: engine
+          path: app/public/
 
       - name: deploy app (iso.tunaos.org)
         uses: cloudflare/wrangler-action@v4
