@@ -212,14 +212,20 @@ jobs:
       # Building from native/'s module doesn't work: cmd/tbwasm pulls in
       # packages native/ never imports, so its go.sum has no entries for them.
       # Build from tacklebox's own module at the pinned commit instead.
+      # A Go pseudo-version carries a 12-char abbreviated commit, and
+      # actions/checkout cannot resolve one — it fetches the ref verbatim and
+      # git exits 1. Expand it to the full SHA via the API first.
       - name: resolve pinned tacklebox commit
         id: pin
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
           ver=$(go list -m -f '{{.Version}}' github.com/tuna-os/tacklebox)
-          # Pseudo-version tail is the commit: v0.0.0-<ts>-<commit>
-          echo "commit=${ver##*-}" >> "$GITHUB_OUTPUT"
-          echo "pinned tacklebox ${ver} -> ${ver##*-}"
+          short=${ver##*-}
+          full=$(gh api "repos/tuna-os/tacklebox/commits/${short}" --jq .sha)
+          echo "commit=${full}" >> "$GITHUB_OUTPUT"
+          echo "pinned tacklebox ${ver} -> ${short} -> ${full}"
         working-directory: native
 
       - uses: actions/checkout@v7
