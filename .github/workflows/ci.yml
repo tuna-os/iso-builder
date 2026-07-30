@@ -374,6 +374,38 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
+      # Free space is not housekeeping here, it is the OPFS quota.
+      #
+      # fixtures.js puts the Chrome profile under $HOME/tmp, and Chrome sizes
+      # origin-private storage from that partition's free space. A stock
+      # ubuntu-latest leaves ~14 GB on /, so the origin gets roughly 8 GB —
+      # and authoring the SMALLEST edition already peaks at 8.0 GB (base
+      # arena 2.35 + post arena 2.55 + EROFS ~5). Every cell was therefore
+      # running with essentially no headroom, and a large edition cannot fit
+      # at all.
+      #
+      # This does not surface as an OOM. tboxWasmMB() only sees linear
+      # memory, so a quota refusal arrives as a failed OPFS write somewhere
+      # downstream — which is exactly the kind of second-order symptom that
+      # cost three separate 20-minute runs to attribute during #156.
+      #
+      # tool-cache stays: setup-node and the Playwright browser cache live
+      # there. large-packages stays too — it costs minutes for a couple of
+      # GB we do not need once android/dotnet/haskell are gone.
+      - name: free disk space
+        uses: jlumbroso/free-disk-space@54081f138730dfa15788a46383842cd2f914a1be # main as of 2026-06-09
+        with:
+          tool-cache: false
+          android: true
+          dotnet: true
+          haskell: true
+          large-packages: false
+          docker-images: true
+          swap-storage: false
+
+      - name: disk before build
+        run: df -h /
+
       # The whole point of this job is testing the engine, so it must be the
       # built one, not the committed blob.
       - uses: actions/download-artifact@v8
