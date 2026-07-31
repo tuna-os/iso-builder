@@ -25,36 +25,11 @@
 #   2. The wasm32 4 GiB ceiling. Go targets 32-bit linear memory, so the
 #      unpacked tree, the EROFS image and the ISO share one address space.
 #      flounder:xfce is the *smallest* edition and therefore the only one to
-#      survive (1) and reach authoring, where it died with
+#      survive (1) and reach authoring, where it dies with
 #      `runtime: out of memory ... 4252303360 in use` at 4094 MB.
 #
 # (1) blocks large editions before (2) can, so fixing either alone unblocks
-# almost nothing. Both live in tacklebox's engine (tuna-os/tacklebox#156) and
-# both are fixed as of the 8d8ba42 pin: #157 resumes a stalled body with a
-# Range request, #162 streams the post-unpack overlay into a second OPFS
-# arena instead of the heap.
-#
-# Measured on run 30590335098, that is enough for the edition upstream calls
-# its definition of done: flounder:xfce builds end to end, a 5.68 GB ISO in
-# 561 s, peak linear memory 619 MB against the 4096 ceiling.
-#
-# It did not make every edition buildable, and the wall that remains is a
-# *third* mechanism rather than either of the two above. marlin:niri (run
-# 30590343521) dies during the *base-layer* unpack, so before authoring and
-# before any overlay work: linear memory holds at 62 MB through layer 22 and
-# 71 MB through layer 31, then reaches 4096 MB by layer 48 and OOMs on a
-# 1 MiB block. A step of that shape is one retained allocation, not the
-# gradual climb a streaming leak would draw. Two candidates are already
-# tested and refuted, so don't re-spend the runs: opfsArena.Put's per-blob
-# 1 MiB buffer (45k of those churn to 12 MB, not 4 GB) and an oversized
-# zstd window (every layer of both images is many small concatenated
-# frames, max declared window 8 MB).
-#
-# Before another sweep, fix the telemetry, because it is what blocks the
-# diagnosis: reportMem only fires *after* Unpack returns, so an OOM inside
-# unpack prints no heap/objects/arena split at all, and the 30 s heartbeat
-# samples linear memory alone. The 71 MB -> 4096 MB step landed between two
-# samples and nothing recorded what held the bytes.
+# almost nothing. Both live in tacklebox's engine — tuna-os/tacklebox#156.
 name: CI
 
 on:
@@ -71,6 +46,10 @@ on:
         description: "Limit full-matrix to one edition slug (e.g. yellowfin-gnome). Empty = all."
         type: string
         default: ""
+      keep_iso:
+        description: "Publish each built ISO to R2 instead of discarding it (boot testing)"
+        type: boolean
+        default: false
   schedule:
     # Weekly: the app talks to live infra (relay, GHCR) that can drift.
     - cron: "40 5 * * 1"
@@ -138,6 +117,14 @@ jobs:
         run: go build -o tacklebox-app .
 
   native-windows:
+    # Dispatch is the full-matrix entry point, and a matrix sweep has no
+    # opinion about Windows. Nine cells used to drag nine copies of this
+    # job (and native-macos, and e2e) along with them — ~36 jobs proving
+    # nothing about the engine while competing for the same runner pool
+    # the cells need. main is not branch-protected, and required checks
+    # are evaluated from pull_request runs regardless, so skipping here
+    # cannot weaken a merge gate.
+    if: github.event_name != 'workflow_dispatch'
     runs-on: windows-latest
     # 15 was too tight — a real run hit exactly that ceiling and got
     # cancelled outright (mid-build, not a hang) while every other job
@@ -182,6 +169,8 @@ jobs:
         run: go build -o tacklebox-app.exe .
 
   native-macos:
+    # See native-windows.
+    if: github.event_name != 'workflow_dispatch'
     runs-on: macos-latest
     timeout-minutes: 15
     steps:
@@ -282,6 +271,10 @@ jobs:
             app/public/wasm_exec.js
 
   e2e:
+    # See native-windows. full-matrix needs [full-plan, wasm] only, so
+    # skipping this does not gate a sweep; deploy needs it but only fires
+    # on push to main, never on dispatch.
+    if: github.event_name != 'workflow_dispatch'
     needs: wasm
     runs-on: ubuntu-latest
     timeout-minutes: 30
@@ -459,6 +452,11 @@ jobs:
         env:
           TBOX_E2E_FULL: "1"
           TBOX_E2E_IMAGE: tuna-os/${{ matrix.edition.ref }}
+          # The spec deletes the ISO right after `saved:` prints, so
+          # without this there is nothing left to boot — and @full only
+          # ever proved format (size >100 MB, CD001 at sector 16), never
+          # boot. Set only when asked for, because these are multi-GB.
+          TBOX_E2E_ISO_COPY: ${{ github.event.inputs.keep_iso == 'true' && format('{0}/{1}.iso', runner.temp, matrix.edition.slug) || '' }}
         # The config's 900s per-test cap was sized against sailfin:base
         # (2.5 GB, 4.2 min). Desktop editions are several times that, so
         # the default would time out on payload size rather than on a bug.
@@ -474,6 +472,45 @@ jobs:
       - name: disk after build
         if: always()
         run: df -h /
+
+      # R2, not an upload-artifact: these are 5-7 GB each, and the org
+      # already publishes ISOs this way (same R2_* org secrets as the
+      # desktop-image repos). Under browser-iso/ so they are obviously not
+      # release artifacts — nothing here has been boot-tested, @full is a
+      # format proof only.
+      - name: publish ISO to R2
+        if: ${{ github.event.inputs.keep_iso == 'true' }}
+        env:
+          RCLONE_CONFIG_R2_TYPE: s3
+          RCLONE_CONFIG_R2_PROVIDER: Cloudflare
+          RCLONE_CONFIG_R2_REGION: auto
+          RCLONE_CONFIG_R2_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+          RCLONE_CONFIG_R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+          RCLONE_CONFIG_R2_ENDPOINT: ${{ secrets.R2_ENDPOINT }}
+          R2_BUCKET: ${{ secrets.R2_BUCKET }}
+          SLUG: ${{ matrix.edition.slug }}
+        run: |
+          set -euo pipefail
+          ISO="${RUNNER_TEMP}/${SLUG}.iso"
+          if [ ! -f "$ISO" ]; then
+            echo "::error::keep_iso was set but $ISO does not exist — the build did not reach the save step"
+            exit 1
+          fi
+          sudo apt-get update -qq && sudo apt-get install -y -qq rclone
+          DEST="browser-iso/${GITHUB_RUN_ID}/${SLUG}.iso"
+          rclone copyto --log-level INFO --s3-no-check-bucket "$ISO" "R2:${R2_BUCKET}/${DEST}"
+          sha=$(sha256sum "$ISO" | cut -d' ' -f1)
+          {
+            echo "### ${SLUG} ISO published"
+            echo ""
+            echo '```'
+            echo "r2://${R2_BUCKET}/${DEST}"
+            echo "bytes  $(stat -c%s "$ISO")"
+            echo "sha256 ${sha}"
+            echo '```'
+            echo ""
+            echo "Format proof only — this ISO has NOT been boot-tested."
+          } >> "$GITHUB_STEP_SUMMARY"
 
       # test-results/ holds Playwright's only-on-failure screenshot and
       # error-context.md. The first sweep uploaded just screenshots/ and
