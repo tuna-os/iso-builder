@@ -4,7 +4,7 @@ go 1.26.3
 
 require (
 	fyne.io/fyne/v2 v2.8.0
-	github.com/tuna-os/tacklebox v0.0.0-20260731020043-fd95174432b8
+	github.com/tuna-os/tacklebox v0.0.0-20260731033414-904e7cb6b30f
 	golang.org/x/crypto v0.54.0
 	golang.org/x/net v0.57.0
 )
