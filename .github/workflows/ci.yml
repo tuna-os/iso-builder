@@ -499,15 +499,36 @@ jobs:
           sudo apt-get update -qq && sudo apt-get install -y -qq rclone
           DEST="browser-iso/${GITHUB_RUN_ID}/${SLUG}.iso"
           rclone copyto --log-level INFO --s3-no-check-bucket "$ISO" "R2:${R2_BUCKET}/${DEST}"
+
+          # Verify server-side rather than trusting the exit code.
+          #
+          # The first flounder:xfce upload (run 30597566765) transferred all
+          # 5.288 GiB and then failed with `NotImplemented: 501` before
+          # rclone's attempt 2 "succeeded" in 0.2s — i.e. it verified rather
+          # than re-uploaded. That 501 is not random: S3 and R2 cannot
+          # CopyObject an object larger than 5 GB without a multipart copy,
+          # and every desktop edition clears 5 GB. So the one thing this
+          # step must not do is infer a good object from a zero exit code.
+          local_size=$(stat -c%s "$ISO")
+          remote_size=$(rclone lsjson --s3-no-check-bucket "R2:${R2_BUCKET}/${DEST}" | jq -r '.[0].Size // -1')
+          if [ "$remote_size" != "$local_size" ]; then
+            echo "::error::R2 object is $remote_size bytes, local ISO is $local_size — upload did not land intact"
+            exit 1
+          fi
+          echo "verified: R2 object matches local size ($local_size bytes)"
+
           sha=$(sha256sum "$ISO" | cut -d' ' -f1)
           {
             echo "### ${SLUG} ISO published"
             echo ""
             echo '```'
             echo "r2://${R2_BUCKET}/${DEST}"
-            echo "bytes  $(stat -c%s "$ISO")"
+            echo "bytes  ${local_size}"
             echo "sha256 ${sha}"
             echo '```'
+            echo ""
+            echo "Size verified against the R2 object. sha256 is of the local file —"
+            echo "R2 exposes no usable checksum for a multipart object this size."
             echo ""
             echo "Format proof only — this ISO has NOT been boot-tested."
           } >> "$GITHUB_STEP_SUMMARY"
