@@ -21,9 +21,9 @@ const PATH_ALLOW = new RegExp(
 const CORS = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Methods": "GET, HEAD, OPTIONS",
-  "Access-Control-Allow-Headers": "Authorization, Accept",
+  "Access-Control-Allow-Headers": "Authorization, Accept, Range",
   "Access-Control-Expose-Headers":
-    "Content-Length, Content-Type, Docker-Content-Digest, WWW-Authenticate",
+    "Content-Length, Content-Type, Docker-Content-Digest, WWW-Authenticate, Content-Range, Accept-Ranges",
   "Access-Control-Max-Age": "86400",
 };
 
@@ -126,14 +126,35 @@ export default {
 
     const upstream = new URL(url.pathname + url.search, UPSTREAM);
     const headers = new Headers();
-    for (const h of ["authorization", "accept"]) {
+    // Range must be forwarded, or the engine's resume path is structurally
+    // impossible: it reopens a stalled blob with `Range: bytes=<offset>-` and
+    // requires a 206 back. Dropping the header made ghcr.io answer 200 with
+    // the whole blob (measured: `Range: bytes=66587081-66587580` against
+    // relay.tunaos.org returned 200 + content-length 73082744, while the same
+    // request straight to ghcr.io returned 206 + content-range
+    // bytes 66587081-66587580/73082744), so every resume restarted the layer
+    // from byte 0 at best.
+    for (const h of ["authorization", "accept", "range"]) {
       const v = request.headers.get(h);
       if (v) headers.set(h, v);
     }
 
     // Blobs are content-addressed and immutable — let Cloudflare's edge cache
     // absorb repeat pulls so ghcr.io isn't hammered.
-    const cacheable = url.pathname.includes("/blobs/");
+    //
+    // Ranged requests deliberately opt out of that cache. A range and the full
+    // blob share a cache key here, so a reopen issued while the original
+    // request is still filling the cache does not race it — it waits on it.
+    // That is the wrong thing to wait on: the reopen only exists *because* that
+    // fill stalled, and on wasm the stalled body cannot be aborted, so the
+    // recovery request queues behind the failure it is recovering from and
+    // returns no headers at all. iso-builder's three red gnome cells all died
+    // exactly there — `reopen: layer download stalled: GET blobs/sha256:…: no
+    // response headers within 60s` (tacklebox#165's bound firing on the
+    // reopen), after the stall guard had announced `resuming, 4 attempt(s)
+    // left`. Resume is a rare recovery path, so going to origin for it costs
+    // almost no cache hit rate and keeps it predictable.
+    const cacheable = url.pathname.includes("/blobs/") && !headers.has("range");
     const resp = await fetch(upstream, {
       method: request.method,
       headers,
