@@ -25,11 +25,36 @@
 #   2. The wasm32 4 GiB ceiling. Go targets 32-bit linear memory, so the
 #      unpacked tree, the EROFS image and the ISO share one address space.
 #      flounder:xfce is the *smallest* edition and therefore the only one to
-#      survive (1) and reach authoring, where it dies with
+#      survive (1) and reach authoring, where it died with
 #      `runtime: out of memory ... 4252303360 in use` at 4094 MB.
 #
 # (1) blocks large editions before (2) can, so fixing either alone unblocks
-# almost nothing. Both live in tacklebox's engine — tuna-os/tacklebox#156.
+# almost nothing. Both live in tacklebox's engine (tuna-os/tacklebox#156) and
+# both are fixed as of the 8d8ba42 pin: #157 resumes a stalled body with a
+# Range request, #162 streams the post-unpack overlay into a second OPFS
+# arena instead of the heap.
+#
+# Measured on run 30590335098, that is enough for the edition upstream calls
+# its definition of done: flounder:xfce builds end to end, a 5.68 GB ISO in
+# 561 s, peak linear memory 619 MB against the 4096 ceiling.
+#
+# It did not make every edition buildable, and the wall that remains is a
+# *third* mechanism rather than either of the two above. marlin:niri (run
+# 30590343521) dies during the *base-layer* unpack, so before authoring and
+# before any overlay work: linear memory holds at 62 MB through layer 22 and
+# 71 MB through layer 31, then reaches 4096 MB by layer 48 and OOMs on a
+# 1 MiB block. A step of that shape is one retained allocation, not the
+# gradual climb a streaming leak would draw. Two candidates are already
+# tested and refuted, so don't re-spend the runs: opfsArena.Put's per-blob
+# 1 MiB buffer (45k of those churn to 12 MB, not 4 GB) and an oversized
+# zstd window (every layer of both images is many small concatenated
+# frames, max declared window 8 MB).
+#
+# Before another sweep, fix the telemetry, because it is what blocks the
+# diagnosis: reportMem only fires *after* Unpack returns, so an OOM inside
+# unpack prints no heap/objects/arena split at all, and the 30 s heartbeat
+# samples linear memory alone. The 71 MB -> 4096 MB step landed between two
+# samples and nothing recorded what held the bytes.
 name: CI
 
 on:
@@ -373,6 +398,31 @@ jobs:
         edition: ${{ fromJSON(needs.full-plan.outputs.editions) }}
     steps:
       - uses: actions/checkout@v7
+
+      # Do NOT add a disk-reclaim step here, and do not move the browser
+      # profile to a roomier filesystem. Both were tried and measured, and
+      # neither does anything.
+      #
+      # The reasoning that motivates them is sound in general — Chrome sizes
+      # the OPFS quota from the profile partition's free space, which is why
+      # fixtures.js keeps the profile off a 2 GB /tmp on dev boxes. It just
+      # does not bind on this runner:
+      #
+      #   /dev/root 145G  58G used  88G avail   (before any reclaim)
+      #   /dev/root 145G  37G used 109G avail   (after jlumbroso/free-disk-space)
+      #   storage quota ≈ 10.7 GB free          (the app, in BOTH cases)
+      #
+      # 21 GB reclaimed moved the quota by nothing. /mnt is not a separate
+      # filesystem on these images either — `df -h / /mnt` prints /dev/root
+      # twice — so staging the profile there relocates it nowhere. And 10.7 GB
+      # is the same figure himachal reports on completely different hardware,
+      # so this reads as a Chrome-side cap, not a disk-derived number.
+      #
+      # The reclaim also cost ~90 s per cell, which over a nine-cell sweep is
+      # real time spent buying nothing.
+      #
+      # If OPFS headroom ever does become the blocker, the lever is
+      # navigator.storage.persist() or spilling less into OPFS — not df.
 
       # The whole point of this job is testing the engine, so it must be the
       # built one, not the committed blob.
