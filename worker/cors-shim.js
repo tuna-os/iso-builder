@@ -21,9 +21,18 @@ const PATH_ALLOW = new RegExp(
 const CORS = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Methods": "GET, HEAD, OPTIONS",
-  "Access-Control-Allow-Headers": "Authorization, Accept",
+  // Range is not a CORS-safelisted request header, so a ranged fetch needs a
+  // preflight — and without Range named here the browser rejects it before the
+  // request is ever sent. That is half of why layer resume never worked
+  // through this shim.
+  "Access-Control-Allow-Headers": "Authorization, Accept, Range",
+  // Accept-Ranges and Content-Range have to be readable or the client cannot
+  // tell a 206 honouring its offset from a 200 replaying the blob from zero —
+  // a distinction tacklebox rejects on precisely because getting it wrong
+  // duplicates the prefix into a resumed stream.
   "Access-Control-Expose-Headers":
-    "Content-Length, Content-Type, Docker-Content-Digest, WWW-Authenticate",
+    "Content-Length, Content-Range, Accept-Ranges, Content-Type, " +
+    "Docker-Content-Digest, WWW-Authenticate",
   "Access-Control-Max-Age": "86400",
 };
 
@@ -126,19 +135,32 @@ export default {
 
     const upstream = new URL(url.pathname + url.search, UPSTREAM);
     const headers = new Headers();
-    for (const h of ["authorization", "accept"]) {
+    // range belongs here: tacklebox resumes a stalled layer by reopening at
+    // the byte offset already consumed, and dropping the header turned every
+    // one of those into a request for the whole blob from zero. The client
+    // rejects a 200 answering a ranged request (it would duplicate the prefix
+    // into the stream and break digest verification), so resume could not
+    // succeed through this shim under any circumstances.
+    for (const h of ["authorization", "accept", "range"]) {
       const v = request.headers.get(h);
       if (v) headers.set(h, v);
     }
 
     // Blobs are content-addressed and immutable — let Cloudflare's edge cache
     // absorb repeat pulls so ghcr.io isn't hammered.
-    const cacheable = url.pathname.includes("/blobs/");
+    //
+    // Never for a ranged request. cacheEverything keys on the URL, and a blob's
+    // URL is the same whether the response is the whole object or bytes
+    // 78462766- of it. Caching a 206 under that key would serve a partial body
+    // to the next puller asking for the full blob — silent, and corrupt in a
+    // way that surfaces as a digest mismatch a gigabyte later, if at all.
+    const isRange = request.headers.has("range");
+    const cacheable = url.pathname.includes("/blobs/") && !isRange;
     const resp = await fetch(upstream, {
       method: request.method,
       headers,
       redirect: "follow",
-      cf: cacheable ? { cacheEverything: true, cacheTtl: 604800 } : undefined,
+      cf: cacheable ? { cacheEverything: true, cacheTtl: 604800 } : { cacheTtl: 0 },
     });
 
     const out = new Headers(resp.headers);
