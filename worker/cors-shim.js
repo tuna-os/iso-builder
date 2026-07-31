@@ -142,18 +142,23 @@ export default {
     // Blobs are content-addressed and immutable — let Cloudflare's edge cache
     // absorb repeat pulls so ghcr.io isn't hammered.
     //
-    // Ranged requests deliberately opt out of that cache. A range and the full
-    // blob share a cache key here, so a reopen issued while the original
-    // request is still filling the cache does not race it — it waits on it.
-    // That is the wrong thing to wait on: the reopen only exists *because* that
-    // fill stalled, and on wasm the stalled body cannot be aborted, so the
-    // recovery request queues behind the failure it is recovering from and
-    // returns no headers at all. iso-builder's three red gnome cells all died
-    // exactly there — `reopen: layer download stalled: GET blobs/sha256:…: no
-    // response headers within 60s` (tacklebox#165's bound firing on the
-    // reopen), after the stall guard had announced `resuming, 4 attempt(s)
-    // left`. Resume is a rare recovery path, so going to origin for it costs
-    // almost no cache hit rate and keeps it predictable.
+    // Ranged requests deliberately opt out of that cache: a range and the full
+    // blob share a cache key here, and serving a recovery request out of a
+    // cache entry the failing request is still filling is not a state worth
+    // reasoning about. Resume is a rare path, so going to origin for it costs
+    // almost no hit rate and keeps it predictable.
+    //
+    // This opt-out is NOT the fix for iso-builder#49 (the red gnome cells
+    // dying at `reopen: layer download stalled: … no response headers within
+    // 60s`). It was originally committed as if it were, on a theory that the
+    // reopen queues behind the stalled fill. That theory is REFUTED: a ranged
+    // GET issued during an in-flight full fetch of the same blob returned 206
+    // in 0.19 s — faster than the same request with no contention at all
+    // (0.46 s). The relay is exonerated for #49 by three further measurements
+    // — full 74 MB blob in 3.7 s, the same blob throttled to 700 KB/s (slower
+    // than the browser) completing at 104 s with no stall, and an identical
+    // 104 s straight to ghcr.io. Whatever kills those cells is browser- or
+    // wasm-side. Do not re-open this file looking for it.
     const cacheable = url.pathname.includes("/blobs/") && !headers.has("range");
     const resp = await fetch(upstream, {
       method: request.method,
