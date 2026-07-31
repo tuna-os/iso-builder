@@ -374,49 +374,30 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
-      # Free space is not housekeeping here, it is the OPFS quota.
+      # Do NOT add a disk-reclaim step here, and do not move the browser
+      # profile to a roomier filesystem. Both were tried and measured, and
+      # neither does anything.
       #
-      # fixtures.js puts the Chrome profile under a root that defaults to
-      # $HOME, and Chrome sizes origin-private storage from that partition's
-      # free space. Authoring the smallest edition peaks at 8.0 GB (base
-      # arena 2.35 + post arena 2.55 + EROFS ~5), and the arenas cannot be
-      # dropped afterwards because the ISO write still reads kernel and
-      # initramfs bodies out of them. A stock ubuntu-latest / has ~14 GB, so
-      # the profile was on much the tightest filesystem available.
+      # The reasoning that motivates them is sound in general — Chrome sizes
+      # the OPFS quota from the profile partition's free space, which is why
+      # fixtures.js keeps the profile off a 2 GB /tmp on dev boxes. It just
+      # does not bind on this runner:
       #
-      # Both halves of the tacklebox convention apply (see its ci.yml): free
-      # ~30 GB on /, and use /mnt, the ~75 GB NVMe that free runners ship
-      # and nothing else here touches. The second is the one that moves the
-      # number — the quota follows the profile's partition, so reclaiming /
-      # does not help a profile that could have been on the big disk all
-      # along. Both are kept: / still holds npm, the chromium cache and the
-      # downloaded ISO.
+      #   /dev/root 145G  58G used  88G avail   (before any reclaim)
+      #   /dev/root 145G  37G used 109G avail   (after jlumbroso/free-disk-space)
+      #   storage quota ≈ 10.7 GB free          (the app, in BOTH cases)
       #
-      # A quota refusal does not surface as an OOM. tboxWasmMB() only samples
-      # linear memory, so exceeding OPFS arrives as a failed write somewhere
-      # downstream — the second-order symptom class that cost three separate
-      # 20-minute runs to attribute during #156. Hence df on both, recorded
-      # next to the result rather than inferred from a failure.
+      # 21 GB reclaimed moved the quota by nothing. /mnt is not a separate
+      # filesystem on these images either — `df -h / /mnt` prints /dev/root
+      # twice — so staging the profile there relocates it nowhere. And 10.7 GB
+      # is the same figure himachal reports on completely different hardware,
+      # so this reads as a Chrome-side cap, not a disk-derived number.
       #
-      # tool-cache stays: setup-node and the Playwright browser cache live
-      # there. large-packages stays too — minutes of apt work for a couple of
-      # GB not needed once android/dotnet/haskell are gone.
-      - name: free disk space
-        uses: jlumbroso/free-disk-space@54081f138730dfa15788a46383842cd2f914a1be # main as of 2026-06-09
-        with:
-          tool-cache: false
-          android: true
-          dotnet: true
-          haskell: true
-          large-packages: false
-          docker-images: true
-          swap-storage: false
-
-      - name: stage the browser profile on /mnt
-        run: sudo install -d -o "$(id -u)" -g "$(id -g)" /mnt/tbx-prof
-
-      - name: disk before build
-        run: df -h / /mnt
+      # The reclaim also cost ~90 s per cell, which over a nine-cell sweep is
+      # real time spent buying nothing.
+      #
+      # If OPFS headroom ever does become the blocker, the lever is
+      # navigator.storage.persist() or spilling less into OPFS — not df.
 
       # The whole point of this job is testing the engine, so it must be the
       # built one, not the committed blob.
@@ -453,7 +434,6 @@ jobs:
         env:
           TBOX_E2E_FULL: "1"
           TBOX_E2E_IMAGE: tuna-os/${{ matrix.edition.ref }}
-          TBOX_E2E_PROFILE_ROOT: /mnt/tbx-prof
         # The config's 900s per-test cap was sized against sailfin:base
         # (2.5 GB, 4.2 min). Desktop editions are several times that, so
         # the default would time out on payload size rather than on a bug.
