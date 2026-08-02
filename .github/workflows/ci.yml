@@ -456,7 +456,7 @@ jobs:
           # without this there is nothing left to boot — and @full only
           # ever proved format (size >100 MB, CD001 at sector 16), never
           # boot. Set only when asked for, because these are multi-GB.
-          TBOX_E2E_ISO_COPY: ${{ github.event.inputs.keep_iso == 'true' && format('{0}/{1}.iso', runner.temp, matrix.edition.slug) || '' }}
+          TBOX_E2E_ISO_COPY: ${{ format('{0}/{1}.iso', runner.temp, matrix.edition.slug) }}
         # The config's 900s per-test cap was sized against sailfin:base
         # (2.5 GB, 4.2 min). Desktop editions are several times that, so
         # the default would time out on payload size rather than on a bug.
@@ -468,6 +468,39 @@ jobs:
         # of a frozen progress bar, so a broken cell reports the reason
         # instead of buying 20 idle minutes of runner time.
         run: npx playwright test --grep @full --timeout=2700000
+
+      - name: verify LUKS install + reboot under QEMU (${{ matrix.edition.slug }})
+        timeout-minutes: 25
+        env:
+          SLUG: ${{ matrix.edition.slug }}
+        run: |
+          set -euo pipefail
+          ISO="${RUNNER_TEMP}/${SLUG}.iso"
+          if [ ! -f "$ISO" ]; then
+            echo "::error::ISO file $ISO was not produced by Playwright build"
+            exit 1
+          fi
+
+          echo "Installing QEMU, OVMF, swtpm dependencies..."
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends \
+            qemu-system-x86 qemu-utils ovmf swtpm swtpm-tools socat netpbm python3-pil
+
+          echo "Enabling KVM permissions..."
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | \
+            sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm || true
+
+          echo "Cloning tunaOS test scripts..."
+          git clone --depth=1 https://github.com/tuna-os/tunaOS.git /tmp/tunaos
+
+          echo "Running LUKS installation and reboot verification..."
+          sudo /tmp/tunaos/scripts/iso-e2e.sh "$ISO" --luks \
+            --output "luks-verify-${SLUG}" \
+            --timeout 900
+
+          echo "LUKS installation and reboot verification completed successfully!"
 
       - name: disk after build
         if: always()
