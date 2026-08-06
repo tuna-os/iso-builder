@@ -508,6 +508,12 @@ jobs:
         timeout-minutes: 25
         env:
           SLUG: ${{ matrix.edition.slug }}
+          # Same resolution as the build step above. The harness needs the
+          # image ref for its generic (no-fisherman) install path: reference
+          # cells (aurora, bluefin) ship no fisherman, so iso-e2e.sh pulls
+          # this ref in the guest and installs with plain bootc
+          # (tuna-os/tunaOS#1030, tacklebox#178).
+          TBOX_E2E_IMAGE: ${{ contains(matrix.edition.ref, '/') && matrix.edition.ref || format('tuna-os/{0}', matrix.edition.ref) }}
         run: |
           set -euo pipefail
           ISO="${RUNNER_TEMP}/${SLUG}.iso"
@@ -531,7 +537,9 @@ jobs:
           git clone --depth=1 https://github.com/tuna-os/tunaOS.git /tmp/tunaos
 
           echo "Running LUKS installation and reboot verification..."
-          sudo /tmp/tunaos/scripts/iso-e2e.sh "$ISO" --luks \
+          # sudo sanitizes the environment; the VAR=val prefix carries the
+          # image ref through to the harness.
+          sudo TBOX_E2E_IMAGE="$TBOX_E2E_IMAGE" /tmp/tunaos/scripts/iso-e2e.sh "$ISO" --luks \
             --output "luks-verify-${SLUG}" \
             --timeout 900
 
