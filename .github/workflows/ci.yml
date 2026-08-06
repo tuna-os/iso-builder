@@ -7,10 +7,13 @@
 #   full-matrix — dispatch-only, one cell per base variant, each actually
 #                 building and validating a multi-GB ISO.
 #
-# @full is a *format* proof, not a boot proof: it asserts size >100 MB and
-# the ISO9660 CD001 magic at sector 16. Nothing here boots the image — the
-# QEMU machinery lives in native/, and browser/CI boot parity is tracked in
-# tuna-os/tunaOS#673. Don't read a green full-matrix as "these ISOs boot".
+# @full itself is a *format* proof: it asserts size >100 MB and the ISO9660
+# CD001 magic at sector 16. The *boot* proof is the step chained behind it
+# in full-matrix, which installs each built ISO with LUKS under QEMU and
+# verifies the installed system reboots (tunaOS scripts/iso-e2e.sh). A green
+# full-matrix cell therefore means: built in the browser, installed with
+# full-disk encryption, and booted — not just "looks like an ISO".
+# (Browser/CI boot parity history: tuna-os/tunaOS#673.)
 #
 # Expect this job to be mostly red today, and don't "fix" it by raising
 # budgets. Re-running the failures with linear memory sampled found *two*
@@ -43,7 +46,7 @@ on:
         type: boolean
         default: false
       only:
-        description: "Limit full-matrix to one edition slug (e.g. yellowfin-gnome). Empty = all."
+        description: "Limit full-matrix to edition slugs, comma-separated (e.g. yellowfin-gnome or bluefin-dakota,aurora-stable). Empty = all."
         type: string
         default: ""
       keep_iso:
@@ -353,11 +356,13 @@ jobs:
           python3 - <<'PY' >> "$GITHUB_OUTPUT"
           import json, os
           eds = json.load(open("e2e/editions.json"))
-          only = os.environ.get("ONLY", "").strip()
+          only = [s.strip() for s in os.environ.get("ONLY", "").split(",") if s.strip()]
           if only:
-              eds = [e for e in eds if e["slug"] == only]
-              if not eds:
-                  raise SystemExit(f"no edition with slug {only!r} in e2e/editions.json")
+              known = {e["slug"] for e in eds}
+              missing = [s for s in only if s not in known]
+              if missing:
+                  raise SystemExit(f"no edition with slug(s) {missing} in e2e/editions.json")
+              eds = [e for e in eds if e["slug"] in only]
           print("editions=" + json.dumps(eds))
           print("count=" + str(len(eds)))
           PY
@@ -369,6 +374,23 @@ jobs:
   # image size) tracks the base distro, while the desktop mostly changes
   # payload size. Nine cells covers every base; 37 would mostly re-prove
   # the same unpack path at ~4x the runner cost.
+  #
+  # Plus two *known-good upstream references*: projectbluefin/dakota:stable
+  # and ublue-os/aurora:stable (org-qualified refs in editions.json, so the
+  # tuna-os/ prefix below must not apply to them). The TunaOS images are
+  # still stabilising, so a red TunaOS cell is ambiguous — image bug or
+  # pipeline bug? The references resolve that: they are published, widely
+  # deployed images that are known to boot, so a red reference cell can only
+  # mean the pipeline (engine, relay, installer, boot chain) broke. Run just
+  # the pipeline check with `only: bluefin-dakota,aurora-stable`. Both flow
+  # through the relay, whose org allowlist covers projectbluefin and
+  # ublue-os (worker/cors-shim.js) — note the *deployed* relay only picks
+  # that up when the change reaches main (deploy job), so a dispatch from a
+  # PR branch that predates the deployed allowlist will 403 on these two.
+  # At ~3.1 GB (dakota) and ~3.6 GB (aurora) of compressed layers they sit
+  # in the same size band as yellowfin:gnome/bonito:kde, so expect the same
+  # two engine bugs above to bite until tacklebox#156 lands — the cells are
+  # still worth having, as the baseline that turns green first.
   #
   # Dispatch-only: each cell pulls a multi-GB image and writes a multi-GB
   # ISO, so this is not a per-push gate.
@@ -384,9 +406,9 @@ jobs:
       fail-fast: false
       # Each cell pulls gigabytes through the relay; don't stampede it.
       max-parallel: 3
-      # ref is what the picker builds; slug is the same with ':' dropped,
-      # because artifact names reject it and GitHub expressions have no
-      # replace() to derive one.
+      # ref is what the builder is given; slug is a filename-safe id (no
+      # ':' or '/'), stored explicitly because artifact names reject those
+      # characters and GitHub expressions have no replace() to derive one.
       matrix:
         edition: ${{ fromJSON(needs.full-plan.outputs.editions) }}
     steps:
@@ -451,7 +473,10 @@ jobs:
         working-directory: e2e
         env:
           TBOX_E2E_FULL: "1"
-          TBOX_E2E_IMAGE: tuna-os/${{ matrix.edition.ref }}
+          # TunaOS editions are stored unqualified (yellowfin:gnome) and get
+          # the tuna-os/ prefix; reference editions carry their own org
+          # (projectbluefin/dakota:stable) and pass through as-is.
+          TBOX_E2E_IMAGE: ${{ contains(matrix.edition.ref, '/') && matrix.edition.ref || format('tuna-os/{0}', matrix.edition.ref) }}
           # The spec deletes the ISO right after `saved:` prints, so
           # without this there is nothing left to boot — and @full only
           # ever proved format (size >100 MB, CD001 at sector 16), never
@@ -509,8 +534,8 @@ jobs:
       # R2, not an upload-artifact: these are 5-7 GB each, and the org
       # already publishes ISOs this way (same R2_* org secrets as the
       # desktop-image repos). Under browser-iso/ so they are obviously not
-      # release artifacts — nothing here has been boot-tested, @full is a
-      # format proof only.
+      # release artifacts. This step only runs when every prior step passed,
+      # so a published ISO has cleared the LUKS install + reboot check above.
       - name: publish ISO to R2
         if: ${{ github.event.inputs.keep_iso == 'true' }}
         env:
@@ -563,7 +588,7 @@ jobs:
             echo "Size verified against the R2 object. sha256 is of the local file —"
             echo "R2 exposes no usable checksum for a multipart object this size."
             echo ""
-            echo "Format proof only — this ISO has NOT been boot-tested."
+            echo "This ISO passed the LUKS install + reboot verification under QEMU."
           } >> "$GITHUB_STEP_SUMMARY"
 
       # test-results/ holds Playwright's only-on-failure screenshot and

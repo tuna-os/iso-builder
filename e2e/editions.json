@@ -7,5 +7,7 @@
   { "ref": "marlin:niri", "slug": "marlin-niri", "base": "Arch Linux" },
   { "ref": "skipjack:gnome", "slug": "skipjack-gnome", "base": "CentOS Stream 10" },
   { "ref": "albacore:gnome", "slug": "albacore-gnome", "base": "AlmaLinux 10" },
-  { "ref": "guppy:gnome", "slug": "guppy-gnome", "base": "Gentoo" }
+  { "ref": "guppy:gnome", "slug": "guppy-gnome", "base": "Gentoo" },
+  { "ref": "projectbluefin/dakota:stable", "slug": "bluefin-dakota", "base": "Bluefin GNOME (known-good reference)" },
+  { "ref": "ublue-os/aurora:stable", "slug": "aurora-stable", "base": "Aurora KDE, Fedora 44 (known-good reference)" }
 ]
