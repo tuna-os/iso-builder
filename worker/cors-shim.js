@@ -122,6 +122,32 @@ export default {
       return o;
     }
 
+    // DDI artifact relay (tacklebox#172): the Frostyard sysupdate
+    // repository serves no CORS headers (verified: plain 200, no
+    // Access-Control-*), so the browser DDI build path goes through
+    // here. Channels are a short hand-curated list, same posture as the
+    // GHCR org allowlist — never a general relay. Filenames are a single
+    // path segment; versioned artifacts are immutable and edge-cached,
+    // the SHA256SUMS index is not (it moves on every publish).
+    {
+      const m = url.pathname.match(/^\/ddi\/(snowfield|snow|cayo)\/([A-Za-z0-9._+-]+)$/);
+      if (m) {
+        if (request.method !== "GET" && request.method !== "HEAD") {
+          return new Response("method not allowed", { status: 405, headers: CORS });
+        }
+        const upstream = `https://repository.frostyard.org/os/native/v1/${m[1]}/x86-64/${m[2]}`;
+        const cacheable = m[2] !== "SHA256SUMS";
+        const resp = await fetch(upstream, {
+          method: request.method,
+          redirect: "follow",
+          cf: cacheable ? { cacheEverything: true, cacheTtl: 604800 } : undefined,
+        });
+        const out = new Headers(resp.headers);
+        for (const [k, v] of Object.entries(CORS)) out.set(k, v);
+        return new Response(resp.body, { status: resp.status, headers: out });
+      }
+    }
+
     if (request.method !== "GET" && request.method !== "HEAD") {
       return new Response("method not allowed", { status: 405, headers: CORS });
     }

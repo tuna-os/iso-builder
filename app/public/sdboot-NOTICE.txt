@@ -1,0 +1,15 @@
+systemd-bootx64.efi — the systemd-boot EFI boot manager, served as a
+static asset for the DDI build path (tacklebox#172).
+
+A DDI artifact set (mkosi/sysupdate split artifacts, e.g. the Frostyard
+channels) publishes only a UKI, whose baked cmdline mounts a verity root
+by GPT partition UUID — impossible on an ISO9660. The live ISO therefore
+boots systemd-boot with a BLS entry pointing at the UKI's extracted
+kernel/initrd, and this binary is where the engine's `sdboot` input
+comes from (tboxBuildDdiIso opts.sdboot). Same-origin fetch: no CORS,
+no relay involved.
+
+Provenance: Ubuntu package systemd-boot-efi 255.4-1ubuntu8.16 (amd64),
+file /usr/lib/systemd/boot/efi/systemd-bootx64.efi, unmodified.
+systemd is LGPL-2.1-or-later; source: https://github.com/systemd/systemd
+(and Ubuntu source packages at https://launchpad.net/ubuntu/+source/systemd).
