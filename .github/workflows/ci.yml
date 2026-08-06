@@ -397,9 +397,19 @@ jobs:
   full-matrix:
     needs: [full-plan, wasm]
     runs-on: ubuntu-latest
-    # Two 20-min phase budgets plus install/checkout, under the per-test cap
-    # so Playwright is what trips first and names the stage that stalled.
-    timeout-minutes: 60
+    # Sized so the per-test cap (75 min, below) trips first and Playwright
+    # names the stage that stalled. 60/45 was enough on a healthy runner
+    # (aurora reached ISO streaming 16 min into the build step, run
+    # 31077005259) but not on a slow one: run 31080444050 was still
+    # building at 58 min with the spec's stall watchdogs never firing —
+    # progress kept ticking, just glacially — and the job cap killed it
+    # with the LUKS step never reached and no logs published. The
+    # watchdogs (5 s death detection, minutes-scale stall budgets) are
+    # what bound genuinely dead builds; these outer caps only bound
+    # slow-but-moving ones, so the extra headroom costs nothing on real
+    # failures. 105 = 75 (build test) + 25 (LUKS verify step's own cap)
+    # + install/checkout slack, so neither inner cap can be pre-empted.
+    timeout-minutes: 105
     strategy:
       # A coverage sweep is worthless if the first red cell cancels the
       # rest — the whole point is learning which bases are broken.
@@ -492,7 +502,7 @@ jobs:
         # seconds once the engine is provably dead, or after a few minutes
         # of a frozen progress bar, so a broken cell reports the reason
         # instead of buying 20 idle minutes of runner time.
-        run: npx playwright test --grep @full --timeout=2700000
+        run: npx playwright test --grep @full --timeout=4500000
 
       - name: verify LUKS install + reboot under QEMU (${{ matrix.edition.slug }})
         timeout-minutes: 25
