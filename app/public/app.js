@@ -357,6 +357,43 @@ async function inspect() {
   }
 }
 
+// isoSink picks where ISO chunks go: a user-picked file stream, or an
+// OPFS spool file whose disk-backed File feeds the download. NEVER
+// renderer memory: buffering a ~9 GB aurora ISO as JS chunks exhausted
+// entire CI runner VMs ~15 s into ISO streaming — twice, identically
+// (runs 31077005259 and 31087786433) — surfacing as "runner has
+// received a shutdown signal" with no evidence left behind. The engine
+// already requires OPFS, so the spool is always available; the file is
+// left in place after download (the Blob URL references it) and simply
+// overwritten by the next build.
+// Returns null when the user cancels the picker.
+async function isoSink(name) {
+  const autodl = new URLSearchParams(location.search).get("autodl");
+  if (window.showSaveFilePicker && !autodl) {
+    try {
+      const h = await showSaveFilePicker({ suggestedName: name, types: [{ description: "ISO image", accept: { "application/x-iso9660-image": [".iso"] } }] });
+      return { kind: "picker", w: await h.createWritable() };
+    } catch (e) {
+      if (e.name === "AbortError") return null;
+      throw e;
+    }
+  }
+  const root = await navigator.storage.getDirectory();
+  const fh = await root.getFileHandle("tbox-download.iso", { create: true });
+  return { kind: "opfs", w: await fh.createWritable(), fh };
+}
+
+// finishIsoSink closes the sink and, for the OPFS spool, triggers the
+// browser download from the disk-backed File.
+async function finishIsoSink(s, name) {
+  await s.w.close();
+  if (s.kind === "opfs") {
+    const f = await s.fh.getFile();
+    const a = Object.assign(document.createElement("a"), { href: URL.createObjectURL(f), download: name });
+    a.click();
+  }
+}
+
 // prepareDdi is the catalog fast-path: no pull, no unpack, no facts to
 // detect — the Build button lights up immediately.
 function prepareDdi(ch) {
@@ -393,31 +430,17 @@ async function buildDdi(ch) {
     const base = `${SHIM}/ddi/${ch.id}`;
     log(`building from DDI channel ${ch.id} via ${base}`);
     const name = `${ch.id}-live.iso`;
-    let sink, chunks = [];
-    const autodl = new URLSearchParams(location.search).get("autodl");
-    if (window.showSaveFilePicker && !autodl) {
-      try {
-        const h = await showSaveFilePicker({ suggestedName: name, types: [{ description: "ISO image", accept: { "application/x-iso9660-image": [".iso"] } }] });
-        sink = await h.createWritable();
-      } catch (e) {
-        if (e.name === "AbortError") {
-          log("Build cancelled by user.");
-          $("stage").textContent = "Build cancelled.";
-          return;
-        }
-        else throw e;
-      }
+    const s = await isoSink(name);
+    if (!s) {
+      log("Build cancelled by user.");
+      $("stage").textContent = "Build cancelled.";
+      return;
     }
     const t0 = performance.now();
     const bytes = await tboxBuildDdiIso({ base, stem: ch.stem, label, sdboot }, (u8) => {
-      if (sink) sink.write(u8); else chunks.push(u8.slice());
+      s.w.write(u8);
     });
-    if (sink) await sink.close();
-    else {
-      const blob = new Blob(chunks, { type: "application/x-iso9660-image" });
-      const a = Object.assign(document.createElement("a"), { href: URL.createObjectURL(blob), download: name });
-      a.click();
-    }
+    await finishIsoSink(s, name);
     const dt = ((performance.now() - t0) / 1000).toFixed(1);
     $("stage").textContent = `Done — ${(bytes / 1e9).toFixed(2)} GB in ${dt}s.`;
     notify("ISO ready 🐟", `${(bytes / 1e9).toFixed(2)} GB written in ${dt}s`);
@@ -458,34 +481,20 @@ async function build() {
       log("initramfs: auto (tbox overlay appended to the image's own initramfs)");
     }
     const name = `tunaos-${($("image").value.split("/").pop() || "image").replace(/[:]/g, "-")}.iso`;
-    let sink, chunks = [];
-    const autodl = new URLSearchParams(location.search).get("autodl");
-    if (window.showSaveFilePicker && !autodl) {
-      try {
-        const h = await showSaveFilePicker({ suggestedName: name, types: [{ description: "ISO image", accept: { "application/x-iso9660-image": [".iso"] } }] });
-        sink = await h.createWritable();
-      } catch (e) {
-        if (e.name === "AbortError") {
-          log("Build cancelled by user.");
-          $("stage").textContent = "Build cancelled.";
-          return;
-        }
-        else throw e;
-      }
+    const s = await isoSink(name);
+    if (!s) {
+      log("Build cancelled by user.");
+      $("stage").textContent = "Build cancelled.";
+      return;
     }
     const t0 = performance.now();
     const flatpaks = fpCollect();
     const packages = pkgCollect();
     const extraRun = repoCmds.slice();
     const bytes = await tboxBuildIso({ label, initrd, flatpaks, packages, extraRun }, (u8) => {
-      if (sink) sink.write(u8); else chunks.push(u8.slice());
+      s.w.write(u8);
     });
-    if (sink) await sink.close();
-    else {
-      const blob = new Blob(chunks, { type: "application/x-iso9660-image" });
-      const a = Object.assign(document.createElement("a"), { href: URL.createObjectURL(blob), download: name });
-      a.click();
-    }
+    await finishIsoSink(s, name);
     const dt = ((performance.now() - t0) / 1000).toFixed(1);
     $("stage").textContent = `Done — ${(bytes / 1e9).toFixed(2)} GB in ${dt}s.`;
     notify("ISO ready 🐟", `${(bytes / 1e9).toFixed(2)} GB written in ${dt}s`);
@@ -679,7 +688,7 @@ $("image").addEventListener("input", () => {
 if (!window.showSaveFilePicker) {
   const note = $("browsernote");
   if (note) {
-    note.textContent = "Warning: Your browser does not support streaming downloads (File System Access API). The ISO will be buffered in memory first, which might crash on large images. For best results, use a Chromium-based browser (e.g. Chrome, Edge, Brave) or enable direct file saving.";
+    note.textContent = "Note: Your browser does not support direct file saving (File System Access API). The ISO will be spooled inside browser storage first and then downloaded, which needs free disk space for two copies. For best results, use a Chromium-based browser (e.g. Chrome, Edge, Brave).";
     note.classList.remove("hidden");
   }
 }
