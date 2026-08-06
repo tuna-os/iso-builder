@@ -303,6 +303,7 @@ function parseImage(raw) {
 }
 
 async function inspect() {
+  selectedDdi = null; // inspecting an image ref is the OCI path
   updateShim();
   const raw = $("image").value;
   if (!raw.includes(":")) { log("image must be <repo>:<tag>"); return; }
@@ -356,7 +357,84 @@ async function inspect() {
   }
 }
 
+// prepareDdi is the catalog fast-path: no pull, no unpack, no facts to
+// detect — the Build button lights up immediately.
+function prepareDdi(ch) {
+  selectedDdi = ch;
+  $("image").value = "";
+  $("buildcard").classList.remove("hidden");
+  $("postcard").classList.add("hidden");
+  $("facts").classList.add("hidden");
+  $("stage").textContent = `${ch.name} — DDI channel, no inspection needed. Ready to build.`;
+  $("build").disabled = false;
+  updateShare();
+}
+
+async function buildDdi(ch) {
+  askNotify();
+  $("build").disabled = true;
+  $("postcard").classList.add("hidden");
+  const label = ($("label").value || ch.id.toUpperCase()).toUpperCase().replace(/[^A-Z0-9_]/g, "_");
+  let stopWatch = () => {};
+  try {
+    if (typeof tboxBuildDdiIso !== "function") {
+      throw new Error("this engine build has no DDI support (tboxBuildDdiIso missing) — hard-refresh to load the current tbox.wasm");
+    }
+    await loadWasm();
+    stopWatch = watchEngineMemory();
+    // The loader is a same-origin static asset (see sdboot-NOTICE.txt):
+    // DDI artifact sets ship only a UKI, which cannot boot an ISO9660
+    // verbatim — the engine extracts its kernel/initrd and drives them
+    // through systemd-boot + a BLS entry with live kargs.
+    log("fetching systemd-boot (static asset)…");
+    const sb = await fetch("systemd-bootx64.efi");
+    if (!sb.ok) throw new Error(`systemd-boot asset: ${sb.status}`);
+    const sdboot = new Uint8Array(await sb.arrayBuffer());
+    const base = `${SHIM}/ddi/${ch.id}`;
+    log(`building from DDI channel ${ch.id} via ${base}`);
+    const name = `${ch.id}-live.iso`;
+    let sink, chunks = [];
+    const autodl = new URLSearchParams(location.search).get("autodl");
+    if (window.showSaveFilePicker && !autodl) {
+      try {
+        const h = await showSaveFilePicker({ suggestedName: name, types: [{ description: "ISO image", accept: { "application/x-iso9660-image": [".iso"] } }] });
+        sink = await h.createWritable();
+      } catch (e) {
+        if (e.name === "AbortError") {
+          log("Build cancelled by user.");
+          $("stage").textContent = "Build cancelled.";
+          return;
+        }
+        else throw e;
+      }
+    }
+    const t0 = performance.now();
+    const bytes = await tboxBuildDdiIso({ base, stem: ch.stem, label, sdboot }, (u8) => {
+      if (sink) sink.write(u8); else chunks.push(u8.slice());
+    });
+    if (sink) await sink.close();
+    else {
+      const blob = new Blob(chunks, { type: "application/x-iso9660-image" });
+      const a = Object.assign(document.createElement("a"), { href: URL.createObjectURL(blob), download: name });
+      a.click();
+    }
+    const dt = ((performance.now() - t0) / 1000).toFixed(1);
+    $("stage").textContent = `Done — ${(bytes / 1e9).toFixed(2)} GB in ${dt}s.`;
+    notify("ISO ready 🐟", `${(bytes / 1e9).toFixed(2)} GB written in ${dt}s`);
+    log(`iso written: ${bytes} bytes`);
+    $("postcard").classList.remove("hidden");
+  } catch (e) {
+    log("error: " + e);
+    $("stage").textContent = "Build failed.";
+    notify("ISO build failed", String(e).slice(0, 120));
+  } finally {
+    stopWatch();
+    $("build").disabled = false;
+  }
+}
+
 async function build() {
+  if (selectedDdi) return buildDdi(selectedDdi);
   updateShim();
   askNotify();
   $("build").disabled = true;
@@ -471,6 +549,21 @@ const DESKTOPS = {
   niri:   { name: "Niri",       emoji: "🪟" },
   xfce:   { name: "XFCE",       emoji: "🐭" },
 };
+// DDI channels (tacklebox#172): mkosi/sysupdate split artifacts — a UKI
+// plus an already-EROFS root partition. The catalog declares everything
+// the build needs (base path on the relay, artifact stem, desktop), so
+// there is NO inspection step: nothing exists to unpack until build
+// time, and the declared facts are authoritative. This also sidesteps
+// the wasm32 unpack/author ceiling entirely — the root streams through
+// as-is. snowfield is the designated desktop channel; cayo is the small
+// headless smoke channel.
+const DDI_CHANNELS = [
+  { id: "snowfield", stem: "snowfield-ab", name: "Frostyard Snowfield — GNOME (DDI)", desktop: "gnome" },
+  { id: "snow",      stem: "snow-ab",      name: "Frostyard Snow — GNOME (DDI)",      desktop: "gnome" },
+  { id: "cayo",      stem: "cayo-ab",      name: "Frostyard Cayo — headless (DDI)",   desktop: "none" },
+];
+let selectedDdi = null;
+
 const VARIANTS = [
   { id: "yellowfin", name: "AlmaLinux Kitten 10 (flagship)", des: ["gnome", "kde", "cosmic", "niri"] },
   { id: "bonito",    name: "Fedora 44",                      des: ["gnome", "kde", "cosmic", "niri", "xfce"] },
@@ -495,8 +588,25 @@ function syncEditionSelection() {
 function renderEditions() {
   const box = $("editions");
   if (!box) return;
-  const v = currentVariant();
   box.innerHTML = "";
+  // DDI variants: one chip, no inspect — the catalog already knows
+  // everything (see DDI_CHANNELS).
+  const ddi = DDI_CHANNELS.find((c) => `ddi:${c.id}` === $("variant").value);
+  if (ddi) {
+    const meta = DESKTOPS[ddi.desktop] || { name: "Headless", emoji: "🖥️" };
+    const b = document.createElement("button");
+    b.type = "button";
+    b.className = "edition";
+    b.dataset.de = ddi.desktop;
+    b.innerHTML = `<span class="emoji">${meta.emoji}</span>${meta.name}<small>${ddi.id} · DDI</small>`;
+    b.onclick = () => {
+      prepareDdi(ddi); // one click → Build enabled, no inspection
+      b.classList.add("selected");
+    };
+    box.appendChild(b);
+    return;
+  }
+  const v = currentVariant();
   for (const de of v.des) {
     const meta = DESKTOPS[de] || { name: de, emoji: "🖥️" };
     const b = document.createElement("button");
@@ -505,6 +615,7 @@ function renderEditions() {
     b.dataset.de = de;
     b.innerHTML = `<span class="emoji">${meta.emoji}</span>${meta.name}<small>${v.id}</small>`;
     b.onclick = () => {
+      selectedDdi = null;
       $("image").value = `${v.id}:${de}`;
       syncEditionSelection();
       updateShare();
@@ -521,9 +632,20 @@ for (const v of VARIANTS) {
   o.textContent = v.name;
   $("variant").appendChild(o);
 }
+for (const c of DDI_CHANNELS) {
+  const o = document.createElement("option");
+  o.value = `ddi:${c.id}`;
+  o.textContent = c.name;
+  $("variant").appendChild(o);
+}
 $("variant").addEventListener("change", renderEditions);
 renderEditions();
-$("image").addEventListener("input", syncEditionSelection);
+$("image").addEventListener("input", () => {
+  // Typing an image ref is the OCI path — a lingering DDI selection
+  // would hijack the Build button.
+  if ($("image").value.trim()) selectedDdi = null;
+  syncEditionSelection();
+});
 
 // Apply URL params.
 {
@@ -543,6 +665,15 @@ $("image").addEventListener("input", syncEditionSelection);
   // Deep links prefill only — a page load must never start a multi-GB
   // pull by itself. Opt into auto-run with &autorun=1.
   if (q.get("image") && q.get("autorun") === "1") inspect();
+  // DDI deep link: ?ddi=snowfield selects the channel (no inspection to
+  // run); &autorun=1 goes straight to the build — the future e2e hook.
+  const dch = DDI_CHANNELS.find((c) => c.id === q.get("ddi"));
+  if (dch) {
+    $("variant").value = `ddi:${dch.id}`;
+    renderEditions();
+    prepareDdi(dch);
+    if (q.get("autorun") === "1") buildDdi(dch);
+  }
 }
 
 if (!window.showSaveFilePicker) {
