@@ -141,9 +141,17 @@ test.describe("iso builder", () => {
     // fatal would fail healthy builds. A pageerror does count, because
     // inspect() and build() catch their own failures into #log, so an
     // exception escaping to window.onerror leaves nothing to recover.
+    //
+    // `!!! tbox failed:` is the engine's own terminal-failure line (stdout,
+    // relayed by wasm_exec.js). It is deterministic, not a crash: the page stays
+    // alive serving "Build failed.", so without this marker the run only dies
+    // when the stall watchdog gives up. The first aurora-stable cell spent 10
+    // idle minutes exactly that way, with the actual reason ("image ships no
+    // systemd-boot ... need a supplied one") buried in the log tail instead
+    // of the error title.
     let death = null;
     const watchLine = (line) => {
-      if (!death && /fatal error:|runtime: out of memory|^\[pageerror\]|panic: |exit code: [1-9]/m.test(line)) {
+      if (!death && /fatal error:|runtime: out of memory|^\[pageerror\]|panic: |exit code: [1-9]|!!! tbox failed:/m.test(line)) {
         death = line.trim();
       }
     };
