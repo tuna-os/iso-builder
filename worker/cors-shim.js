@@ -6,16 +6,21 @@
 //
 // Deploy: wrangler deploy (route e.g. ghcr-shim.tunaos.org/*).
 //
-//   GET /token?scope=repository:tuna-os/<image>:pull
-//   GET /v2/tuna-os/<image>/manifests/<ref>
-//   GET /v2/tuna-os/<image>/blobs/sha256:<digest>
+//   GET /token?scope=repository:<org>/<image>:pull
+//   GET /v2/<org>/<image>/manifests/<ref>
+//   GET /v2/<org>/<image>/blobs/sha256:<digest>
 
 const UPSTREAM = "https://ghcr.io";
-// Only public images in this org — the shim must never become a general relay.
-const ORG = "tuna-os";
+// Only public images in these orgs — the shim must never become a general
+// relay, so this stays a short hand-curated list, not a pattern. tuna-os is
+// the product; projectbluefin and ublue-os host the known-good reference
+// images (dakota:stable, aurora:stable) that CI builds alongside the TunaOS
+// editions, so a red cell distinguishes "our pipeline broke" from "our
+// still-stabilising images broke" (ci.yml full-matrix).
+const ORGS = ["tuna-os", "projectbluefin", "ublue-os"];
 
 const PATH_ALLOW = new RegExp(
-  `^/(token$|v2/?$|v2/${ORG}/[a-z0-9._-]+/(manifests|blobs)/[A-Za-z0-9._:@-]+$)`
+  `^/(token$|v2/?$|v2/(?:${ORGS.join("|")})/[a-z0-9._-]+/(manifests|blobs)/[A-Za-z0-9._:@-]+$)`
 );
 
 const CORS = {
