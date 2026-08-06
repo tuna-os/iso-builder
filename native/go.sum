@@ -71,8 +71,8 @@ github.com/srwiley/rasterx v0.0.0-20220730225603-2ab79fcdd4ef h1:Ch6Q+AZUxDBCVqd
 github.com/srwiley/rasterx v0.0.0-20220730225603-2ab79fcdd4ef/go.mod h1:nXTWP6+gD5+LUJ8krVhhoeHjvHTutPxMYl5SvkcnJNE=
 github.com/stretchr/testify v1.11.1 h1:7s2iGBzp5EwR7/aIZr8ao5+dra3wiQyKjjFuvgVKu7U=
 github.com/stretchr/testify v1.11.1/go.mod h1:wZwfW3scLgRK+23gO65QZefKpKQRnfz6sD981Nm4B6U=
-github.com/tuna-os/tacklebox v0.0.0-20260806053309-f629d9ae8c46 h1:i3+xV2DmLq3o/q6dwWD/6jpJTcN5ily3iRlvCkK97xQ=
-github.com/tuna-os/tacklebox v0.0.0-20260806053309-f629d9ae8c46/go.mod h1:r6bGFSnK9ggwj0WtklNynXiJwozgDMG9GnMDZWqR+Mc=
+github.com/tuna-os/tacklebox v0.0.0-20260806125740-de25546584d3 h1:PRD4+yWWevmrm+s9GsnHRYKkCqNJ2fCkD/cX0xLo8WU=
+github.com/tuna-os/tacklebox v0.0.0-20260806125740-de25546584d3/go.mod h1:r6bGFSnK9ggwj0WtklNynXiJwozgDMG9GnMDZWqR+Mc=
 github.com/yuin/goldmark v1.8.2 h1:kEGpgqJXdgbkhcOgBxkC0X0PmoPG1ZyoZ117rDVp4zE=
 github.com/yuin/goldmark v1.8.2/go.mod h1:ip/1k0VRfGynBgxOz0yCqHrbZXhcjxyuS66Brc7iBKg=
 golang.org/x/crypto v0.54.0 h1:YLIA59K4fiNzHzjnZt2tUJQjQtUWfWbeHBqKtk3eScw=
