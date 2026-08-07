@@ -618,9 +618,19 @@ jobs:
         uses: actions/upload-artifact@v7
         with:
           name: full-${{ matrix.edition.slug }}-diag
+          # luks-verify-*/ is the harness output dir: serial logs and
+          # screenshots are the only evidence that explains a guest that
+          # never came up (the dakota boot hang in run 31131445981 left no
+          # uploaded serial at all). The excludes matter: the qcow2 disks
+          # are tens of GB, and the swtpm state and per-run ssh key have no
+          # diagnostic value.
           path: |
             e2e/screenshots/
             e2e/test-results/
+            luks-verify-*/
+            !luks-verify-*/*.qcow2
+            !luks-verify-*/swtpm/
+            !luks-verify-*/vsock-ssh-key*
           if-no-files-found: ignore
 
   deploy:
