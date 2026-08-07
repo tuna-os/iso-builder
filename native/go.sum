@@ -73,6 +73,8 @@ github.com/stretchr/testify v1.11.1 h1:7s2iGBzp5EwR7/aIZr8ao5+dra3wiQyKjjFuvgVKu
 github.com/stretchr/testify v1.11.1/go.mod h1:wZwfW3scLgRK+23gO65QZefKpKQRnfz6sD981Nm4B6U=
 github.com/tuna-os/tacklebox v0.0.0-20260806163401-db6ef71c3490 h1:gj1bxJXXiMkVdx1I/8jJ68OUxPx/RKnyjNI6aNPEq0w=
 github.com/tuna-os/tacklebox v0.0.0-20260806163401-db6ef71c3490/go.mod h1:r6bGFSnK9ggwj0WtklNynXiJwozgDMG9GnMDZWqR+Mc=
+github.com/tuna-os/tacklebox v0.0.0-20260807113229-560a12d46322 h1:Trtl6PO/LTBGi5noorUUR2oE8ujAxYrZC+yoUI5+d+4=
+github.com/tuna-os/tacklebox v0.0.0-20260807113229-560a12d46322/go.mod h1:XxaSMAtw5c3Qa5fM64CJ7DTQPLtZ63LB/sGU92yWi0U=
 github.com/yuin/goldmark v1.8.2 h1:kEGpgqJXdgbkhcOgBxkC0X0PmoPG1ZyoZ117rDVp4zE=
 github.com/yuin/goldmark v1.8.2/go.mod h1:ip/1k0VRfGynBgxOz0yCqHrbZXhcjxyuS66Brc7iBKg=
 golang.org/x/crypto v0.54.0 h1:YLIA59K4fiNzHzjnZt2tUJQjQtUWfWbeHBqKtk3eScw=
