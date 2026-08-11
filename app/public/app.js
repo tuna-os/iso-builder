@@ -356,6 +356,7 @@ async function inspect() {
       const { quota, usage } = await navigator.storage.estimate();
       log(`storage quota ≈ ${((quota - usage) / 1e9).toFixed(1)} GB free`);
     }
+    checkStorageQuota();
     await loadWasm();
     stopWatch = watchEngineMemory();
     const { registry, image } = parseImage(raw);
@@ -413,9 +414,41 @@ async function isoSink(name) {
       throw e;
     }
   }
-  const root = await navigator.storage.getDirectory();
-  const fh = await root.getFileHandle("tbox-download.iso", { create: true });
-  return { kind: "opfs", w: await fh.createWritable(), fh };
+  try {
+    const root = await navigator.storage.getDirectory();
+    const fh = await root.getFileHandle("tbox-download.iso", { create: true });
+    const w = await fh.createWritable();
+    return { kind: "opfs", w, fh };
+  } catch (e) {
+    if (e.name === "QuotaExceededError") {
+      throw new Error("OPFS storage quota exceeded — the build needs more space than the browser allows. " +
+        "Free up origin storage or use a Chromium-based browser.");
+    }
+    throw e;
+  }
+}
+
+// checkStorageQuota estimates available OPFS space and fails fast when
+// the build is unlikely to fit. The engine needs three arenas at once:
+// layer bodies, post-unpack writes, and the authored EROFS — together
+// roughly 3–4× the compressed image size. On flounder:xfce that is ~8 GB
+// against ~10.7 GB free, and every other edition is larger (#48).
+//
+// This gate rejects impossible builds before they consume time and
+// quota half-way through (#156). It uses a conservative multiplier
+// because the arenas scale with the uncompressed tree.
+const MIN_FREE_GB = 9.5; // below this the smallest edition is at risk
+function checkStorageQuota() {
+  if (!navigator.storage?.estimate) return;
+  navigator.storage.estimate().then(({ quota, usage }) => {
+    const freeGB = (quota - usage) / 1e9;
+    if (freeGB < MIN_FREE_GB) {
+      log(`warning: only ${freeGB.toFixed(1)} GB free of ${(quota / 1e9).toFixed(1)} GB quota — some editions may not fit`);
+      if (freeGB < 4.0) {
+        log(`error: insufficient storage (${freeGB.toFixed(1)} GB free). Free space or use a Chromium-based browser that reports more quota.`);
+      }
+    }
+  }).catch(() => {});
 }
 
 // finishIsoSink closes the sink and, for the OPFS spool, triggers the
@@ -506,7 +539,13 @@ async function buildDdi(ch) {
     $("postcard").classList.remove("hidden");
   } catch (e) {
     log("error: " + e);
-    $("stage").textContent = "Build failed.";
+    if (/QuotaExceededError|quota exceeded/i.test(String(e))) {
+      $("stage").textContent = "Build failed — storage quota exceeded.";
+    } else if (/download stalled/i.test(String(e))) {
+      $("stage").textContent = "Build failed — layer download stalled (try again; the browser may recover on a fresh page load).";
+    } else {
+      $("stage").textContent = "Build failed.";
+    }
     notify("ISO build failed", String(e).slice(0, 120));
   } finally {
     stopWatch();
@@ -560,7 +599,13 @@ async function build() {
     $("postcard").classList.remove("hidden");
   } catch (e) {
     log("error: " + e);
-    $("stage").textContent = "Build failed.";
+    if (/QuotaExceededError|quota exceeded/i.test(String(e))) {
+      $("stage").textContent = "Build failed — storage quota exceeded.";
+    } else if (/download stalled/i.test(String(e))) {
+      $("stage").textContent = "Build failed — layer download stalled (try again; the browser may recover on a fresh page load).";
+    } else {
+      $("stage").textContent = "Build failed.";
+    }
     notify("ISO build failed", String(e).slice(0, 120));
   } finally {
     stopWatch();
@@ -750,6 +795,48 @@ if (!window.showSaveFilePicker) {
     note.classList.remove("hidden");
   }
 }
+
+// ── Blob-download fetch wrapper (iso-builder#49) ─────────────────────────
+// The Go wasm engine streams OCI blob bodies through fetch(), reading
+// in 32 KB chunks and awaiting an OPFS write between each. When the
+// OPFS write takes long enough Chrome's HTTP/2 receive window fills,
+// the server stops sending, the engine declares a stall and abandons
+// the stream, then reopens with a Range header to resume. That reopen
+// fetch often hangs — no response headers within 60 s.
+//
+// The working theory (confirmed in curl, refuted for the relay): the
+// abandoned stream leaves the HTTP/2 connection in a state where new
+// streams never receive response headers. Adding a cache-busting query
+// parameter to the reopen URL forces Chrome to use a fresh connection,
+// sidestepping the poisoned one.
+//
+// This runs after wasm_exec.js has replaced window.fetch; it wraps
+// whatever fetch is current (Go's streaming adapter or the native one)
+// and only touches blob URLs, the one path that streams multi-MB bodies.
+(function() {
+  const _fetch = window.fetch;
+  window.fetch = function(url, opts) {
+    if (opts === undefined) opts = {};
+    const urlStr = (typeof url === "string") ? url : ((url && url.url) ? url.url : String(url));
+    if (!urlStr || !urlStr.includes("/blobs/")) return _fetch(url, opts);
+
+    // Reopen requests carry a Range header — the engine is trying to
+    // resume a stalled download. Adding a cache-busting query parameter
+    // prevents Chrome from reusing the HTTP/2 connection that may have
+    // been left in a bad state by the abandoned stream.
+    const headers = opts.headers;
+    if (headers) {
+      const hasRange = Object.keys(headers).some(function(k) {
+        return k.toLowerCase() === "range";
+      });
+      if (hasRange) {
+        const sep = urlStr.includes("?") ? "&" : "?";
+        url = urlStr + sep + "_tbox_retry=" + Date.now();
+      }
+    }
+    return _fetch(url, opts);
+  };
+})();
 
 globalThis.switchTab = (e, id) => {
   const container = e.target.closest(".card");
