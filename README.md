@@ -67,6 +67,10 @@ sequenceDiagram
 ## Develop
 
 ```sh
+# Build the WASM engine first (not committed to git — see "Updating the WASM Engine")
+GOOS=js GOARCH=wasm go build -o app/public/tbox.wasm ./cmd/tbwasm   # from the pinned tacklebox checkout
+cp "$(go env GOROOT)/lib/wasm/wasm_exec.js" app/public/
+
 # Serve the app locally
 cd app/public && python3 -m http.server 8080   # → http://localhost:8080
 
