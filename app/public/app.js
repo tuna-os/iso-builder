@@ -229,6 +229,18 @@ function addRepo() {
 let wasmMemory = null;
 globalThis.tboxWasmMB = () => (wasmMemory ? wasmMemory.buffer.byteLength / 1048576 : -1);
 
+// JS heap is a separate ceiling from wasm linear memory. The wasm memory
+// guard (watchEngineMemory) only sees the engine side; data can accumulate
+// on the JS side (blob URLs, OPFS write buffers, download intermediates)
+// with no warning at all — see tuna-os/iso-builder#47. This makes it
+// visible in the @full heartbeat alongside tboxWasmMB().
+globalThis.tboxJsHeapMB = () => {
+  if (typeof performance !== 'undefined' && performance.memory && performance.memory.usedJSHeapSize) {
+    return performance.memory.usedJSHeapSize / 1048576;
+  }
+  return -1;
+};
+
 function loadWasm() {
   if (wasmReady) return wasmReady;
   const go = new Go();
@@ -261,26 +273,49 @@ const WASM_WARN_MB = 3400; // still climbing, but the outcome is rarely in doubt
 const WASM_WEDGED_MB = 3900; // parked here + no progress == out of address space
 const WEDGE_AFTER_MS = 120_000; // must outlast a genuinely slow ISO-streaming stage
 
+// JS heap ceiling is separate from wasm; a 5.68 GB ISO download can blow
+// past JS heap limits with no console output (tuna-os/iso-builder#47).
+// The threshold is conservative: a healthy build rarely exceeds ~200 MB in
+// JS heap, so anything climbing past 1 GB indicates a buffering problem.
+const JSHEAP_WARN_MB = 1024;
+
 function watchEngineMemory() {
   let warned = false;
+  let jsWarned = false;
   let done = false;
   lastProgressAt = Date.now();
   const timer = setInterval(() => {
+    if (done) return;
     const mb = globalThis.tboxWasmMB();
-    if (mb < 0 || done) return;
-    if (!warned && mb >= WASM_WARN_MB) {
-      warned = true;
-      log(`warning: engine memory ${Math.round(mb)} MB of a ~${WASM32_LIMIT_MB} MB hard limit — large images can exhaust it`);
+    const jsMb = globalThis.tboxJsHeapMB();
+
+    // Heartbeat: log both heaps so a JS-side death (which leaves no
+    // wasm trace) is distinguishable from a wasm-side one.
+    if (jsMb > 0) {
+      log(`heartbeat: wasm=${Math.round(mb)}MB js=${Math.round(jsMb)}MB`);
     }
-    if (mb >= WASM_WEDGED_MB && Date.now() - lastProgressAt > WEDGE_AFTER_MS) {
-      done = true;
-      clearInterval(timer);
-      const msg = `Out of memory — this image is too large for the browser engine (used ${Math.round(mb)} MB of its ~${WASM32_LIMIT_MB} MB limit).`;
-      $("stage").textContent = msg;
-      log(`error: ${msg}`);
-      log("the engine cannot recover from this — reload the page to start over.");
-      log("tracking: https://github.com/tuna-os/tacklebox/issues/156");
-      notify("ISO build failed", "Image too large for the browser engine");
+
+    if (mb > 0) {
+      if (!warned && mb >= WASM_WARN_MB) {
+        warned = true;
+        log(`warning: engine memory ${Math.round(mb)} MB of a ~${WASM32_LIMIT_MB} MB hard limit — large images can exhaust it`);
+      }
+      if (mb >= WASM_WEDGED_MB && Date.now() - lastProgressAt > WEDGE_AFTER_MS) {
+        done = true;
+        clearInterval(timer);
+        const msg = `Out of memory — this image is too large for the browser engine (used ${Math.round(mb)} MB of its ~${WASM32_LIMIT_MB} MB limit).`;
+        $("stage").textContent = msg;
+        log(`error: ${msg}`);
+        log("the engine cannot recover from this — reload the page to start over.");
+        log("tracking: https://github.com/tuna-os/tacklebox/issues/156");
+        notify("ISO build failed", "Image too large for the browser engine");
+        return;
+      }
+    }
+
+    if (jsMb > 0 && !jsWarned && jsMb >= JSHEAP_WARN_MB) {
+      jsWarned = true;
+      log(`warning: JS heap ${Math.round(jsMb)} MB — the download path may be buffering in renderer memory (tuna-os/iso-builder#47)`);
     }
   }, 5_000);
   return () => { done = true; clearInterval(timer); };
@@ -384,14 +419,37 @@ async function isoSink(name) {
 }
 
 // finishIsoSink closes the sink and, for the OPFS spool, triggers the
-// browser download from the disk-backed File.
+// browser download from the disk-backed File. It tries to pipe through
+// showSaveFilePicker first (zero JS-heap overhead), and falls back to a
+// blob URL that is promptly revoked (tuna-os/iso-builder#47).
 async function finishIsoSink(s, name) {
   await s.w.close();
-  if (s.kind === "opfs") {
-    const f = await s.fh.getFile();
-    const a = Object.assign(document.createElement("a"), { href: URL.createObjectURL(f), download: name });
-    a.click();
+  if (s.kind !== "opfs") return;
+
+  const f = await s.fh.getFile();
+
+  // Best path: pipe the OPFS file straight to a user-chosen file.
+  // Zero renderer-memory overhead — the browser streams disk→disk.
+  if (window.showSaveFilePicker) {
+    try {
+      const h = await showSaveFilePicker({ suggestedName: name, types: [{ description: "ISO image", accept: { "application/x-iso9660-image": [".iso"] } }] });
+      const w = await h.createWritable();
+      await f.stream().pipeTo(w);
+      return;
+    } catch (e) {
+      if (e.name === "AbortError") return;
+      // Fall through to blob-URL download on any other error (including
+      // transient-activation expiry after a long build).
+    }
   }
+
+  // Fallback: blob URL from the OPFS File. Chromium serves these from
+  // the OPFS backing store without buffering the whole file in JS heap;
+  // the URL is revoked after the download has had time to start.
+  const url = URL.createObjectURL(f);
+  const a = Object.assign(document.createElement("a"), { href: url, download: name });
+  a.click();
+  setTimeout(() => URL.revokeObjectURL(url), 120_000);
 }
 
 // prepareDdi is the catalog fast-path: no pull, no unpack, no facts to
