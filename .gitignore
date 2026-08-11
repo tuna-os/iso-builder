@@ -9,3 +9,8 @@ e2e/.cache/
 .wrangler/
 native/e2e/screenshots/
 .claude/
+
+# WASM engine build artifacts — built in CI (wasm job) from pinned tacklebox.
+# See "Updating the WASM Engine" in README for local rebuild.
+app/public/tbox.wasm
+app/public/wasm_exec.js
