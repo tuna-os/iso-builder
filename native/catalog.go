@@ -20,11 +20,14 @@ var catalogAssetsFS embed.FS
 // three other bootc/ublue-style projects — see buildExternalCatalog's
 // doc comment for why "verified" matters here specifically.
 type curatedImage struct {
-	Name        string
-	Image       string // <repo>:<tag>
-	Org         string // display grouping — project/publisher, not TunaOS's own desktop-variant axis
-	Description string
-	LogoAsset   string // filename under assets/, e.g. "tuna-os.png" — "" falls back to no icon
+	Name          string
+	Image         string // <repo>:<tag>
+	Org           string // display grouping — project/publisher, not TunaOS's own desktop-variant axis
+	Description   string
+	LogoAsset     string   // filename under assets/, e.g. "tuna-os.png" — "" falls back to no icon
+	Base          string   // searchable base/variant identifier
+	Desktop       string   // searchable desktop identifier (gnome, kde, ...)
+	Architectures []string // architectures advertised by the image
 }
 
 // desktopName maps a desktop ID to its display name — copied from
@@ -83,11 +86,14 @@ func buildCuratedImages() []curatedImage {
 				name = de
 			}
 			out = append(out, curatedImage{
-				Name:        v.name + " — " + name,
-				Image:       fmt.Sprintf("ghcr.io/tuna-os/%s:%s", v.id, de),
-				Org:         "TunaOS",
-				Description: "Part of the TunaOS project's own curated fish-themed image set.",
-				LogoAsset:   "tuna-os.png",
+				Name:          v.name + " — " + name,
+				Image:         fmt.Sprintf("ghcr.io/tuna-os/%s:%s", v.id, de),
+				Org:           "TunaOS",
+				Description:   "Part of the TunaOS project's own curated fish-themed image set.",
+				LogoAsset:     "tuna-os.png",
+				Base:          v.id,
+				Desktop:       de,
+				Architectures: []string{"amd64", "arm64"},
 			})
 		}
 	}
@@ -122,53 +128,74 @@ func buildCuratedImages() []curatedImage {
 func buildExternalCatalog() []curatedImage {
 	return []curatedImage{
 		{
-			Name:        "Bluefin (GNOME)",
-			Image:       "ghcr.io/projectbluefin/bluefin:stable",
-			Org:         "Project Bluefin",
-			Description: "The next-generation Linux workstation, from the project's own dedicated org (projectbluefin.io).",
-			LogoAsset:   "projectbluefin.png",
+			Name:          "Bluefin (GNOME)",
+			Image:         "ghcr.io/projectbluefin/bluefin:stable",
+			Org:           "Project Bluefin",
+			Description:   "The next-generation Linux workstation, from the project's own dedicated org (projectbluefin.io).",
+			LogoAsset:     "projectbluefin.png",
+			Base:          "fedora",
+			Desktop:       "gnome",
+			Architectures: []string{"amd64", "arm64"},
 		},
 		{
-			Name:        "Bluefin DX (GNOME, developer-focused)",
-			Image:       "ghcr.io/ublue-os/bluefin-dx:latest",
-			Org:         "Universal Blue",
-			Description: "Bluefin's developer-focused variant — container toolboxes, dev tooling preinstalled.",
-			LogoAsset:   "ublue-os.png",
+			Name:          "Bluefin DX (GNOME, developer-focused)",
+			Image:         "ghcr.io/ublue-os/bluefin-dx:latest",
+			Org:           "Universal Blue",
+			Description:   "Bluefin's developer-focused variant — container toolboxes, dev tooling preinstalled.",
+			LogoAsset:     "ublue-os.png",
+			Base:          "fedora",
+			Desktop:       "gnome",
+			Architectures: []string{"amd64", "arm64"},
 		},
 		{
-			Name:        "Aurora (KDE Plasma)",
-			Image:       "ghcr.io/ublue-os/aurora:latest",
-			Org:         "Universal Blue",
-			Description: "Universal Blue's KDE Plasma desktop image — Bluefin's KDE sibling.",
-			LogoAsset:   "ublue-os.png",
+			Name:          "Aurora (KDE Plasma)",
+			Image:         "ghcr.io/ublue-os/aurora:latest",
+			Org:           "Universal Blue",
+			Description:   "Universal Blue's KDE Plasma desktop image — Bluefin's KDE sibling.",
+			LogoAsset:     "ublue-os.png",
+			Base:          "fedora",
+			Desktop:       "kde",
+			Architectures: []string{"amd64", "arm64"},
 		},
 		{
-			Name:        "Aurora DX (KDE Plasma, developer-focused)",
-			Image:       "ghcr.io/ublue-os/aurora-dx:latest",
-			Org:         "Universal Blue",
-			Description: "Aurora's developer-focused variant — container toolboxes, dev tooling preinstalled.",
-			LogoAsset:   "ublue-os.png",
+			Name:          "Aurora DX (KDE Plasma, developer-focused)",
+			Image:         "ghcr.io/ublue-os/aurora-dx:latest",
+			Org:           "Universal Blue",
+			Description:   "Aurora's developer-focused variant — container toolboxes, dev tooling preinstalled.",
+			LogoAsset:     "ublue-os.png",
+			Base:          "fedora",
+			Desktop:       "kde",
+			Architectures: []string{"amd64", "arm64"},
 		},
 		{
-			Name:        "Bazzite (gaming-focused)",
-			Image:       "ghcr.io/ublue-os/bazzite:latest",
-			Org:         "Universal Blue",
-			Description: "Universal Blue's gaming-focused image — SteamOS-like, built for handhelds and living-room PCs.",
-			LogoAsset:   "ublue-os.png",
+			Name:          "Bazzite (gaming-focused)",
+			Image:         "ghcr.io/ublue-os/bazzite:latest",
+			Org:           "Universal Blue",
+			Description:   "Universal Blue's gaming-focused image — SteamOS-like, built for handhelds and living-room PCs.",
+			LogoAsset:     "ublue-os.png",
+			Base:          "fedora",
+			Desktop:       "unknown",
+			Architectures: []string{"amd64", "arm64"},
 		},
 		{
-			Name:        "Zirconium (Niri)",
-			Image:       "ghcr.io/zirconium-dev/zirconium:latest",
-			Org:         "Zirconium",
-			Description: "An opinionated Niri (scrollable-tiling Wayland compositor) bootc image.",
-			LogoAsset:   "zirconium-dev.png",
+			Name:          "Zirconium (Niri)",
+			Image:         "ghcr.io/zirconium-dev/zirconium:latest",
+			Org:           "Zirconium",
+			Description:   "An opinionated Niri (scrollable-tiling Wayland compositor) bootc image.",
+			LogoAsset:     "zirconium-dev.png",
+			Base:          "freedesktop-sdk",
+			Desktop:       "niri",
+			Architectures: []string{"amd64", "arm64"},
 		},
 		{
-			Name:        "Zirconium Hawaii (Niri, Freedesktop-SDK based)",
-			Image:       "ghcr.io/zirconium-dev/zirconium-hawaii:latest",
-			Org:         "Zirconium",
-			Description: "Zirconium's Niri image built on top of Freedesktop-SDK instead of a traditional distro base.",
-			LogoAsset:   "zirconium-dev.png",
+			Name:          "Zirconium Hawaii (Niri, Freedesktop-SDK based)",
+			Image:         "ghcr.io/zirconium-dev/zirconium-hawaii:latest",
+			Org:           "Zirconium",
+			Description:   "Zirconium's Niri image built on top of Freedesktop-SDK instead of a traditional distro base.",
+			LogoAsset:     "zirconium-dev.png",
+			Base:          "freedesktop-sdk",
+			Desktop:       "niri",
+			Architectures: []string{"amd64", "arm64"},
 		},
 	}
 }
