@@ -19,6 +19,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync/atomic"
 
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/app"
@@ -123,6 +124,7 @@ func main() {
 	driveInfo := widget.NewLabel("")
 	driveInfo.Wrapping = fyne.TextWrapWord
 	managed := false // whether the currently-selected drive is already tacklebox-managed
+	var resetDriveUI func()
 
 	refreshDrives := func() {
 		found, err := SafeWriteTargets()
@@ -140,6 +142,15 @@ func main() {
 			names[i] = label
 		}
 		driveSelect.Options = names
+		// A refresh may remove the selected device (or replace it with a
+		// different device at the same index). Clear all selection-dependent
+		// state before presenting the new list; otherwise a stale "managed"
+		// value could bypass the destructive-write confirmation.
+		managed = false
+		driveSelect.SetSelected("")
+		if resetDriveUI != nil {
+			resetDriveUI()
+		}
 		driveSelect.Refresh()
 		if len(found) == 0 {
 			status.SetText("No safe drives found. Plug in a USB drive and click Refresh.")
@@ -304,19 +315,34 @@ func main() {
 		container.NewBorder(nil, nil, nil, removeBtn, removeEnvEntry),
 	)
 	managePanel.Hide() // shown only once a managed drive is detected, see OnChanged below
+	resetDriveUI = func() {
+		managed = false
+		buildBtn.SetText("Write to drive")
+		managePanel.Hide()
+		driveInfo.SetText("")
+	}
 
+	var driveCheckGeneration uint64
 	driveSelect.OnChanged = func(string) {
 		drvIdx := driveSelect.SelectedIndex()
 		if drvIdx < 0 || drvIdx >= len(drives) {
 			return
 		}
 		drive := drives[drvIdx]
+		generation := atomic.AddUint64(&driveCheckGeneration, 1)
 		driveInfo.SetText("Checking " + drive.Path + "…")
 		buildBtn.SetText("Write to drive")
 		managePanel.Hide()
 		go func() {
 			isManaged, out := isManagedDrive(drive.Path)
 			fyne.Do(func() {
+				// The user may have selected another drive while status was
+				// being probed. Never let an old result change the current
+				// drive's write mode or confirmation behavior.
+				selected := driveSelect.SelectedIndex()
+				if generation != atomic.LoadUint64(&driveCheckGeneration) || selected < 0 || selected >= len(drives) || drives[selected].Path != drive.Path {
+					return
+				}
 				managed = isManaged
 				if isManaged {
 					driveInfo.SetText("Already has TunaOS on it:\n" + out)
