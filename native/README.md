@@ -21,6 +21,12 @@ into the search field. Generated recipes include a best-effort live-overlay
 customization based on the image base and desktop; failures are warnings and
 do not make the image unusable.
 
+The guided front door is a persistent, extendable drive: a blank or foreign
+disk is explicitly initialized once, then managed disks show their status and
+offer Add, Update, Verify, and Remove. The live installer-environment mode is
+retained as the secondary option for users who intentionally need a one-shot
+installer.
+
 ## Building
 
 Uses [Fyne](https://fyne.io) (pure Go, no WebKit dependency — deliberately avoided
