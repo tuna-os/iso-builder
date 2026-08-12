@@ -119,12 +119,15 @@ func main() {
 	driveSelect := widget.NewSelect(nil, func(string) {})
 	driveSelect.PlaceHolder = "Choose a drive"
 	var drives []Drive
+	var selectionEpoch uint64
 
 	driveInfo := widget.NewLabel("")
 	driveInfo.Wrapping = fyne.TextWrapWord
 	managed := false // whether the currently-selected drive is already tacklebox-managed
 
 	refreshDrives := func() {
+		selectionEpoch++
+		managed = false
 		found, err := SafeWriteTargets()
 		if err != nil {
 			status.SetText("Could not list drives: " + err.Error())
@@ -144,7 +147,7 @@ func main() {
 		if len(found) == 0 {
 			status.SetText("No safe drives found. Plug in a USB drive and click Refresh.")
 		} else {
-			status.SetText(fmt.Sprintf("%d drive(s) available.", len(found)))
+			status.SetText(fmt.Sprintf("%d drive(s) available — select one to see its status.", len(found)))
 		}
 	}
 
@@ -210,7 +213,7 @@ func main() {
 	isPersistent := func() bool { return modeSelect.Selected != modeInstaller }
 
 	var buildBtn *widget.Button
-	buildBtn = widget.NewButton("Write to drive", func() {
+	buildBtn = widget.NewButton("Initialize managed drive", func() {
 		imgIdx := selectedImageIdx
 		drvIdx := driveSelect.SelectedIndex()
 		if imgIdx < 0 || imgIdx >= len(visible) || drvIdx < 0 {
@@ -240,7 +243,7 @@ func main() {
 			return
 		}
 		dialog.ShowConfirm(
-			"This will ERASE "+drive.Path,
+			"Initialize managed drive: erase "+drive.Path,
 			fmt.Sprintf("Everything on %s (%s) will be permanently erased and replaced with %s.\n\nThis cannot be undone.",
 				drive.Path, drive.SizeH, img.Name),
 			func(confirmed bool) {
@@ -299,7 +302,7 @@ func main() {
 
 	allActionButtons = []*widget.Button{buildBtn, refreshBtn, verifyBtn, updateBtn, removeBtn}
 	managePanel := container.NewVBox(
-		widget.NewLabelWithStyle("Manage this drive", fyne.TextAlignLeading, fyne.TextStyle{Bold: true}),
+		widget.NewLabelWithStyle("Drive status and management", fyne.TextAlignLeading, fyne.TextStyle{Bold: true}),
 		container.NewHBox(verifyBtn, updateBtn),
 		container.NewBorder(nil, nil, nil, removeBtn, removeEnvEntry),
 	)
@@ -311,20 +314,31 @@ func main() {
 			return
 		}
 		drive := drives[drvIdx]
+		selectionEpoch++
+		epoch := selectionEpoch
+		selectedPath := drive.Path
 		driveInfo.SetText("Checking " + drive.Path + "…")
-		buildBtn.SetText("Write to drive")
+		buildBtn.SetText("Initialize managed drive")
 		managePanel.Hide()
 		go func() {
 			isManaged, out := isManagedDrive(drive.Path)
 			fyne.Do(func() {
+				currentIdx := driveSelect.SelectedIndex()
+				currentPath := ""
+				if currentIdx >= 0 && currentIdx < len(drives) {
+					currentPath = drives[currentIdx].Path
+				}
+				if !selectionIsCurrent(selectedPath, currentPath, epoch, selectionEpoch) {
+					return
+				}
 				managed = isManaged
 				if isManaged {
-					driveInfo.SetText("Already has TunaOS on it:\n" + out)
+					driveInfo.SetText("Managed drive — installed environments:\n" + out)
 					buildBtn.SetText("Add to drive")
 					managePanel.Show()
 				} else {
-					driveInfo.SetText("Blank drive — writing will erase everything on it.")
-					buildBtn.SetText("Write to drive")
+					driveInfo.SetText("Blank or foreign drive — initialize it as a persistent managed drive.")
+					buildBtn.SetText("Initialize managed drive")
 				}
 			})
 		}()
@@ -355,7 +369,8 @@ func main() {
 		widget.NewLabelWithStyle("2. Choose a drive", fyne.TextAlignLeading, fyne.TextStyle{Bold: true}),
 		container.NewBorder(nil, nil, nil, refreshBtn, driveSelect),
 		driveInfo,
-		widget.NewLabelWithStyle("3. How to write it", fyne.TextAlignLeading, fyne.TextStyle{Bold: true}),
+		widget.NewLabelWithStyle("3. Manage this drive", fyne.TextAlignLeading, fyne.TextStyle{Bold: true}),
+		widget.NewLabel("Persistent multi-boot is the guided default. Choose the live installer environment only for a one-shot install."),
 		modeSelect,
 		bootCheckBox,
 		buildBtn,

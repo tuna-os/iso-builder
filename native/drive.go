@@ -35,6 +35,12 @@ type Drive struct {
 	Size  int64  // bytes
 }
 
+// selectionIsCurrent prevents a slow status probe for one disk from changing
+// the action state of a disk selected immediately afterwards.
+func selectionIsCurrent(expectedPath, currentPath string, expectedEpoch, currentEpoch uint64) bool {
+	return expectedPath != "" && expectedPath == currentPath && expectedEpoch == currentEpoch
+}
+
 func humanSize(n int64) string {
 	const unit = 1024
 	if n < unit {
