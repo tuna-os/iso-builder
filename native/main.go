@@ -110,12 +110,16 @@ func main() {
 	driveSelect := widget.NewSelect(nil, func(string) {})
 	driveSelect.PlaceHolder = "Choose a drive"
 	var drives []Drive
+	var selectionEpoch uint64
 
 	driveInfo := widget.NewLabel("")
 	driveInfo.Wrapping = fyne.TextWrapWord
 	managed := false // whether the currently-selected drive is already tacklebox-managed
 
 	refreshDrives := func() {
+		selectionEpoch++
+		managed = false
+		driveInfo.SetText("")
 		found, err := SafeWriteTargets()
 		if err != nil {
 			status.SetText("Could not list drives: " + err.Error())
@@ -302,12 +306,23 @@ func main() {
 			return
 		}
 		drive := drives[drvIdx]
+		selectionEpoch++
+		epoch := selectionEpoch
+		selectedPath := drive.Path
 		driveInfo.SetText("Checking " + drive.Path + "…")
 		buildBtn.SetText("Write to drive")
 		managePanel.Hide()
 		go func() {
 			isManaged, out := isManagedDrive(drive.Path)
 			fyne.Do(func() {
+				currentIdx := driveSelect.SelectedIndex()
+				currentPath := ""
+				if currentIdx >= 0 && currentIdx < len(drives) {
+					currentPath = drives[currentIdx].Path
+				}
+				if !selectionIsCurrent(selectedPath, currentPath, epoch, selectionEpoch) {
+					return
+				}
 				managed = isManaged
 				if isManaged {
 					driveInfo.SetText("Already has TunaOS on it:\n" + out)

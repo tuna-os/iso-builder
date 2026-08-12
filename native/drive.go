@@ -35,6 +35,14 @@ type Drive struct {
 	Size  int64  // bytes
 }
 
+// selectionIsCurrent protects asynchronous drive metadata probes from racing
+// a user's next selection. A late result for a previous target must never
+// change the confirmation mode or management controls for the newly selected
+// disk.
+func selectionIsCurrent(expectedPath, currentPath string, expectedEpoch, currentEpoch uint64) bool {
+	return expectedEpoch == currentEpoch && expectedPath != "" && expectedPath == currentPath
+}
+
 func humanSize(n int64) string {
 	const unit = 1024
 	if n < unit {
