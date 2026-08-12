@@ -76,7 +76,14 @@ func main() {
 			name := text.Objects[0].(*widget.Label)
 			sub := text.Objects[1].(*widget.Label)
 			name.SetText(img.Name)
-			sub.SetText(img.Org + " — " + img.Description)
+			metadata := img.Org
+			if img.Base != "" {
+				metadata += " · base: " + img.Base
+			}
+			if img.Desktop != "" && img.Desktop != "unknown" {
+				metadata += " · DE: " + img.Desktop
+			}
+			sub.SetText(metadata + " — " + img.Description)
 		},
 	)
 	imageList.OnSelected = func(id widget.ListItemID) { selectedImageIdx = id }
@@ -84,23 +91,25 @@ func main() {
 	imageListScroll := container.NewScroll(imageList)
 	imageListScroll.SetMinSize(fyne.NewSize(540, 220))
 
-	// searchEntry filters the (long) catalog by name, project or description —
-	// the list spans every variant×desktop plus curated external images, too
-	// many to scroll comfortably.
+	// searchEntry filters the catalog by free text or base:/de:/arch: tokens.
+	// It also accepts oci://, docker://, and ghcr:// image references directly,
+	// which is useful for testing an image before it earns a curated entry.
 	searchEntry := widget.NewEntry()
-	searchEntry.PlaceHolder = "Search images by name, project, or description…"
+	searchEntry.PlaceHolder = "Search, or paste oci://registry/repo:tag…"
 	searchEntry.OnChanged = func(q string) {
-		q = strings.ToLower(strings.TrimSpace(q))
-		visible = visible[:0]
-		for _, img := range curatedImages {
-			if q == "" ||
-				strings.Contains(strings.ToLower(img.Name), q) ||
-				strings.Contains(strings.ToLower(img.Org), q) ||
-				strings.Contains(strings.ToLower(img.Description), q) {
-				visible = append(visible, img)
+		filtered, err := filterCatalog(curatedImages, q)
+		if err != nil {
+			status.SetText("Image search: " + err.Error())
+			visible = visible[:0]
+		} else {
+			visible = filtered
+			if len(filtered) == 1 && strings.Contains(strings.ToLower(q), "://") {
+				selectedImageIdx = 0
+				status.SetText("Custom image ready — choose a drive and an action.")
+			} else {
+				selectedImageIdx = -1
 			}
 		}
-		selectedImageIdx = -1
 		imageList.UnselectAll()
 		imageList.Refresh()
 		imageList.ScrollToTop()
@@ -440,7 +449,7 @@ func runRecipeCommand(subcommand, verb string, img curatedImage, drive Drive, ve
 		fyne.Do(done)
 		return
 	}
-	defer os.Remove(recipe)
+	defer cleanupTempRecipe(recipe)
 
 	onLine := func(line string) {
 		fyne.Do(func() { log.SetText(log.Text + line + "\n") })
@@ -511,9 +520,10 @@ func runRemove(envID string, drive Drive, log *widget.Entry, status *widget.Labe
 	fyne.Do(done)
 }
 
-// writeTempRecipe writes a minimal single-env tacklebox recipe for img to a
-// temp file and returns its path. Matches the shape of tacklebox's own
-// fixtures (see tuna-os/tacklebox/fixtures/simple.json).
+// writeTempRecipe writes a single-env tacklebox recipe and a sibling
+// live-customization script. The script is deliberately best effort: it
+// records the requested base/desktop and tries the native package manager,
+// but never prevents the image from being usable if a package is unavailable.
 //
 // persistent selects the drive's character:
 //   - true  → the "vendor alternative": a persistent, updatable multi-boot
@@ -524,11 +534,15 @@ func runRemove(envID string, drive Drive, log *widget.Entry, status *widget.Labe
 //     (mode live only, no shared store) that autologins and runs the
 //     installer, for installing TunaOS onto another disk. Nothing persists.
 func writeTempRecipe(img curatedImage, persistent bool) (string, error) {
-	f, err := os.CreateTemp("", "tacklebox-recipe-*.json")
+	dir, err := os.MkdirTemp("", "tacklebox-recipe-")
 	if err != nil {
 		return "", err
 	}
-	defer f.Close()
+	recipePath := filepath.Join(dir, "recipe.json")
+	if err := writeLiveOverlayScript(filepath.Join(dir, "live-overlay.sh"), img.Base, img.Desktop); err != nil {
+		cleanupTempRecipe(recipePath)
+		return "", err
+	}
 
 	envID := filepath.Base(img.Image)
 	sharedStore, modes := "", `["live"]`
@@ -540,12 +554,47 @@ func writeTempRecipe(img curatedImage, persistent bool) (string, error) {
   "media_name": "TUNAOS",
   "size": "16G",%s
   "bootable_environments": [
-    {"id": %q, "image": %q, "modes": %s}
+    {"id": %q, "image": %q, "title": %q, "desktop": %q, "backend": "bootc", "modes": %s, "live_customize": ["live-overlay.sh"]}
   ]
-}`, sharedStore, envID, img.Image, modes)
+}`, sharedStore, envID, img.Image, img.Name, img.Desktop, modes)
 
-	if _, err := f.WriteString(recipe); err != nil {
+	if err := os.WriteFile(recipePath, []byte(recipe), 0600); err != nil {
+		cleanupTempRecipe(recipePath)
 		return "", err
 	}
-	return f.Name(), nil
+	return recipePath, nil
+}
+
+func cleanupTempRecipe(recipePath string) {
+	if recipePath == "" || filepath.Base(recipePath) != "recipe.json" {
+		return
+	}
+	_ = os.RemoveAll(filepath.Dir(recipePath))
+}
+
+func writeLiveOverlayScript(path, base, desktop string) error {
+	packages := map[string]string{
+		"gnome": "gnome-shell", "kde": "plasma-desktop", "cosmic": "cosmic-session",
+		"niri": "niri", "xfce": "xfce-desktop",
+	}
+	pack := packages[strings.ToLower(desktop)]
+	var b strings.Builder
+	b.WriteString("#!/bin/sh\nset -u\n")
+	b.WriteString("BASE=" + shellQuote(base) + "\nDESKTOP=" + shellQuote(desktop) + "\n")
+	b.WriteString("mkdir -p /etc/tunaos || true\n")
+	b.WriteString("printf 'base=%s\\ndesktop=%s\\nsource=iso-builder-best-effort\\n' \"$BASE\" \"$DESKTOP\" > /etc/tunaos/live-overlay.conf || true\n")
+	b.WriteString("warn() { echo \"live-overlay: $*\" >&2; }\n")
+	if pack != "" {
+		b.WriteString("case \"$BASE\" in\n")
+		b.WriteString("fedora|centos|rhel|almalinux|yellowfin|bonito|skipjack|albacore) command -v dnf >/dev/null 2>&1 && dnf -y install " + pack + " || warn 'dnf could not install the requested desktop' ;;\n")
+		b.WriteString("debian|ubuntu|flounder|grouper) command -v apt-get >/dev/null 2>&1 && apt-get install -y " + pack + " || warn 'apt-get could not install the requested desktop' ;;\n")
+		b.WriteString("arch|marlin) command -v pacman >/dev/null 2>&1 && pacman -S --noconfirm " + pack + " || warn 'pacman could not install the requested desktop' ;;\n")
+		b.WriteString("*) warn \"no package-manager mapping for base $BASE\" ;;\nesac\n")
+	}
+	b.WriteString("exit 0\n")
+	return os.WriteFile(path, []byte(b.String()), 0755)
+}
+
+func shellQuote(value string) string {
+	return "'" + strings.ReplaceAll(value, "'", "'\\''") + "'"
 }

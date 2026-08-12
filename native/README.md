@@ -14,6 +14,13 @@ needs a real Linux kernel, see those issues) before this builds there.
 
 Requires a `tacklebox` binary on `PATH`, or next to this executable.
 
+The catalog search supports `base:bonito`, `de:gnome`, and `arch:arm64`
+filters. To try an image that is not yet curated, paste an OCI-style reference
+such as `oci://ghcr.io/example/workstation:latest` (or `docker://`/`ghcr://`)
+into the search field. Generated recipes include a best-effort live-overlay
+customization based on the image base and desktop; failures are warnings and
+do not make the image unusable.
+
 ## Building
 
 Uses [Fyne](https://fyne.io) (pure Go, no WebKit dependency — deliberately avoided
