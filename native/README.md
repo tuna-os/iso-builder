@@ -7,10 +7,20 @@ for why that's the point, not building yet another ISO burner.
 
 ## Status
 
-Linux-only for now ([tuna-os/iso-builder#1](https://github.com/tuna-os/iso-builder/issues/1)). Windows and macOS need
+Builds on all three platforms — Linux, Windows, and macOS each have their own
+job in `.github/workflows/ci.yml` (`native-linux`/`native-windows`/`native-macos`,
+on `ubuntu-latest`/`windows-latest`/`macos-latest`), rather than one
+cross-compiled job, because the platform-specific files (`exec_windows.go`,
+`exec_darwin.go`, `blockdev_windows.go`, `blockdev_darwin.go`, `managed_windows.go`,
+`managed_darwin.go`, `vm_darwin.go`) are only ever compiled on their own GOOS.
+Linux runs `tacklebox` directly; Windows and macOS both boot/attach a real Linux
+environment first (WSL2 on Windows, a bundled QEMU VM on macOS) and run the same
+flow inside it, since `bootc install` needs real Linux kernel semantics — see
 [tuna-os/tacklebox#107](https://github.com/tuna-os/tacklebox/issues/107) and
-[tuna-os/tacklebox#108](https://github.com/tuna-os/tacklebox/issues/108) (VM-backed write paths — `bootc install`
-needs a real Linux kernel, see those issues) before this builds there.
+[tuna-os/tacklebox#108](https://github.com/tuna-os/tacklebox/issues/108) for why.
+See [tuna-os/iso-builder#1](https://github.com/tuna-os/iso-builder/issues/1)'s
+comments for current live-verification status per platform, and
+`native/package/README.md` for packaging/signing state.
 
 Requires a `tacklebox` binary on `PATH`, or next to this executable.
 
@@ -50,9 +60,10 @@ should just work without any of the above.
 
 ## Testing
 
-The safety filter (`filterSafeDrives` in `blockdev_linux.go`) is unit-tested independently
-of the live `lsblk` call — same split as `tuna-os/tacklebox`'s `internal/blockdev/darwin`
-package (see [tuna-os/tacklebox#106](https://github.com/tuna-os/tacklebox/issues/106)/[#109](https://github.com/tuna-os/tacklebox/issues/109)
+The safety filter is unit-tested independently of the live drive-enumeration call on
+each platform (`filterSafeDrives` in `blockdev_linux.go`, and the same split in
+`blockdev_windows_test.go`) — same pattern as `tuna-os/tacklebox`'s
+`internal/blockdev/darwin` package (see [tuna-os/tacklebox#106](https://github.com/tuna-os/tacklebox/issues/106)/[#109](https://github.com/tuna-os/tacklebox/issues/109)
 for why: enumeration/filter has to be independently testable, since virtual/loopback test
 devices are correctly excluded by the filter itself and can never exercise this code path
 live).
