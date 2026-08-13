@@ -30,8 +30,9 @@ stream a custom bootable ISO to local storage.
 | P0 | Fix browser download stall near 64 MiB (blocks all large builds) | #49 | 🔴 Open |
 | P0 | Stream downloads to disk instead of buffering in JS heap | #47 | 🔴 Open |
 | P1 | OPFS quota strategy for large editions (8 GB+ ceiling) | #48 | 🔴 Open |
-| P1 | Native cross-platform writer app (Tauri wrapping tacklebox) — write recipes directly to USB | #1 | ⬜ Not started |
-| P2 | Default UX: persistent extendable multi-boot drive, not one-shot burn | #3, #2, #4 | ⬜ Not started |
+| P1 | Native cross-platform writer app (Fyne wrapping tacklebox) — write recipes directly to USB | #1 | 🟡 In progress (Linux native path; Windows/macOS VM paths) |
+| P2 | Default UX: persistent extendable multi-boot drive, not one-shot burn | #3, #2 | ⬜ Not started |
+| P3 | Bundle the portable writer on each managed drive | #4 | ⏸ Deferred — requires a three-platform distribution pipeline and writable ESP strategy |
 
 ---
 
@@ -51,6 +52,12 @@ stream a custom bootable ISO to local storage.
 
 - Native USB writer app (Tauri + tacklebox) reaching parity with the browser flow.
 - Multi-boot drive management exposed in the UI (add/update/remove/status/verify).
+- Portable writer bundling is deferred until the native app has a real release
+  channel. Issue #4 requires Linux, Windows, and macOS artifacts on every
+  managed drive; macOS/Fyne builds need a macOS host because cgo cannot cross-
+  compile that target from Linux, and the ESP is only mounted during
+  tacklebox operations. Revisit with signed distribution artifacts and a
+  platform-aware ESP write/update design.
 
 ---
 
@@ -60,6 +67,7 @@ stream a custom bootable ISO to local storage.
 |------|-------|----------|--------|
 | Browser-layer download implementation needs streaming, not buffers | #47, #49 | P1 | M |
 | OPFS quota planning for 8 GB+ editions | #48 | P1 | M |
+| Portable writer bundle | #4 | P3 | L — cross-platform packaging, signing, and ESP lifecycle |
 | legacy/ directory consolidation | — | P3 | S |
 
 ---

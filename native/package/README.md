@@ -26,3 +26,19 @@ Once there's a real distribution channel (a GitHub release, a download page on
 iso.tunaos.org) is the right time to get proper certificates — signing a build
 nobody can download yet doesn't buy anything. Track that decision as its own
 piece of work rather than blocking everything else on it now.
+
+### Portable copy on the managed drive (#4)
+
+Bundling this app on the drive is intentionally deferred. A useful bundle must
+contain runnable Linux, Windows, and macOS artifacts regardless of which host
+wrote the drive. The macOS Fyne/cgo build requires a macOS build host; it cannot
+be produced by simply adding another cross-compile target to a Linux package
+job. The drive's ESP is also mounted only transiently by tacklebox, so copying
+or updating the bundle requires a platform-specific write path (including the
+macOS helper VM and Windows WSL2 path).
+
+Reopen [iso-builder#4](https://github.com/tuna-os/iso-builder/issues/4) when
+the release pipeline can produce signed artifacts for all three platforms and
+the managed-drive lifecycle has an explicit, tested ESP update operation.
+Until then, shipping a host-only copy would not satisfy the goal of managing a
+drive from any machine and would create an incomplete portability promise.
