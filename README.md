@@ -60,7 +60,6 @@ sequenceDiagram
 | `app/wrangler.jsonc` | Cloudflare Pages deployment configuration. Deployed to `iso.tunaos.org`. |
 | `worker/` | `cors-shim.js` — Cloudflare Worker shim (`relay.tunaos.org`) proxying GHCR + Flathub/package search APIs. |
 | `e2e/` | Playwright test suite driving the real WASM engine against live container registries. |
-| `legacy/` | Original stage 1–3 prototype files (`erofs.js`, `scanner.js`, `unpack.js`) kept for reference. |
 
 ---
 
