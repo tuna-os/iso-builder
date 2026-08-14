@@ -60,7 +60,6 @@ stream a custom bootable ISO to local storage.
 |------|-------|----------|--------|
 | Browser-layer download implementation needs streaming, not buffers | #47, #49 | P1 | M |
 | OPFS quota planning for 8 GB+ editions | #48 | P1 | M |
-| legacy/ directory consolidation | — | P3 | S |
 
 ---
 
