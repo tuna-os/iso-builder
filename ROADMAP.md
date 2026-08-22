@@ -64,8 +64,10 @@ stream a custom bootable ISO to local storage.
 
 ## How to Contribute
 
-See the README for dev setup (Vite + `tbox.wasm` rebuild instructions). Pick an
-issue from the priorities above or comment on a goal you would like to own.
+See the README for the [static browser-app development workflow](README.md#develop)
+and `tbox.wasm` rebuild instructions. Native writer contributors should also read
+the [platform-specific build and test guide](native/README.md). Pick an issue from
+the priorities above or comment on a goal you would like to own.
 
 ---
 

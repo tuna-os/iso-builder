@@ -60,6 +60,8 @@ sequenceDiagram
 | `app/wrangler.jsonc` | Cloudflare Pages deployment configuration. Deployed to `iso.tunaos.org`. |
 | `worker/` | `cors-shim.js` — Cloudflare Worker shim (`relay.tunaos.org`) proxying GHCR + Flathub/package search APIs. |
 | `e2e/` | Playwright test suite driving the real WASM engine against live container registries. |
+| [`native/`](native/README.md) | Cross-platform desktop writer for creating and managing persistent multi-boot drives. |
+| [`docs/`](docs/MULTI-BOOT-DRIVE-MANAGEMENT.md) | Design and lifecycle documentation for multi-boot drive management. |
 
 ---
 
@@ -80,6 +82,13 @@ npx playwright test --grep-invert @full        # Runs UI & inspect network flow
 
 > [!IMPORTANT]
 > Playwright tests run in a persistent browser context located in `~/tmp/` instead of `/tmp`. This ensures Chrome doesn't run out of storage space when downloading real image layers on Linux environments that limit `/tmp` to a small `tmpfs` RAM disk.
+
+### Native writer
+
+The desktop writer has separate platform prerequisites and uses the Go toolchain.
+See [`native/README.md`](native/README.md) for build and test commands, and
+[`docs/MULTI-BOOT-DRIVE-MANAGEMENT.md`](docs/MULTI-BOOT-DRIVE-MANAGEMENT.md)
+for the drive-management lifecycle and safety model.
 
 ---
 
