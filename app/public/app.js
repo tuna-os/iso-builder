@@ -179,8 +179,20 @@ async function pkgSearch(q) {
       if (pkgItems.has(h.pkg)) continue;
       const b = document.createElement("button");
       b.type = "button";
-      b.innerHTML = `+ <b>${h.pkg}</b> ${h.summary ? "— " + h.summary.slice(0, 60) : ""}` +
-        (h.available ? `<span class="avail">✓ ${fam}</span>` : `<span class="unavail">not in ${fam}</span>`);
+      // h.pkg and h.summary are repology.org package metadata relayed by
+      // the shim — third-party text nobody in this path sanitises. Build
+      // the row from nodes so a package summary containing markup is
+      // rendered as the text it is, never parsed as HTML (same shape as
+      // fpSearch above).
+      b.append("+ ");
+      const name = document.createElement("b");
+      name.textContent = h.pkg;
+      b.append(name);
+      if (h.summary) b.append(" — " + h.summary.slice(0, 60));
+      const avail = document.createElement("span");
+      avail.className = h.available ? "avail" : "unavail";
+      avail.textContent = h.available ? `✓ ${fam}` : `not in ${fam}`;
+      b.append(avail);
       b.onclick = () => { pkgAdd(h.pkg, h.summary); $("pkgresults").innerHTML = ""; $("pkgsearch").value = ""; };
       box.appendChild(b);
     }
@@ -365,12 +377,25 @@ async function inspect() {
     const f = $("facts");
     f.classList.remove("hidden");
     f.innerHTML = "";
-    const add = (html, cls = "badge") => { const b = document.createElement("span"); b.className = cls; b.innerHTML = html; f.appendChild(b); };
-    add(`desktop <b>${facts.desktop}</b>`, "badge de");
-    add(`kernel <b>${facts.kernelVer || "none"}</b>`);
-    add(`systemd-boot <b>${facts.hasSdBoot ? "in image" : "not shipped"}</b>`);
-    if (facts.pkgManager) add(`packaging <b>${facts.pkgManager}</b>`);
-    add(`<b>${facts.fileCount.toLocaleString()}</b> files`);
+    // Every value here is read out of the inspected image (kernelVer is a
+    // directory name inside it, desktop/pkgManager are detected from its
+    // contents) and the image ref can name any registry — so the value goes
+    // in as text, and only the surrounding label is markup this file wrote.
+    const add = (label, value, tail = "", cls = "badge") => {
+      const b = document.createElement("span");
+      b.className = cls;
+      if (label) b.append(label);
+      const strong = document.createElement("b");
+      strong.textContent = String(value);
+      b.append(strong);
+      if (tail) b.append(tail);
+      f.appendChild(b);
+    };
+    add("desktop ", facts.desktop, "", "badge de");
+    add("kernel ", facts.kernelVer || "none");
+    add("systemd-boot ", facts.hasSdBoot ? "in image" : "not shipped");
+    if (facts.pkgManager) add("packaging ", facts.pkgManager);
+    add("", facts.fileCount.toLocaleString(), " files");
     if (fpItems.size === 0) {
       for (const id of FLATPAK_DEFAULTS[facts.desktop] || []) fpAdd(id);
     }
