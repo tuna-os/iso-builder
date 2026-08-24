@@ -44,11 +44,19 @@ var (
 const (
 	fedoraCloudImageURL  = "https://download.fedoraproject.org/pub/fedora/linux/releases/44/Cloud/x86_64/images/Fedora-Cloud-Base-Generic-44-1.7.x86_64.qcow2"
 	fedoraCloudImageName = "Fedora-Cloud-Base-Generic-44-1.7.x86_64.qcow2"
-	vmRootDiskSize       = "30G" // headroom for podman's layer storage — see native/README.md, undersizing this produces confusing corrupted-layer errors, not a clean "out of space"
-	// tackleboxRef is the tacklebox commit/branch built inside the guest.
-	// Pinned rather than following a moving branch so a build today and a
-	// build next month behave the same way.
-	tackleboxRef = "main"
+	// Official Fedora CHECKSUM for the image above (iso-builder#115): the
+	// helper VM image is root-executed to build tacklebox inside a guest, so
+	// an unverified download would let a MITM/compromise substitute the code
+	// that runs with the user's privileges. From the Fedora 44 Cloud
+	// Fedora-Cloud-44-1.7-x86_64-CHECKSUM file.
+	fedoraCloudImageSHA256 = "28680fe5b371a5a82ebf43a31926e086a168e59949d03969c5093e7071f90b7f"
+	vmRootDiskSize         = "30G" // headroom for podman's layer storage — see native/README.md, undersizing this produces confusing corrupted-layer errors, not a clean "out of space"
+	// tackleboxRef is the tacklebox commit built inside the guest.
+	// Pinned to a commit SHA (not a branch) so a build today and a build
+	// next month behave the same way — a moving branch would execute
+	// whatever the upstream pushed last (iso-builder#115). Update by
+	// review when a new tacklebox release should be shipped.
+	tackleboxRef = "abd698c1f643ae7890a9f4d8ce3cd6ea49fb7f71"
 )
 
 // installQEMU tries `brew install qemu` if Homebrew is present. If it
@@ -110,6 +118,11 @@ func bootHelperVM(drivePath string, onLine func(string)) (client *ssh.Client, cl
 		if err := downloadFile(fedoraCloudImageURL, baseImage); err != nil {
 			cleanupWork()
 			return nil, nil, fmt.Errorf("download helper image: %w", err)
+		}
+		if err := verifySHA256(baseImage, fedoraCloudImageSHA256); err != nil {
+			os.Remove(baseImage)
+			cleanupWork()
+			return nil, nil, fmt.Errorf("helper image checksum mismatch: %w", err)
 		}
 	}
 
