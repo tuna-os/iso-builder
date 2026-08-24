@@ -4,7 +4,11 @@
  *   ?image=<repo:tag | host/repo:tag>   pre-fill + auto-inspect
  *   ?flatpaks=<comma-separated ids>     override the per-DE default list
  *   ?label=<VOLID>                      volume label
- *   ?initrd=<url>                       tbox-enabled initramfs to embed
+ *
+ * ?shim= and ?initrd= are NOT accepted from URLs (iso-builder#114): they
+ * would let a shared link swap the registry every layer is pulled from and
+ * the embedded initramfs, so a link could build a weaponized "official"
+ * ISO. Non-default shim/initrd must be typed by hand.
  */
 
 let SHIM = "https://relay.tunaos.org";
@@ -791,8 +795,18 @@ $("image").addEventListener("input", () => {
   if (q.get("flatpaks")) for (const id of q.get("flatpaks").split(",").filter(Boolean)) fpAdd(id);
   if (q.get("packages")) for (const id of q.get("packages").split(",").filter(Boolean)) pkgAdd(id);
   if (q.get("label")) $("label").value = q.get("label");
-  if (q.get("initrd")) $("initrdurl").value = q.get("initrd");
-  if (q.get("shim")) $("shimurl").value = q.get("shim");
+  // ?shim= and ?initrd= change WHERE the ISO's contents come from (the
+  // registry every layer is pulled from, and the embedded initramfs). A
+  // shared link carrying them can silently point the build at an attacker
+  // server while the UI still says "yellowfin:gnome" — a full host
+  // compromise delivered by a link that looks like an ordinary share link
+  // (iso-builder#114). They are therefore never applied from the URL; the
+  // fields keep their defaults and the visitor must type a non-default
+  // value themselves. The rest of the preset (image/flatpaks/packages/
+  // label) still prefills as before.
+  if (q.get("shim") || q.get("initrd")) {
+    log("Ignored ?shim=/?initrd= from this link — supply-chain params are not applied from URLs (iso-builder#114). Set them manually if intended.");
+  }
   updateShim();
   updateShare();
   // If a deep-linked image matches a known variant, reflect it in the picker.
@@ -800,8 +814,10 @@ $("image").addEventListener("input", () => {
   if (vm && VARIANTS.some((v) => v.id === vm[1])) { $("variant").value = vm[1]; renderEditions(); }
   syncEditionSelection();
   // Deep links prefill only — a page load must never start a multi-GB
-  // pull by itself. Opt into auto-run with &autorun=1.
-  if (q.get("image") && q.get("autorun") === "1") inspect();
+  // pull by itself. Opt into auto-run with &autorun=1, and only when the
+  // link carries no supply-chain params (they are ignored anyway, but
+  // autorun after that warning would be surprising).
+  if (q.get("image") && q.get("autorun") === "1" && !q.get("shim") && !q.get("initrd")) inspect();
   // DDI deep link: ?ddi=snowfield selects the channel (no inspection to
   // run); &autorun=1 goes straight to the build — the future e2e hook.
   const dch = DDI_CHANNELS.find((c) => c.id === q.get("ddi"));
@@ -809,7 +825,7 @@ $("image").addEventListener("input", () => {
     $("variant").value = `ddi:${dch.id}`;
     renderEditions();
     prepareDdi(dch);
-    if (q.get("autorun") === "1") buildDdi(dch);
+    if (q.get("autorun") === "1" && !q.get("shim") && !q.get("initrd")) buildDdi(dch);
   }
 }
 
