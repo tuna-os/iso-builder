@@ -3,6 +3,8 @@ package main
 import (
 	"bufio"
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
 	"io"
 	"net"
@@ -16,6 +18,26 @@ import (
 
 	"golang.org/x/crypto/ssh"
 )
+
+// verifySHA256 fails if the file at path does not hash to the expected
+// lowercase hex SHA-256. Used for downloaded artifacts that are later
+// executed (iso-builder#115).
+func verifySHA256(path, expectedHex string) error {
+	f, err := os.Open(path)
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+	h := sha256.New()
+	if _, err := io.Copy(h, f); err != nil {
+		return err
+	}
+	got := hex.EncodeToString(h.Sum(nil))
+	if got != strings.ToLower(expectedHex) {
+		return fmt.Errorf("sha256 %s, want %s", got, expectedHex)
+	}
+	return nil
+}
 
 // downloadFile fetches url to dest, writing to a temp file first so a
 // crash/interrupt mid-download can't leave a corrupt file at the final

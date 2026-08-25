@@ -127,7 +127,7 @@ func runTackleboxArgs(drivePath string, argsFn func(guestDevice string) []string
 const wslTackleboxCloneAndBuild = `set -e
 sudo apt-get update -qq
 sudo apt-get install -y -qq git golang-go podman skopeo gdisk dosfstools systemd-boot >/dev/null
-git clone --depth 1 --branch main https://github.com/tuna-os/tacklebox.git
+git clone --depth 1 --branch abd698c1f643ae7890a9f4d8ce3cd6ea49fb7f71 https://github.com/tuna-os/tacklebox.git
 cd tacklebox
 go build -o tacklebox ./cmd/tacklebox
 `
