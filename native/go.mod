@@ -3,14 +3,14 @@ module github.com/tuna-os/iso-builder/native
 go 1.26.3
 
 require (
-	fyne.io/fyne/v2 v2.8.0
+	fyne.io/fyne/v2 v2.8.1
 	github.com/tuna-os/tacklebox v0.0.0-20260825222205-79193627d710
 	golang.org/x/crypto v0.55.0
 	golang.org/x/net v0.58.0
 )
 
 require (
-	fyne.io/systray v1.12.2 // indirect
+	fyne.io/systray v1.12.3-0.20260810170012-af4e8e793ec4 // indirect
 	github.com/BurntSushi/toml v1.6.0 // indirect
 	github.com/FyshOS/fancyfs v0.0.1 // indirect
 	github.com/anthonynsimon/bild v0.14.0 // indirect
