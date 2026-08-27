@@ -92,7 +92,14 @@ for the drive-management lifecycle and safety model.
 
 ---
 
+## Contributing
+
+Please see [CONTRIBUTING.md](CONTRIBUTING.md) for full details on project architecture, local web app development, E2E test execution, native writer setup, and deployment workflows.
+
+---
+
 ## Deploy
+
 
 ```sh
 cd app    && npx wrangler deploy   # Deploys to Pages (iso.tunaos.org)
