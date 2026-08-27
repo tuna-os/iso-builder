@@ -1,6 +1,6 @@
 # iso-builder Roadmap
 
-**Last updated**: 2026-08-17 | **Maintainer**: tuna-os (hanthor) / tacklebox team
+**Last updated**: 2026-08-26 | **Maintainer**: tuna-os (hanthor) / tacklebox team
 
 ---
 
@@ -20,6 +20,10 @@ stream a custom bootable ISO to local storage.
 - Playwright E2E suite drives the real WASM engine against live registries.
 - Native cross-platform desktop writer app (`native/`) implements multi-boot drive management across Linux, macOS, and Windows.
 - Browser streaming and OPFS quota management implemented (#47, #48, #49).
+- Browser build readiness remains **unverified**: the streaming and memory fixes
+  landed after the latest full-matrix dispatch. Merge and scheduled CI exercise
+  inspection, but not full ISO build/install/boot. Track the evidence gap in
+  #126.
 
 ### Priorities
 
@@ -30,6 +34,7 @@ stream a custom bootable ISO to local storage.
 | P1 | OPFS quota strategy for large editions (8 GB+ ceiling) | #48 | 🟢 Complete |
 | P1 | Native cross-platform writer app (Fyne wrapping tacklebox) — write recipes directly to USB | #1 | 🟢 Complete |
 | P2 | Default UX: persistent extendable multi-boot drive, not one-shot burn | #3, #2, #4 | 🟢 Complete |
+| P0 | Verify every catalog edition builds, installs with encryption, and reboots on current `main` | #126, full-matrix workflow | 🟡 Evidence pending |
 
 ---
 
@@ -42,14 +47,33 @@ stream a custom bootable ISO to local storage.
 | Goal | Owner | Tracking | Status |
 |------|-------|----------|--------|
 | Remove the 64 MiB download stall and heap buffering | iso-builder | #49, #47 | 🟢 Complete |
-| Prove large-edition builds (gnome/kde) in-browser via OPFS strategy | iso-builder | #48 | 🟢 Complete |
+| Prove every catalog edition builds in-browser, installs with encryption, and reboots | iso-builder | #126, full-matrix workflow | 🟡 Evidence pending |
 | Native cross-platform writer app with full multi-boot drive lifecycle | iso-builder | #1, #2, #3, #4 | 🟢 Complete |
 | Keep E2E green against live registries | iso-builder | e2e/ | 🟡 Steady |
 
 ### Next Quarter (2026 Q4) — "Mature"
 
-- Automated release build pipeline & signing infrastructure for macOS/Windows native binaries.
-- Portable writer app drive bundling on release channels.
+| Outcome | Evidence required | Status |
+|---------|-------------------|--------|
+| Browser channel has a current compatibility claim | A dated, all-edition full-matrix result linked from #126; rerun after catalog or tacklebox changes that can affect output | 🟡 Not yet evidenced |
+| Native writer has a versioned distribution channel | At least one GitHub Release with Linux, macOS, and Windows artifacts built from one commit | ⚪ Planned |
+| macOS and Windows artifacts have a trust path | Automated signing, macOS notarization, and installation checks documented in the release record | ⚪ Planned |
+| Portable writer drive bundles are supportable | Bundle format/version contract, upgrade policy, and one restore/recovery test published with the release | ⚪ Planned |
+
+### Readiness Evidence Contract
+
+Implementation trackers describe code landing; they do not by themselves prove
+the user outcome. Browser readiness turns green only when a full-matrix run from
+current `main` publishes, for every catalog edition:
+
+1. browser ISO build result;
+2. encrypted installation result; and
+3. reboot/boot result.
+
+Any exception must name the affected edition, user-visible limitation, owner,
+and next review date. The result becomes stale when the catalog changes or when
+the pinned tacklebox engine changes in a way that can affect build output; #126
+owns the first post-fix baseline.
 
 ---
 
