@@ -62,6 +62,7 @@ sequenceDiagram
 | `e2e/` | Playwright test suite driving the real WASM engine against live container registries. |
 | [`native/`](native/README.md) | Cross-platform desktop writer for creating and managing persistent multi-boot drives. |
 | [`docs/`](docs/MULTI-BOOT-DRIVE-MANAGEMENT.md) | Design and lifecycle documentation for multi-boot drive management. |
+| [`CONTRIBUTING.md`](CONTRIBUTING.md) | Developer guide, test suite instructions, and contribution process. |
 
 ---
 
