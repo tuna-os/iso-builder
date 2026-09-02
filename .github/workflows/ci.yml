@@ -219,6 +219,9 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
+      - name: Ensure CA certificates are ready
+        run: sudo apt-get update && sudo apt-get install -y --reinstall ca-certificates && sudo update-ca-certificates
+
       - uses: actions/checkout@v7
 
       - uses: actions/setup-go@v7
