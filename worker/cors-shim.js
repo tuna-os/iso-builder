@@ -33,6 +33,43 @@ const CORS = {
   "Access-Control-Max-Age": "86400",
 };
 
+// ── logging ────────────────────────────────────────────────────────────────
+//
+// Workers Logs (`[observability]` in wrangler.toml) already records one
+// invocation entry per request with method, response status and wall-clock
+// duration, so nothing here logs a successful relay: an ISO build pulls ~65
+// blobs, and re-stating the platform's own record 65 times per build is
+// volume, not signal. What the platform cannot see is *why* a request failed
+// — which of the five upstreams answered, with what status, and on which
+// relay path. That is all this emits.
+//
+// Every field is bounded on purpose. `route` is a fixed label rather than the
+// request path, because paths carry image names and blob digests; the
+// repology and Flathub query strings are user input and are never logged;
+// neither is the Authorization header. Nothing leaves the account — these are
+// the Worker's own logs, not an exporter.
+//
+// Limit worth knowing before trusting these numbers: `fetch` resolves when the
+// upstream's *headers* arrive and the body is relayed as a stream, so a
+// duration recorded here is time-to-headers. A body that stalls mid-transfer
+// produces a normal-looking log line.
+function logEvent(level, route, fields) {
+  const line = JSON.stringify({ level, route, ...fields });
+  if (level === "error") console.error(line);
+  else console.warn(line);
+}
+
+// Upstream failures used to surface as a Cloudflare 1101 ("Worker threw
+// exception"): no CORS headers, no body, and nothing in the response telling
+// the browser console which upstream died. This gives the client a readable
+// status it can distinguish from a 403 or an upstream 5xx.
+function relayError(message) {
+  return new Response(JSON.stringify({ error: message }) + "\n", {
+    status: 502,
+    headers: { ...CORS, "Content-Type": "application/json", "Cache-Control": "no-store" },
+  });
+}
+
 export default {
   async fetch(request) {
     const url = new URL(request.url);
@@ -76,10 +113,19 @@ export default {
         error = String(e);
       }
       const ok = status === 200;
+      const latencyMs = Date.now() - started;
+      // A degraded probe is the one signal in this Worker that means every
+      // in-flight browser build is about to fail at layer 0. Nothing polls
+      // this endpoint on a schedule (runbooks/deploy-and-rollback.md, "Known
+      // gaps"), so without a log line a 503 is only ever seen by whoever
+      // happened to curl it.
+      if (!ok) {
+        logEvent("error", "healthz", { upstream_status: status, error, latency_ms: latencyMs });
+      }
       const body = {
         status: ok ? "ok" : "degraded",
         upstream: { url: `${UPSTREAM}/token`, status, error },
-        latency_ms: Date.now() - started,
+        latency_ms: latencyMs,
       };
       return new Response(JSON.stringify(body, null, 2) + "\n", {
         status: ok ? 200 : 503,
@@ -102,11 +148,23 @@ export default {
       if (body.length > 2048) {
         return new Response("query too large", { status: 413, headers: CORS });
       }
-      const resp = await fetch("https://flathub.org/api/v2/search", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body,
-      });
+      let resp;
+      try {
+        resp = await fetch("https://flathub.org/api/v2/search", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body,
+        });
+      } catch (e) {
+        logEvent("error", "flathub", { error: String(e) });
+        return relayError("flathub search upstream unreachable");
+      }
+      // The upstream body is still relayed verbatim on a non-2xx — the log
+      // exists so a Flathub outage is distinguishable from an empty result
+      // set, which is what the picker shows for both.
+      if (!resp.ok) {
+        logEvent("warn", "flathub", { upstream_status: resp.status });
+      }
       const out = new Response(resp.body, { status: resp.status, headers: CORS });
       out.headers.set("Content-Type", "application/json");
       return out;
@@ -124,10 +182,24 @@ export default {
       }
       const UA = { "User-Agent": "tunaos-iso-builder (+https://iso.tunaos.org)", "Accept": "application/json" };
       let projects = {};
+      // `upstreamFailed` separates "repology said there is no such package"
+      // from "repology did not answer". Both used to produce an empty array
+      // and a 200, so a repology outage was indistinguishable from a typo in
+      // the search box — for the user and for anyone reading the logs.
+      let upstreamFailed = false;
       try {
         const rr = await fetch(`https://repology.org/api/v1/projects/?search=${encodeURIComponent(q)}`, { headers: UA });
-        if (rr.ok) projects = await rr.json();
-      } catch (_) { projects = {}; }
+        if (rr.ok) {
+          projects = await rr.json();
+        } else {
+          upstreamFailed = true;
+          logEvent("warn", "pkgsearch", { upstream: "repology_projects", upstream_status: rr.status });
+        }
+      } catch (e) {
+        upstreamFailed = true;
+        projects = {};
+        logEvent("error", "pkgsearch", { upstream: "repology_projects", error: String(e) });
+      }
       // The exact-name project is often buried under plugins in search;
       // fetch it directly so the base package always surfaces first.
       try {
@@ -135,8 +207,15 @@ export default {
         if (er.ok) {
           const ee = await er.json();
           if (Array.isArray(ee) && ee.length) projects = { [q]: ee, ...projects };
+        } else if (er.status !== 404) {
+          // A 404 is the normal answer for "no project by that exact name"
+          // and is the reason this lookup is best-effort — only anything
+          // else is worth a line.
+          logEvent("warn", "pkgsearch", { upstream: "repology_project", upstream_status: er.status });
         }
-      } catch (_) {}
+      } catch (e) {
+        logEvent("error", "pkgsearch", { upstream: "repology_project", error: String(e) });
+      }
       // repology repo prefixes per family (best-effort match).
       const prefixes = {
         fedora: ["fedora"], opensuse: ["opensuse"], arch: ["arch"],
@@ -168,8 +247,22 @@ export default {
         return a.project.length - b.project.length;
       });
       out = out.slice(0, 12);
+      // Don't cache an outage. `max-age=600` on an empty array produced only
+      // because repology was down pins that emptiness at the edge for ten
+      // minutes, so the search box keeps returning nothing for the term long
+      // after repology recovers.
+      const degraded = upstreamFailed && out.length === 0;
+      if (degraded) {
+        // `family` is an unvalidated query param, so it is collapsed to the
+        // six keys the prefix table knows plus "other" — a raw echo would let
+        // a caller mint an unbounded number of distinct log labels.
+        logEvent("warn", "pkgsearch", {
+          result: "empty_after_upstream_failure",
+          family: prefixes.length ? family : "other",
+        });
+      }
       const o = new Response(JSON.stringify(out), { status: 200, headers: { ...CORS, "Content-Type": "application/json" } });
-      o.headers.set("Cache-Control", "public, max-age=600");
+      o.headers.set("Cache-Control", degraded ? "no-store" : "public, max-age=600");
       return o;
     }
 
@@ -188,11 +281,22 @@ export default {
         }
         const upstream = `https://repository.frostyard.org/os/native/v1/${m[1]}/x86-64/${m[2]}`;
         const cacheable = m[2] !== "SHA256SUMS";
-        const resp = await fetch(upstream, {
-          method: request.method,
-          redirect: "follow",
-          cf: cacheable ? { cacheEverything: true, cacheTtl: 604800 } : undefined,
-        });
+        let resp;
+        // Only the channel is logged. The filename is a version string and
+        // would be a new label per published artifact.
+        try {
+          resp = await fetch(upstream, {
+            method: request.method,
+            redirect: "follow",
+            cf: cacheable ? { cacheEverything: true, cacheTtl: 604800 } : undefined,
+          });
+        } catch (e) {
+          logEvent("error", "ddi", { channel: m[1], error: String(e) });
+          return relayError("ddi upstream unreachable");
+        }
+        if (!resp.ok) {
+          logEvent("warn", "ddi", { channel: m[1], upstream_status: resp.status });
+        }
         const out = new Headers(resp.headers);
         for (const [k, v] of Object.entries(CORS)) out.set(k, v);
         return new Response(resp.body, { status: resp.status, headers: out });
@@ -203,6 +307,12 @@ export default {
       return new Response("method not allowed", { status: 405, headers: CORS });
     }
     if (!PATH_ALLOW.test(url.pathname)) {
+      // The rejected path itself is caller-controlled and deliberately not
+      // logged; the count is the signal. A sustained rate here means either
+      // an org the allowlist should have (a real deploy bug — see the
+      // "Known gaps" note about the app deploying ahead of the relay) or
+      // someone probing the relay for general-purpose proxying.
+      logEvent("warn", "denied", { method: request.method });
       return new Response("path not allowed", { status: 403, headers: CORS });
     }
 
@@ -242,12 +352,44 @@ export default {
     // 104 s straight to ghcr.io. Whatever kills those cells is browser- or
     // wasm-side. Do not re-open this file looking for it.
     const cacheable = url.pathname.includes("/blobs/") && !headers.has("range");
-    const resp = await fetch(upstream, {
-      method: request.method,
-      headers,
-      redirect: "follow",
-      cf: cacheable ? { cacheEverything: true, cacheTtl: 604800 } : undefined,
-    });
+
+    // Fixed label, not the path: the path carries the org, image and blob
+    // digest, and digests are the definition of an unbounded label.
+    const route = url.pathname.startsWith("/token")
+      ? "token"
+      : url.pathname.includes("/blobs/")
+        ? "blobs"
+        : url.pathname.includes("/manifests/")
+          ? "manifests"
+          : "v2";
+    const ranged = headers.has("range");
+    const started = Date.now();
+
+    let resp;
+    try {
+      resp = await fetch(upstream, {
+        method: request.method,
+        headers,
+        redirect: "follow",
+        cf: cacheable ? { cacheEverything: true, cacheTtl: 604800 } : undefined,
+      });
+    } catch (e) {
+      logEvent("error", route, { error: String(e), ranged, cacheable });
+      return relayError("ghcr upstream unreachable");
+    }
+
+    // A 401 on /token or a 429 from ghcr.io breaks every build in progress
+    // and is invisible from this side today — the response is relayed and
+    // the Worker's own status stays whatever ghcr.io said. Successful
+    // relays are left to the platform's invocation log (see logEvent).
+    if (!resp.ok) {
+      logEvent("warn", route, {
+        upstream_status: resp.status,
+        ranged,
+        cacheable,
+        upstream_headers_ms: Date.now() - started,
+      });
+    }
 
     const out = new Headers(resp.headers);
     for (const [k, v] of Object.entries(CORS)) out.set(k, v);

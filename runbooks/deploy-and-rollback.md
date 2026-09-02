@@ -56,6 +56,16 @@ curl -sS -o /dev/null -w '%{http_code}\n' \
   'https://relay.tunaos.org/token?scope=repository:tuna-os/flounder:pull'  # expect 200
 ```
 
+If any of these come back wrong, the relay's own logs say which upstream is at
+fault. `cors-shim.js` emits one JSON line per failed relay — `{"level","route",
+"upstream_status", …}`, where `route` is one of `token`, `manifests`, `blobs`,
+`healthz`, `flathub`, `pkgsearch`, `ddi`, `denied` — and Workers Logs retains
+them (dashboard: Workers & Pages -> `ghcr-shim` -> Logs, or `npx wrangler tail
+--name ghcr-shim` for a live view). Successful relays are not logged there; the
+platform's own invocation records cover those. Note this distinguishes an
+upstream failure from a bad deploy, which the four checks above cannot: a 429
+from ghcr.io and a broken route both present as failing builds.
+
 `/healthz` returns 503 with `{"status":"degraded", …}` when the upstream token
 endpoint is unreachable or answers non-200. It checks reachability and token
 issuance only — it deliberately does not pull a manifest, so it stays green when

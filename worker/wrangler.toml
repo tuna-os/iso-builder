@@ -4,3 +4,20 @@ compatibility_date = "2026-07-01"
 
 routes = [{ pattern = "relay.tunaos.org", custom_domain = true }]
 workers_dev = true
+
+# Workers Logs. Without this, console output from cors-shim.js exists only for
+# the duration of an attached `wrangler tail` session, so the relay's failure
+# lines are retained exactly when nobody is watching — which is every incident
+# that is not already being investigated.
+#
+# This is retention inside the Cloudflare account that already runs this
+# Worker, not an exporter: no new destination, no new credential, and nothing
+# is sent anywhere it was not already being processed. Logs are queryable in
+# the dashboard under Workers & Pages -> ghcr-shim -> Logs.
+#
+# Sampling stays at 1.0 (all invocations). The relay's traffic is one browser
+# tool's registry pulls, and the events worth having are the rare ones — a
+# sampled tail would drop precisely the 401s and 5xx this exists to catch.
+[observability]
+enabled = true
+head_sampling_rate = 1
