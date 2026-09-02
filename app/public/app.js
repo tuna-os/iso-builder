@@ -4,7 +4,11 @@
  *   ?image=<repo:tag | host/repo:tag>   pre-fill + auto-inspect
  *   ?flatpaks=<comma-separated ids>     override the per-DE default list
  *   ?label=<VOLID>                      volume label
- *   ?initrd=<url>                       tbox-enabled initramfs to embed
+ *
+ * ?shim= and ?initrd= are NOT accepted from URLs (iso-builder#114): they
+ * would let a shared link swap the registry every layer is pulled from and
+ * the embedded initramfs, so a link could build a weaponized "official"
+ * ISO. Non-default shim/initrd must be typed by hand.
  */
 
 let SHIM = "https://relay.tunaos.org";
@@ -179,8 +183,20 @@ async function pkgSearch(q) {
       if (pkgItems.has(h.pkg)) continue;
       const b = document.createElement("button");
       b.type = "button";
-      b.innerHTML = `+ <b>${h.pkg}</b> ${h.summary ? "— " + h.summary.slice(0, 60) : ""}` +
-        (h.available ? `<span class="avail">✓ ${fam}</span>` : `<span class="unavail">not in ${fam}</span>`);
+      // h.pkg and h.summary are repology.org package metadata relayed by
+      // the shim — third-party text nobody in this path sanitises. Build
+      // the row from nodes so a package summary containing markup is
+      // rendered as the text it is, never parsed as HTML (same shape as
+      // fpSearch above).
+      b.append("+ ");
+      const name = document.createElement("b");
+      name.textContent = h.pkg;
+      b.append(name);
+      if (h.summary) b.append(" — " + h.summary.slice(0, 60));
+      const avail = document.createElement("span");
+      avail.className = h.available ? "avail" : "unavail";
+      avail.textContent = h.available ? `✓ ${fam}` : `not in ${fam}`;
+      b.append(avail);
       b.onclick = () => { pkgAdd(h.pkg, h.summary); $("pkgresults").innerHTML = ""; $("pkgsearch").value = ""; };
       box.appendChild(b);
     }
@@ -365,12 +381,25 @@ async function inspect() {
     const f = $("facts");
     f.classList.remove("hidden");
     f.innerHTML = "";
-    const add = (html, cls = "badge") => { const b = document.createElement("span"); b.className = cls; b.innerHTML = html; f.appendChild(b); };
-    add(`desktop <b>${facts.desktop}</b>`, "badge de");
-    add(`kernel <b>${facts.kernelVer || "none"}</b>`);
-    add(`systemd-boot <b>${facts.hasSdBoot ? "in image" : "not shipped"}</b>`);
-    if (facts.pkgManager) add(`packaging <b>${facts.pkgManager}</b>`);
-    add(`<b>${facts.fileCount.toLocaleString()}</b> files`);
+    // Every value here is read out of the inspected image (kernelVer is a
+    // directory name inside it, desktop/pkgManager are detected from its
+    // contents) and the image ref can name any registry — so the value goes
+    // in as text, and only the surrounding label is markup this file wrote.
+    const add = (label, value, tail = "", cls = "badge") => {
+      const b = document.createElement("span");
+      b.className = cls;
+      if (label) b.append(label);
+      const strong = document.createElement("b");
+      strong.textContent = String(value);
+      b.append(strong);
+      if (tail) b.append(tail);
+      f.appendChild(b);
+    };
+    add("desktop ", facts.desktop, "", "badge de");
+    add("kernel ", facts.kernelVer || "none");
+    add("systemd-boot ", facts.hasSdBoot ? "in image" : "not shipped");
+    if (facts.pkgManager) add("packaging ", facts.pkgManager);
+    add("", facts.fileCount.toLocaleString(), " files");
     if (fpItems.size === 0) {
       for (const id of FLATPAK_DEFAULTS[facts.desktop] || []) fpAdd(id);
     }
@@ -680,7 +709,11 @@ const VARIANTS = [
   { id: "yellowfin", name: "AlmaLinux Kitten 10 (flagship)", des: ["gnome", "kde", "cosmic", "niri"] },
   { id: "bonito",    name: "Fedora 44",                      des: ["gnome", "kde", "cosmic", "niri", "xfce"] },
   { id: "sailfin",   name: "openSUSE Tumbleweed",            des: ["gnome", "kde", "niri", "xfce"] },
-  { id: "flounder",  name: "Debian 13 Trixie",               des: ["gnome", "kde", "cosmic", "niri", "xfce"] },
+  // No niri: ghcr.io/tuna-os/flounder:niri has never been published (404), and
+  // flounder carries no niri flavor in tunaOS's build-config.yml. The chip was
+  // offered anyway, so picking it started an inspect against a tag that does
+  // not exist. scripts/verify-catalog.py now fails on refs like this.
+  { id: "flounder",  name: "Debian 13 Trixie",               des: ["gnome", "kde", "cosmic", "xfce"] },
   { id: "grouper",   name: "Ubuntu 26.04",                   des: ["gnome", "kde", "niri", "xfce"] },
   { id: "marlin",    name: "Arch Linux",                     des: ["gnome", "kde", "cosmic", "niri", "xfce"] },
   { id: "skipjack",  name: "CentOS Stream 10",               des: ["gnome", "kde", "cosmic", "niri"] },
@@ -766,8 +799,18 @@ $("image").addEventListener("input", () => {
   if (q.get("flatpaks")) for (const id of q.get("flatpaks").split(",").filter(Boolean)) fpAdd(id);
   if (q.get("packages")) for (const id of q.get("packages").split(",").filter(Boolean)) pkgAdd(id);
   if (q.get("label")) $("label").value = q.get("label");
-  if (q.get("initrd")) $("initrdurl").value = q.get("initrd");
-  if (q.get("shim")) $("shimurl").value = q.get("shim");
+  // ?shim= and ?initrd= change WHERE the ISO's contents come from (the
+  // registry every layer is pulled from, and the embedded initramfs). A
+  // shared link carrying them can silently point the build at an attacker
+  // server while the UI still says "yellowfin:gnome" — a full host
+  // compromise delivered by a link that looks like an ordinary share link
+  // (iso-builder#114). They are therefore never applied from the URL; the
+  // fields keep their defaults and the visitor must type a non-default
+  // value themselves. The rest of the preset (image/flatpaks/packages/
+  // label) still prefills as before.
+  if (q.get("shim") || q.get("initrd")) {
+    log("Ignored ?shim=/?initrd= from this link — supply-chain params are not applied from URLs (iso-builder#114). Set them manually if intended.");
+  }
   updateShim();
   updateShare();
   // If a deep-linked image matches a known variant, reflect it in the picker.
@@ -775,8 +818,10 @@ $("image").addEventListener("input", () => {
   if (vm && VARIANTS.some((v) => v.id === vm[1])) { $("variant").value = vm[1]; renderEditions(); }
   syncEditionSelection();
   // Deep links prefill only — a page load must never start a multi-GB
-  // pull by itself. Opt into auto-run with &autorun=1.
-  if (q.get("image") && q.get("autorun") === "1") inspect();
+  // pull by itself. Opt into auto-run with &autorun=1, and only when the
+  // link carries no supply-chain params (they are ignored anyway, but
+  // autorun after that warning would be surprising).
+  if (q.get("image") && q.get("autorun") === "1" && !q.get("shim") && !q.get("initrd")) inspect();
   // DDI deep link: ?ddi=snowfield selects the channel (no inspection to
   // run); &autorun=1 goes straight to the build — the future e2e hook.
   const dch = DDI_CHANNELS.find((c) => c.id === q.get("ddi"));
@@ -784,7 +829,7 @@ $("image").addEventListener("input", () => {
     $("variant").value = `ddi:${dch.id}`;
     renderEditions();
     prepareDdi(dch);
-    if (q.get("autorun") === "1") buildDdi(dch);
+    if (q.get("autorun") === "1" && !q.get("shim") && !q.get("initrd")) buildDdi(dch);
   }
 }
 

@@ -26,3 +26,7 @@ Once there's a real distribution channel (a GitHub release, a download page on
 iso.tunaos.org) is the right time to get proper certificates — signing a build
 nobody can download yet doesn't buy anything. Track that decision as its own
 piece of work rather than blocking everything else on it now.
+
+## Portable Writer App Drive Bundling (iso-builder#4)
+
+Bundling portable multi-platform writer binaries (Linux + macOS + Windows) directly onto target drives at creation time requires cross-compilation across all target architectures and an automated release build pipeline with macOS runners (due to cgo/Fyne constraints). This capability is aligned with the release distribution channel milestone.
