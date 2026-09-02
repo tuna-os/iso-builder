@@ -57,7 +57,9 @@ var variants = []variant{
 	{"yellowfin", "AlmaLinux Kitten 10 (flagship)", []string{"gnome", "kde", "cosmic", "niri"}},
 	{"bonito", "Fedora 44", []string{"gnome", "kde", "cosmic", "niri", "xfce"}},
 	{"sailfin", "openSUSE Tumbleweed", []string{"gnome", "kde", "niri", "xfce"}},
-	{"flounder", "Debian 13 Trixie", []string{"gnome", "kde", "cosmic", "niri", "xfce"}},
+	// No niri here for the same reason app.js drops it: flounder:niri is a 404
+	// on GHCR and not a flavor in tunaOS's build-config.yml.
+	{"flounder", "Debian 13 Trixie", []string{"gnome", "kde", "cosmic", "xfce"}},
 	{"grouper", "Ubuntu 26.04", []string{"gnome", "kde", "niri", "xfce"}},
 	{"marlin", "Arch Linux", []string{"gnome", "kde", "cosmic", "niri", "xfce"}},
 	{"skipjack", "CentOS Stream 10", []string{"gnome", "kde", "cosmic", "niri"}},
