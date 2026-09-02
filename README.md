@@ -102,6 +102,8 @@ cd worker && npx wrangler deploy   # Deploys to Workers (relay.tunaos.org)
 
 *Note: Requires `CLOUDFLARE_API_TOKEN` configured in your environment with Workers and Pages deployment scope.*
 
+Normally this is automatic: the `deploy` job in `.github/workflows/ci.yml` deploys both surfaces on every push to `main`. Nothing in CI checks production afterwards, so verify by hand — `curl -sS https://relay.tunaos.org/healthz` (expects `{"status":"ok"}`) and `curl -sSI https://iso.tunaos.org/tbox.wasm`. To roll a bad deploy back, and for the rest of the detection and verification checklist, see [`runbooks/deploy-and-rollback.md`](runbooks/deploy-and-rollback.md).
+
 ---
 
 ## Updating the WASM Engine
