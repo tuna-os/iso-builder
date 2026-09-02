@@ -6,6 +6,7 @@
 //
 // Deploy: wrangler deploy (route e.g. ghcr-shim.tunaos.org/*).
 //
+//   GET /healthz   readiness — 200 only when ghcr.io answers
 //   GET /token?scope=repository:<org>/<image>:pull
 //   GET /v2/<org>/<image>/manifests/<ref>
 //   GET /v2/<org>/<image>/blobs/sha256:<digest>
@@ -38,6 +39,56 @@ export default {
 
     if (request.method === "OPTIONS") {
       return new Response(null, { status: 204, headers: CORS });
+    }
+
+    // Readiness probe (runbooks/deploy-and-rollback.md).
+    //
+    // Deliberately not a static 200. This Worker exists to reach ghcr.io, and
+    // /token is the first call the engine makes — every manifest and blob
+    // fetch after it carries the bearer token that call returns. A probe that
+    // answered without touching the upstream would report healthy while every
+    // build in the browser died at layer 0.
+    //
+    // The scope names a repo in the allowlist, and GHCR issues an anonymous
+    // pull token for public repos, so a 200 proves reachability and token
+    // issuance without tying relay health to any one image still existing
+    // (that failure mode belongs to scripts/verify-catalog.py). The upstream
+    // call is edge-cached for 30s so this endpoint cannot be used to hammer
+    // ghcr.io, and bounded at 5s so a hung upstream reports degraded rather
+    // than hanging the prober.
+    if (url.pathname === "/healthz") {
+      if (request.method !== "GET" && request.method !== "HEAD") {
+        return new Response("method not allowed", { status: 405, headers: CORS });
+      }
+      const started = Date.now();
+      let status = 0;
+      let error = null;
+      try {
+        const probe = await fetch(
+          `${UPSTREAM}/token?scope=repository:${ORGS[0]}/flounder:pull`,
+          {
+            signal: AbortSignal.timeout(5000),
+            cf: { cacheEverything: true, cacheTtl: 30 },
+          }
+        );
+        status = probe.status;
+      } catch (e) {
+        error = String(e);
+      }
+      const ok = status === 200;
+      const body = {
+        status: ok ? "ok" : "degraded",
+        upstream: { url: `${UPSTREAM}/token`, status, error },
+        latency_ms: Date.now() - started,
+      };
+      return new Response(JSON.stringify(body, null, 2) + "\n", {
+        status: ok ? 200 : 503,
+        headers: {
+          ...CORS,
+          "Content-Type": "application/json",
+          "Cache-Control": "no-store",
+        },
+      });
     }
 
     // Flathub search relay: flathub.org's API only answers CORS for its
