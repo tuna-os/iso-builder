@@ -709,7 +709,11 @@ const VARIANTS = [
   { id: "yellowfin", name: "AlmaLinux Kitten 10 (flagship)", des: ["gnome", "kde", "cosmic", "niri"] },
   { id: "bonito",    name: "Fedora 44",                      des: ["gnome", "kde", "cosmic", "niri", "xfce"] },
   { id: "sailfin",   name: "openSUSE Tumbleweed",            des: ["gnome", "kde", "niri", "xfce"] },
-  { id: "flounder",  name: "Debian 13 Trixie",               des: ["gnome", "kde", "cosmic", "niri", "xfce"] },
+  // No niri: ghcr.io/tuna-os/flounder:niri has never been published (404), and
+  // flounder carries no niri flavor in tunaOS's build-config.yml. The chip was
+  // offered anyway, so picking it started an inspect against a tag that does
+  // not exist. scripts/verify-catalog.py now fails on refs like this.
+  { id: "flounder",  name: "Debian 13 Trixie",               des: ["gnome", "kde", "cosmic", "xfce"] },
   { id: "grouper",   name: "Ubuntu 26.04",                   des: ["gnome", "kde", "niri", "xfce"] },
   { id: "marlin",    name: "Arch Linux",                     des: ["gnome", "kde", "cosmic", "niri", "xfce"] },
   { id: "skipjack",  name: "CentOS Stream 10",               des: ["gnome", "kde", "cosmic", "niri"] },
