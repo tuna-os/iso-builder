@@ -336,6 +336,30 @@ jobs:
           path: e2e/playwright-report/
           if-no-files-found: warn
 
+  # scripts/verify-catalog.py shipped in #143 with nothing running it, which
+  # is the same failure mode it was written to close: a check nobody runs and
+  # a hand-typed list nobody compares are equally silent. The Go test in
+  # native/ pins app.js and catalog.go to EACH OTHER, so both agreeing on an
+  # image that does not exist is a green suite and a broken picker — exactly
+  # what ghcr.io/tuna-os/flounder:niri was until #143 removed it.
+  #
+  # The weekly schedule matters more than the PR run. These are tags on
+  # registries this project does not own; an upstream that retires
+  # ublue-os/bazzite:latest breaks the picker without a single commit here.
+  #
+  # The script fails only on a definitive 404. Timeouts, 5xx and rate limits
+  # are reported as INCONCLUSIVE and exit 0, so a registry outage does not
+  # redden unrelated pull requests. A parser that matches nothing exits 2,
+  # because a pass over zero refs would mean nothing.
+  catalog:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: resolve every offered image against GHCR
+        run: python3 scripts/verify-catalog.py
+
   # Resolves e2e/editions.json into the matrix, honouring the `only` input.
   # gh cannot dispatch a single matrix cell, and re-running nine multi-GB
   # pulls to iterate on one edition is indefensible — the first sweep did
