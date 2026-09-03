@@ -119,11 +119,19 @@ func bootHelperVM(drivePath string, onLine func(string)) (client *ssh.Client, cl
 			cleanupWork()
 			return nil, nil, fmt.Errorf("download helper image: %w", err)
 		}
-		if err := verifySHA256(baseImage, fedoraCloudImageSHA256); err != nil {
-			os.Remove(baseImage)
-			cleanupWork()
-			return nil, nil, fmt.Errorf("helper image checksum mismatch: %w", err)
-		}
+	}
+
+	// Verified on every boot, not only after a fresh download. This runs
+	// outside the os.Stat branch on purpose: the cache path is user-writable
+	// and this qcow2 is the root filesystem of a VM that runs tacklebox as
+	// root with the user's target disk raw-attached, so a check that only
+	// ever ran once would leave substitution available to anything able to
+	// write the file at any point afterwards. Hashing ~580 MB costs a second
+	// or two against a boot measured in minutes.
+	if err := verifySHA256(baseImage, fedoraCloudImageSHA256); err != nil {
+		os.Remove(baseImage)
+		cleanupWork()
+		return nil, nil, fmt.Errorf("helper image checksum mismatch (cached copy removed — re-run to download it again): %w", err)
 	}
 
 	vmDisk := filepath.Join(work, "vm-root.qcow2")
