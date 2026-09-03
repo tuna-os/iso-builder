@@ -25,10 +25,19 @@ Before opening a pull request, ensure your changes have been tested locally acro
   ```
 
 ### 3. Native Application (`native/`)
-- Verify native desktop code formatting, linting, and tests (see [`native/README.md`](native/README.md)):
+- Run tests (see [`native/README.md`](native/README.md) for platform build prerequisites):
   ```sh
   cd native
+  go vet ./...
   go test ./...
+  ```
+- `native/` also carries a [`.golangci.yml`](.golangci.yml) (schema `version: "2"`, so it needs
+  golangci-lint v2, e.g. `go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@latest`).
+  CI does not run this yet, so lint it yourself before opening a PR (the config's
+  `formatters` section runs `gofmt`/`goimports` as part of this too):
+  ```sh
+  cd native
+  golangci-lint run
   ```
 
 ---
@@ -37,4 +46,6 @@ Before opening a pull request, ensure your changes have been tested locally acro
 
 1. **Branch Naming & DCO**: Create a feature or bugfix branch. Sign all commits with Developer Certificate of Origin (`git commit -s`).
 2. **Pull Requests**: Open a pull request against the `main` branch. Provide a clear description of the changes and link any related issues.
-3. **CI Pipeline**: All PRs must pass automated check workflows (E2E tests, native builds, lint checks).
+3. **CI Pipeline**: All PRs must pass automated check workflows — `native-linux`/`native-windows`/`native-macos`
+   (`go vet` + `go test`) and the `e2e` inspect-tier suite. golangci-lint is configured but not yet wired into
+   CI (run it locally per the native step above).
