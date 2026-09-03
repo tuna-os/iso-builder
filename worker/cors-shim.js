@@ -24,6 +24,16 @@ const PATH_ALLOW = new RegExp(
   `^/(token$|v2/?$|v2/(?:${ORGS.join("|")})/[a-z0-9._-]+/(manifests|blobs)/[A-Za-z0-9._:@-]+$)`
 );
 
+// /token carries its repository in the query string, not the path, so the
+// path allowlist above says nothing about it. Without this, `?scope=` was
+// relayed to ghcr.io verbatim for any org — the relay would mint pull tokens
+// for repositories it deliberately serves no blobs for, which is precisely
+// the "general relay" this file's header rules out. Anonymous pull of a
+// public image in ORGS is the whole job, so that is all the scope may say.
+const SCOPE_ALLOW = new RegExp(
+  `^repository:(?:${ORGS.join("|")})/[a-z0-9._-]+:pull$`
+);
+
 const CORS = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Methods": "GET, HEAD, OPTIONS",
@@ -316,6 +326,18 @@ export default {
       return new Response("path not allowed", { status: 403, headers: CORS });
     }
 
+    // The engine asks for exactly one shape (tacklebox internal/oci/client.go:
+    // `%s/token?scope=repository:%s:pull`), so requiring it costs the real
+    // client nothing. A ghcr.io ref outside ORGS now fails here rather than
+    // two requests later at the blob fetch — same answer, stated earlier.
+    const isToken = url.pathname === "/token";
+    if (isToken && !SCOPE_ALLOW.test(url.searchParams.get("scope") || "")) {
+      // The scope is caller-controlled and carries a repository name, so it
+      // is counted rather than echoed, same as the rejected paths above.
+      logEvent("warn", "denied", { method: request.method, reason: "scope" });
+      return new Response("scope not allowed", { status: 403, headers: CORS });
+    }
+
     const upstream = new URL(url.pathname + url.search, UPSTREAM);
     const headers = new Headers();
     // Range must be forwarded, or the engine's resume path is structurally
@@ -326,7 +348,14 @@ export default {
     // request straight to ghcr.io returned 206 + content-range
     // bytes 66587081-66587580/73082744), so every resume restarted the layer
     // from byte 0 at best.
-    for (const h of ["authorization", "accept", "range"]) {
+    //
+    // `authorization` is forwarded on manifest and blob fetches — those carry
+    // the bearer token /token just issued. It is deliberately NOT forwarded on
+    // /token itself: this relay exists for anonymous pulls of public images in
+    // ORGS, so a caller credential there buys the real client nothing and
+    // would turn the relay into a front for arbitrary credentialed GHCR token
+    // requests, with the rate limiting and audit trail pointing here.
+    for (const h of isToken ? ["accept"] : ["authorization", "accept", "range"]) {
       const v = request.headers.get(h);
       if (v) headers.set(h, v);
     }
