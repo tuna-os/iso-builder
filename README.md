@@ -118,3 +118,12 @@ When updating the WASM file, always ensure you copy the matching `wasm_exec.js` 
 ```sh
 cp "$(go env GOROOT)/lib/wasm/wasm_exec.js" app/public/
 ```
+
+## Updating systemd-boot
+
+`app/public/systemd-bootx64.efi` is a committed copy of the systemd-boot EFI
+stub, fetched by the app at runtime for the DDI build path. It is pinned to
+an exact Ubuntu package version with a checksum — see
+[`app/public/sdboot-NOTICE.txt`](app/public/sdboot-NOTICE.txt) for the
+provenance, the pinned version, and the reproduction command used to verify
+or refresh it.

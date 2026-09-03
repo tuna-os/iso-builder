@@ -13,3 +13,20 @@ Provenance: Ubuntu package systemd-boot-efi 255.4-1ubuntu8.16 (amd64),
 file /usr/lib/systemd/boot/efi/systemd-bootx64.efi, unmodified.
 systemd is LGPL-2.1-or-later; source: https://github.com/systemd/systemd
 (and Ubuntu source packages at https://launchpad.net/ubuntu/+source/systemd).
+
+Checksum (sha256): 46f2f18c0ea7e022732bba7fe0c268044493d204cf17bf727b3031cead8e14c8
+
+To verify this file against the pinned Ubuntu package, or to rebuild it
+after bumping the pinned version:
+
+  docker run --rm -v "$PWD":/out ubuntu:24.04 bash -c '
+    apt-get update -qq &&
+    apt-get download systemd-boot-efi=255.4-1ubuntu8.16 &&
+    dpkg-deb -x systemd-boot-efi_255.4-1ubuntu8.16_amd64.deb /out/_sdboot-extract
+  '
+  sha256sum _sdboot-extract/usr/lib/systemd/boot/efi/systemd-bootx64.efi
+
+The output must match the checksum above. If it doesn't — or when bumping
+the pinned version — copy the extracted binary over
+app/public/systemd-bootx64.efi, and update the version and checksum in
+this file to match.
