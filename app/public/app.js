@@ -9,6 +9,13 @@
  * would let a shared link swap the registry every layer is pulled from and
  * the embedded initramfs, so a link could build a weaponized "official"
  * ISO. Non-default shim/initrd must be typed by hand.
+ *
+ * ?image= is held to the same rule for the same reason (iso-builder#167). A
+ * host-qualified reference is dialled directly by parseImage, bypassing the
+ * relay and its org allowlist, so the host inside the image value is a
+ * registry swap wearing a different parameter name. Only refs that resolve
+ * to the default relay are applied from a URL; ?packages= and ?flatpaks=
+ * are character-checked before they reach the engine.
  */
 
 let SHIM = "https://relay.tunaos.org";
@@ -792,12 +799,54 @@ $("image").addEventListener("input", () => {
   syncEditionSelection();
 });
 
+// urlImageUsesDefaultRegistry mirrors parseImage's host detection: a first
+// segment containing "." or ":" is a registry host and is dialled directly,
+// bypassing the relay and its org allowlist. ghcr.io is the one such host
+// parseImage routes back through the relay, so it is allowed.
+//
+// This is the #114 rule applied to ?image=. A host-qualified reference in a
+// link changes where every layer of the ISO is pulled from, exactly as ?shim=
+// did — the host simply rides inside the image value instead of its own
+// parameter (iso-builder#167).
+function urlImageUsesDefaultRegistry(raw) {
+  const s = raw.trim();
+  if (!s.includes("/")) return true; // "yellowfin:gnome" → tuna-os/ via the relay
+  const firstSeg = s.split("/")[0];
+  if (!firstSeg.includes(".") && !firstSeg.includes(":")) return true; // "tuna-os/yellowfin:gnome"
+  return firstSeg === "ghcr.io";
+}
+
+// URL parameters that decide where the ISO's contents come from. Never
+// applied from a link; also disqualify a link from &autorun=1.
+const SUPPLY_CHAIN_PARAMS = ["shim", "initrd"];
+
+// Flatpak application ids are reverse-DNS; package names are distro package
+// names. Neither has any business carrying separators, whitespace or shell
+// punctuation, and both are handed to the engine to drive package-manager
+// invocations inside the image being built.
+const URL_FLATPAK_ID = /^[A-Za-z0-9][A-Za-z0-9._-]*$/;
+const URL_PACKAGE_NAME = /^[A-Za-z0-9][A-Za-z0-9._+-]*$/;
+
 // Apply URL params.
 {
   const q = new URLSearchParams(location.search);
-  if (q.get("image")) $("image").value = q.get("image");
-  if (q.get("flatpaks")) for (const id of q.get("flatpaks").split(",").filter(Boolean)) fpAdd(id);
-  if (q.get("packages")) for (const id of q.get("packages").split(",").filter(Boolean)) pkgAdd(id);
+  let imageRejected = false;
+  if (q.get("image")) {
+    if (urlImageUsesDefaultRegistry(q.get("image"))) {
+      $("image").value = q.get("image");
+    } else {
+      imageRejected = true;
+      log("Ignored ?image= from this link — it names a non-default registry, and supply-chain params are not applied from URLs (iso-builder#114, #167). Type it into the image field if that is intended.");
+    }
+  }
+  if (q.get("flatpaks")) for (const id of q.get("flatpaks").split(",").filter(Boolean)) {
+    if (URL_FLATPAK_ID.test(id)) fpAdd(id);
+    else log("Ignored ?flatpaks= entry from this link — not a Flatpak application id.");
+  }
+  if (q.get("packages")) for (const id of q.get("packages").split(",").filter(Boolean)) {
+    if (URL_PACKAGE_NAME.test(id)) pkgAdd(id);
+    else log("Ignored ?packages= entry from this link — not a package name.");
+  }
   if (q.get("label")) $("label").value = q.get("label");
   // ?shim= and ?initrd= change WHERE the ISO's contents come from (the
   // registry every layer is pulled from, and the embedded initramfs). A
@@ -807,8 +856,9 @@ $("image").addEventListener("input", () => {
   // (iso-builder#114). They are therefore never applied from the URL; the
   // fields keep their defaults and the visitor must type a non-default
   // value themselves. The rest of the preset (image/flatpaks/packages/
-  // label) still prefills as before.
-  if (q.get("shim") || q.get("initrd")) {
+  // label) still prefills as before — with the registry host inside ?image=
+  // held to the same rule, see urlImageUsesDefaultRegistry (#167).
+  if (SUPPLY_CHAIN_PARAMS.some((k) => q.get(k))) {
     log("Ignored ?shim=/?initrd= from this link — supply-chain params are not applied from URLs (iso-builder#114). Set them manually if intended.");
   }
   updateShim();
@@ -821,7 +871,13 @@ $("image").addEventListener("input", () => {
   // pull by itself. Opt into auto-run with &autorun=1, and only when the
   // link carries no supply-chain params (they are ignored anyway, but
   // autorun after that warning would be surprising).
-  if (q.get("image") && q.get("autorun") === "1" && !q.get("shim") && !q.get("initrd")) inspect();
+  //
+  // One predicate for every supply-chain input rather than a hand-written
+  // shim/initrd pair, so the next parameter added to SUPPLY_CHAIN_PARAMS is
+  // covered here by default instead of by remembering to extend this line.
+  const autorunAllowed =
+    q.get("autorun") === "1" && !SUPPLY_CHAIN_PARAMS.some((k) => q.get(k)) && !imageRejected;
+  if (q.get("image") && autorunAllowed) inspect();
   // DDI deep link: ?ddi=snowfield selects the channel (no inspection to
   // run); &autorun=1 goes straight to the build — the future e2e hook.
   const dch = DDI_CHANNELS.find((c) => c.id === q.get("ddi"));
@@ -829,7 +885,7 @@ $("image").addEventListener("input", () => {
     $("variant").value = `ddi:${dch.id}`;
     renderEditions();
     prepareDdi(dch);
-    if (q.get("autorun") === "1" && !q.get("shim") && !q.get("initrd")) buildDdi(dch);
+    if (autorunAllowed) buildDdi(dch);
   }
 }
 
