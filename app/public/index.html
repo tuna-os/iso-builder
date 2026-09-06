@@ -6,75 +6,126 @@
 <title>TunaOS ISO Builder</title>
 <link rel="icon" type="image/png" href="favicon-32.png">
 <style>
+  /* Palette and type shared with tunaos.org (src/css/custom.css and
+     src/css/page.module.css there). The two sites sit behind one nav bar and
+     must read as one product: Vesper dark base, one blue accent, JetBrains
+     Mono, borderless panels on a 6px radius.
+
+     The site pulls JetBrains Mono from Google Fonts; this app does not. It
+     tells people nothing they load is uploaded anywhere, and a webfont
+     request to a third party would undercut that, so the face is used when
+     it is installed locally and a system monospace stands in otherwise. */
+
   :root {
-    --bg: #00152e; --panel: #002b5c; --border: #1a4a7a; --fg: #e6f3ff;
-    --dim: #94b8dc; --accent: #47a1ff; --ok: #3fb950; --warn: #ffb347; --err: #f85149;
-    --header-bg: #001a38;
-  }
-  @media (prefers-color-scheme: light) {
-    :root { --bg: #f5f9ff; --panel: #ffffff; --border: #cfe3f7; --fg: #1c1e21;
-      --dim: #5a7492; --accent: #0056b3; --header-bg: #002b5c; }
+    --bg: #1d1f21; --bg-2: #232323; --panel: #2a2d31; --panel-2: #303236;
+    --border: rgba(93, 171, 240, 0.12); --fg: #f0f2f5; --dim: #b0b8c0;
+    --accent: #5dabf0; --accent-soft: #7bbdf5;
+    --ok: #7cda92; --warn: #f0c040; --err: #f09090;
+    --header-bg: #1d1f21; --header-fg: #eaeaea; --header-link: #81a2be;
+    --mono: 'JetBrains Mono', 'JetBrainsMono Nerd Font', ui-monospace, SFMono-Regular,
+      Menlo, Consolas, 'Liberation Mono', monospace;
   }
   * { box-sizing: border-box; }
-  body { margin: 0; font: 15px/1.5 system-ui, -apple-system, "Segoe UI", Roboto, Ubuntu, sans-serif; background: var(--bg); color: var(--fg); }
-  main { max-width: 780px; margin: 0 auto; padding: 2rem 1rem 4rem; }
-  .site-header { background: var(--header-bg); border-bottom: 1px solid var(--border); }
-  .site-header .inner { max-width: 1140px; margin: 0 auto; display: flex; align-items: center; gap: .75rem; padding: .55rem 1rem; }
-  .site-header img { width: 32px; height: 32px; border-radius: 6px; }
-  .site-header .brand { font-weight: 700; font-size: 1.05rem; color: #fff; text-decoration: none; }
-  .site-header nav { margin-left: auto; display: flex; gap: 1.1rem; flex-wrap: wrap; }
-  .site-header nav a { color: #cfe3f7; text-decoration: none; font-size: .92rem; }
-  .site-header nav a:hover, .site-header nav a.active { color: #fff; }
-  .site-header nav a.active { border-bottom: 2px solid var(--accent); padding-bottom: 2px; }
-  h1 { font-size: 1.5rem; margin: 0 0 .25rem; }
-  h1 .fish { margin-right: .4rem; }
-  .sub { color: var(--dim); margin: 0 0 1.5rem; }
-  .card { background: var(--panel); border: 1px solid var(--border); border-radius: 10px; padding: 1.1rem 1.2rem; margin-bottom: 1rem; }
-  label { display: block; font-weight: 600; font-size: .85rem; margin-bottom: .3rem; }
-  input[type=text] { width: 100%; padding: .55rem .7rem; border-radius: 8px; border: 1px solid var(--border); background: var(--bg); color: var(--fg); font: inherit; }
+  body { margin: 0; font: 15px/1.6 var(--mono); background: var(--bg); color: var(--fg); }
+  main { max-width: 880px; margin: 0 auto; padding: 2.5rem 1rem 4rem; }
+
+  .site-header { background: var(--header-bg); border-bottom: 1px solid rgba(255, 255, 255, 0.08); }
+  .site-header .inner { max-width: 1200px; margin: 0 auto; display: flex; align-items: center; gap: .75rem; padding: .5rem 1rem; }
+  .site-header img { width: 30px; height: 30px; border-radius: 6px; }
+  .site-header .brand { font-weight: 700; font-size: 1.15rem; letter-spacing: -0.01em; color: var(--header-fg); text-decoration: none; }
+  .site-header nav { margin-left: auto; display: flex; gap: .3rem; flex-wrap: wrap; }
+  .site-header nav a { color: var(--header-link); text-decoration: none; font-size: .92rem; font-weight: 500; padding: .4rem .6rem; }
+  .site-header nav a:hover, .site-header nav a.active { color: var(--header-fg); }
+  .site-header nav a.active { position: relative; }
+  .site-header nav a.active::after { content: ''; position: absolute; left: 50%; bottom: 0; transform: translateX(-50%);
+    width: 20px; height: 2px; border-radius: 1px; background: var(--accent); }
+
+  h1 { font-size: clamp(1.6rem, 4vw, 2.1rem); font-weight: 700; letter-spacing: -0.02em; margin: 0 0 .4rem; }
+  h3 { font-size: 1.05rem; font-weight: 700; letter-spacing: -0.01em; }
+  .eyebrow { display: inline-block; margin-bottom: .6rem; font-size: .7rem; font-weight: 600;
+    letter-spacing: .16em; text-transform: uppercase; color: var(--accent-soft); }
+  .sub { color: var(--dim); margin: 0 0 1.75rem; }
+
+  .card { background: var(--panel); border: none; border-radius: 6px; padding: 1.25rem 1.35rem; margin-bottom: 1rem; }
+  label { display: block; font-size: .72rem; font-weight: 600; text-transform: uppercase; letter-spacing: .08em;
+    color: var(--accent-soft); margin-bottom: .4rem; }
+  input[type=text] { width: 100%; padding: .6rem .75rem; border-radius: 6px; border: none;
+    background: var(--bg); color: var(--fg); font: inherit; font-size: .9rem; }
+  input[type=text]::placeholder { color: var(--dim); opacity: .7; }
   .row { display: flex; gap: .75rem; flex-wrap: wrap; align-items: end; }
   .row > div { flex: 1 1 220px; }
-  button { padding: .55rem 1.1rem; border-radius: 8px; border: 1px solid var(--border); background: var(--accent); color: #fff; font: inherit; font-weight: 600; cursor: pointer; }
+
+  button { padding: .6rem 1.2rem; border-radius: 6px; border: none; background: var(--accent); color: #1d1f21;
+    font: inherit; font-weight: 700; font-size: .88rem; cursor: pointer;
+    transition: background .18s ease, transform .18s ease; }
+  button:hover:not(:disabled) { background: var(--accent-soft); }
   button:disabled { opacity: .45; cursor: default; }
-  button.secondary { background: var(--panel); color: var(--fg); }
-  .facts { display: flex; gap: .6rem; flex-wrap: wrap; margin-top: .8rem; }
-  .badge { border: 1px solid var(--border); border-radius: 999px; padding: .15rem .7rem; font-size: .85rem; color: var(--dim); }
-  .badge b { color: var(--fg); }
-  .badge.de { border-color: var(--accent); color: var(--accent); }
-  progress { width: 100%; height: 8px; accent-color: var(--accent); }
-  #log { font: 12px/1.6 ui-monospace, monospace; color: var(--dim); white-space: pre-wrap; max-height: 180px; overflow-y: auto; margin-top: .8rem; }
+  button.secondary { background: var(--panel-2); color: var(--fg); }
+  button.secondary:hover { background: var(--bg-2); }
+
+  .facts { display: flex; gap: .5rem; flex-wrap: wrap; margin-top: .9rem; }
+  .badge { border: none; border-radius: 6px; background: var(--bg); padding: .25rem .6rem;
+    font-size: .72rem; letter-spacing: .04em; color: var(--dim); }
+  .badge b { color: var(--fg); font-weight: 600; }
+  .badge.de { color: var(--accent-soft); }
+
+  progress { width: 100%; height: 6px; accent-color: var(--accent); }
+  #log { font: 12px/1.7 var(--mono); color: var(--dim); white-space: pre-wrap; max-height: 180px;
+    overflow-y: auto; margin-top: .9rem; }
   details { margin-top: .9rem; }
+  summary { cursor: pointer; color: var(--dim); font-size: .88rem; }
+  summary:hover { color: var(--fg); }
+
   .fplist { display: flex; flex-direction: column; gap: .25rem; margin-top: .4rem; }
-  .fplist label { display: flex; align-items: center; gap: .5rem; font-weight: 400; font-size: .88rem; margin: 0; }
-  .fplist code { color: var(--dim); font-size: .8rem; }
+  .fplist label { display: flex; align-items: center; gap: .5rem; font-weight: 400; font-size: .86rem;
+    text-transform: none; letter-spacing: 0; color: var(--fg); margin: 0; }
+  .fplist code { color: var(--dim); font-size: .78rem; }
   .fpresults { display: flex; flex-direction: column; gap: .2rem; margin-top: .3rem; }
-  .fpresults button { text-align: left; background: var(--panel); color: var(--fg); border: 1px solid var(--border); font-weight: 400; font-size: .85rem; padding: .35rem .6rem; }
-  .fpresults button:hover { border-color: var(--accent); }
-  .fpresults button .avail { color: var(--ok); font-size: .75rem; margin-left: .3rem; }
-  .fpresults button .unavail { color: var(--warn); font-size: .75rem; margin-left: .3rem; }
+  .fpresults button { text-align: left; background: var(--bg); color: var(--fg); border: none;
+    font-weight: 400; font-size: .85rem; padding: .4rem .6rem; }
+  .fpresults button:hover { background: var(--panel-2); }
+  .fpresults button .avail { color: var(--ok); font-size: .74rem; margin-left: .3rem; }
+  .fpresults button .unavail { color: var(--warn); font-size: .74rem; margin-left: .3rem; }
+
   .repohelp { display: flex; gap: .4rem; margin-top: .4rem; flex-wrap: wrap; }
-  .repohelp select, .repohelp input { padding: .35rem .5rem; border-radius: 6px; border: 1px solid var(--border); background: var(--bg); color: var(--fg); }
+  .repohelp select, .repohelp input { padding: .4rem .55rem; border-radius: 6px; border: none;
+    background: var(--bg); color: var(--fg); font: inherit; font-size: .86rem; }
   .repohelp input { flex: 1; min-width: 140px; }
-  summary { cursor: pointer; color: var(--dim); font-size: .9rem; }
-  textarea { width: 100%; min-height: 90px; margin-top: .5rem; font: 13px ui-monospace, monospace; background: var(--bg); color: var(--fg); border: 1px solid var(--border); border-radius: 8px; padding: .5rem; }
+
+  textarea { width: 100%; min-height: 90px; margin-top: .5rem; font: 13px var(--mono);
+    background: var(--bg); color: var(--fg); border: none; border-radius: 6px; padding: .6rem; }
   .note { font-size: .82rem; color: var(--warn); margin-top: .6rem; }
   .hidden { display: none; }
-  a { color: var(--accent); }
-  .editions { display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: .6rem; margin-top: .3rem; }
-  .edition { display: flex; flex-direction: column; align-items: center; gap: .3rem; padding: .9rem .6rem;
-    border: 1px solid var(--border); border-radius: 12px; background: var(--bg); color: var(--fg);
-    cursor: pointer; font-weight: 600; font-size: .95rem; transition: border-color .12s, background .12s; }
-  .edition:hover { border-color: var(--accent); }
-  .edition.selected { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 12%, transparent); }
-  .edition .emoji { font-size: 1.6rem; line-height: 1; }
-  .edition small { color: var(--dim); font-weight: 400; font-size: .72rem; }
-  .variant-select { margin-top: .4rem; padding: .5rem .6rem; border-radius: 8px; border: 1px solid var(--border);
-    background: var(--bg); color: var(--fg); font-size: .95rem; width: 100%; max-width: 340px; }
-  .tabs { display: flex; gap: .4rem; border-bottom: 1px solid var(--border); padding-bottom: .4rem; margin-top: .8rem; }
-  .tab-btn { background: transparent; color: var(--dim); border: none; font-size: .88rem; font-weight: 600; padding: .3rem .6rem; cursor: pointer; border-radius: 6px; }
+  a { color: var(--accent-soft); }
+  main a { text-decoration: underline; text-underline-offset: 3px; }
+
+  .editions { display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: .5rem; margin-top: .4rem; }
+  .edition { display: flex; flex-direction: column; align-items: flex-start; gap: .25rem; padding: .8rem .9rem;
+    border: none; border-left: 2px solid transparent; border-radius: 6px; background: var(--bg); color: var(--fg);
+    cursor: pointer; font-weight: 700; font-size: .92rem; text-align: left;
+    transition: background .18s ease, border-color .18s ease; }
+  .edition:hover { background: var(--panel-2); }
+  .edition.selected { border-left-color: var(--accent); background: var(--panel-2); }
+  .edition small { color: var(--dim); font-weight: 400; font-size: .7rem; letter-spacing: .04em; }
+
+  .variant-select { margin-top: .4rem; padding: .55rem .65rem; border-radius: 6px; border: none;
+    background: var(--bg); color: var(--fg); font: inherit; font-size: .9rem; width: 100%; max-width: 340px; }
+
+  .tabs { display: flex; gap: .3rem; border-bottom: 1px solid var(--border); padding-bottom: .4rem; margin-top: .9rem; }
+  .tab-btn { background: transparent; color: var(--dim); border: none; font-size: .84rem; font-weight: 600;
+    padding: .35rem .7rem; cursor: pointer; border-radius: 6px; }
   .tab-btn:hover { color: var(--fg); background: var(--bg); }
-  .tab-btn.active { color: var(--fg); background: var(--border); }
-  .tab-content { font-size: .88rem; line-height: 1.6; }
+  .tab-btn.active { color: var(--fg); background: var(--panel-2); }
+  .tab-content { font-size: .88rem; line-height: 1.7; color: var(--dim); }
+  .tab-content b, .tab-content code { color: var(--fg); }
+
+  pre { background: var(--bg); border-radius: 6px; }
+
+  :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+  @media (prefers-reduced-motion: reduce) {
+    button, .edition { transition: none; }
+  }
 </style>
 </head>
 <body>
@@ -86,16 +137,19 @@
     <nav>
       <a href="https://tunaos.org/download">Download</a>
       <a href="https://iso.tunaos.org" class="active">ISO Builder</a>
+      <a href="https://tunaos.org/wootc">From Windows</a>
+      <a href="https://tunaos.org/flatpak">Flatpaks</a>
       <a href="https://tunaos.org/docs/iso-builder">Docs</a>
-      <a href="https://tunaos.org/projects">Projects</a>
       <a href="https://github.com/tuna-os">GitHub</a>
     </nav>
   </div>
 </header>
 <main>
-  <h1><span class="fish">🐟</span>TunaOS ISO Builder</h1>
-  <p class="sub">Build a live ISO from any bootable container image — entirely in your browser.
-     Same engine as CI (<a href="https://github.com/tuna-os/tacklebox" target="_blank" rel="noopener">tacklebox</a>, compiled to WebAssembly). Nothing is uploaded anywhere.</p>
+  <span class="eyebrow">ISO builder</span>
+  <h1>Build a live ISO from a container image</h1>
+  <p class="sub">Any bootable container image, assembled in your browser. Same engine as CI
+     (<a href="https://github.com/tuna-os/tacklebox" target="_blank" rel="noopener">tacklebox</a>,
+     compiled to WebAssembly). Nothing is uploaded anywhere.</p>
 
   <div class="card">
     <label for="variant">Choose your TunaOS edition</label>
@@ -132,7 +186,7 @@
 
       <label style="margin-top:1rem">Custom repositories &amp; setup (advanced)</label>
       <div class="repohelp">
-        <select id="repokind">
+        <select id="repokind" aria-label="Repository type">
           <option value="copr">Fedora COPR</option>
           <option value="ppa">Ubuntu PPA</option>
           <option value="obs">openSUSE OBS</option>
@@ -167,7 +221,7 @@
   </div>
 
   <div class="card hidden" id="postcard">
-    <h3 style="margin-top:0">🎉 ISO Build Complete!</h3>
+    <h3 style="margin-top:0">ISO build complete</h3>
     <p class="sub" style="margin-top:-.4rem;margin-bottom:1rem">Your custom TunaOS ISO is ready. Now you need to write it to a USB drive to make it bootable.</p>
     
     <div class="tabs">
@@ -206,11 +260,11 @@
     </div>
 
     <div id="tab-dd" class="tab-content hidden" style="margin-top:1rem">
-      <p style="margin:0 0 .5rem;font-size:.85rem;color:var(--warn)">⚠️ Warning: Writing to the wrong drive can wipe your computer's main storage drive!</p>
+      <p style="margin:0 0 .5rem;font-size:.85rem;color:var(--warn)">Warning: writing to the wrong drive wipes it. Check the device name first.</p>
       <ol style="padding-left:1.2rem;margin:0">
         <li>Identify your USB drive name (e.g. <code>/dev/sdX</code> on Linux, <code>/dev/diskN</code> on macOS).</li>
         <li>Run the following command in your terminal:
-          <pre style="background:var(--border);padding:.5rem;border-radius:6px;overflow-x:auto;margin:.4rem 0;font:12px monospace"><code>sudo dd if=path/to/tunaos.iso of=/dev/sdX bs=4M status=progress oflag=sync</code></pre>
+          <pre style="padding:.6rem;overflow-x:auto;margin:.4rem 0;font:12px var(--mono)"><code>sudo dd if=path/to/tunaos.iso of=/dev/sdX bs=4M status=progress oflag=sync</code></pre>
         </li>
         <li>Wait for the write command to complete and safely eject the drive.</li>
       </ol>

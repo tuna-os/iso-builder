@@ -691,11 +691,11 @@ $("fpsearch").addEventListener("input", (e) => {
 // so the builder is the way to get them. Keep this list in sync with the
 // image matrix published to ghcr.io/tuna-os (build-config.yml).
 const DESKTOPS = {
-  gnome:  { name: "GNOME",      emoji: "🦴" },
-  kde:    { name: "KDE Plasma", emoji: "🌊" },
-  cosmic: { name: "COSMIC",     emoji: "☄️" },
-  niri:   { name: "Niri",       emoji: "🪟" },
-  xfce:   { name: "XFCE",       emoji: "🐭" },
+  gnome:  { name: "GNOME" },
+  kde:    { name: "KDE Plasma" },
+  cosmic: { name: "COSMIC" },
+  niri:   { name: "Niri" },
+  xfce:   { name: "XFCE" },
 };
 // DDI channels (tacklebox#172): mkosi/sysupdate split artifacts — a UKI
 // plus an already-EROFS root partition. The catalog declares everything
@@ -745,12 +745,12 @@ function renderEditions() {
   // everything (see DDI_CHANNELS).
   const ddi = DDI_CHANNELS.find((c) => `ddi:${c.id}` === $("variant").value);
   if (ddi) {
-    const meta = DESKTOPS[ddi.desktop] || { name: "Headless", emoji: "🖥️" };
+    const meta = DESKTOPS[ddi.desktop] || { name: "Headless" };
     const b = document.createElement("button");
     b.type = "button";
     b.className = "edition";
     b.dataset.de = ddi.desktop;
-    b.innerHTML = `<span class="emoji">${meta.emoji}</span>${meta.name}<small>${ddi.id} · DDI</small>`;
+    b.innerHTML = `${meta.name}<small>${ddi.id} · DDI</small>`;
     b.onclick = () => {
       prepareDdi(ddi); // one click → Build enabled, no inspection
       b.classList.add("selected");
@@ -760,12 +760,12 @@ function renderEditions() {
   }
   const v = currentVariant();
   for (const de of v.des) {
-    const meta = DESKTOPS[de] || { name: de, emoji: "🖥️" };
+    const meta = DESKTOPS[de] || { name: de };
     const b = document.createElement("button");
     b.type = "button";
     b.className = "edition";
     b.dataset.de = de;
-    b.innerHTML = `<span class="emoji">${meta.emoji}</span>${meta.name}<small>${v.id}</small>`;
+    b.innerHTML = `${meta.name}<small>${v.id}</small>`;
     b.onclick = () => {
       selectedDdi = null;
       $("image").value = `${v.id}:${de}`;
