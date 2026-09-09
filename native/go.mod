@@ -5,7 +5,7 @@ go 1.26.3
 require (
 	fyne.io/fyne/v2 v2.8.1
 	github.com/tuna-os/tacklebox v0.0.0-20260908184633-8e92b8c27e2c
-	golang.org/x/crypto v0.56.0
+	golang.org/x/crypto v0.57.0
 	golang.org/x/net v0.58.0
 )
 
@@ -42,7 +42,7 @@ require (
 	github.com/yuin/goldmark v1.8.2 // indirect
 	golang.org/x/image v0.24.0 // indirect
 	golang.org/x/sys v0.48.0 // indirect
-	golang.org/x/text v0.41.0 // indirect
+	golang.org/x/text v0.42.0 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 	howett.net/plist v1.0.1 // indirect
 )
