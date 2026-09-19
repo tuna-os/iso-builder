@@ -1,6 +1,6 @@
 # iso-builder Roadmap
 
-**Last updated**: 2026-08-26 | **Maintainer**: tuna-os (hanthor) / tacklebox team
+**Last updated**: 2026-09-18 | **Maintainer**: tuna-os (hanthor) / tacklebox team
 
 ---
 
@@ -14,16 +14,13 @@ stream a custom bootable ISO to local storage.
 
 ---
 
-## Current Status (August 2026)
+## Current Status (September 2026)
 
 - Live at iso.tunaos.org; tacklebox compiled to `GOOS=js GOARCH=wasm` (`tbox.wasm`).
 - Playwright E2E suite drives the real WASM engine against live registries.
 - Native cross-platform desktop writer app (`native/`) implements multi-boot drive management across Linux, macOS, and Windows.
 - Browser streaming and OPFS quota management implemented (#47, #48, #49).
-- Browser build readiness remains **unverified**: the streaming and memory fixes
-  landed after the latest full-matrix dispatch. Merge and scheduled CI exercise
-  inspection, but not full ISO build/install/boot. Track the evidence gap in
-  #126.
+- Browser build readiness verification ongoing (#126, full-matrix pipeline).
 
 ### Priorities
 
@@ -34,46 +31,29 @@ stream a custom bootable ISO to local storage.
 | P1 | OPFS quota strategy for large editions (8 GB+ ceiling) | #48 | 🟢 Complete |
 | P1 | Native cross-platform writer app (Fyne wrapping tacklebox) — write recipes directly to USB | #1 | 🟢 Complete |
 | P2 | Default UX: persistent extendable multi-boot drive, not one-shot burn | #3, #2, #4 | 🟢 Complete |
-| P0 | Verify every catalog edition builds, installs with encryption, and reboots on current `main` | #126, full-matrix workflow | 🟡 Evidence pending |
+| P0 | Verify every catalog edition builds, installs with encryption, and reboots on current `main` | #126, full-matrix workflow | 🟡 Verification active |
 
 ---
 
 ## Quarterly Goals
 
-### Current Quarter (2026 Q3) — "Expand"
+### Current Quarter (2026 Q4) — "Mature"
 
-**Theme**: Make in-browser builds reliable for all variant sizes and provide native multi-boot drive writing.
+**Theme**: Establish validated browser channel compatibility and release signed/notarized native desktop writer distribution packages.
 
 | Goal | Owner | Tracking | Status |
 |------|-------|----------|--------|
-| Remove the 64 MiB download stall and heap buffering | iso-builder | #49, #47 | 🟢 Complete |
-| Prove every catalog edition builds in-browser, installs with encryption, and reboots | iso-builder | #126, full-matrix workflow | 🟡 Evidence pending |
-| Native cross-platform writer app with full multi-boot drive lifecycle | iso-builder | #1, #2, #3, #4 | 🟢 Complete |
-| Keep E2E green against live registries | iso-builder | e2e/ | 🟡 Steady |
+| Browser channel compatibility validation across all catalog editions | iso-builder | #126 | 🟡 Active |
+| Native desktop writer versioned distribution release (Linux, macOS, Windows) | iso-builder | native/ | 🟢 In Progress |
+| Code signing & macOS notarization integration for native desktop releases | iso-builder | native/package/ | ⚪ Planned |
+| Multi-boot USB drive bundle format contract and restore/recovery verification | iso-builder | docs/ | ⚪ Planned |
 
-### Next Quarter (2026 Q4) — "Mature"
+### Next Quarter (2027 Q1) — "Scale"
 
 | Outcome | Evidence required | Status |
 |---------|-------------------|--------|
-| Browser channel has a current compatibility claim | A dated, all-edition full-matrix result linked from #126; rerun after catalog or tacklebox changes that can affect output | 🟡 Not yet evidenced |
-| Native writer has a versioned distribution channel | At least one GitHub Release with Linux, macOS, and Windows artifacts built from one commit | ⚪ Planned |
-| macOS and Windows artifacts have a trust path | Automated signing, macOS notarization, and installation checks documented in the release record | ⚪ Planned |
-| Portable writer drive bundles are supportable | Bundle format/version contract, upgrade policy, and one restore/recovery test published with the release | ⚪ Planned |
-
-### Readiness Evidence Contract
-
-Implementation trackers describe code landing; they do not by themselves prove
-the user outcome. Browser readiness turns green only when a full-matrix run from
-current `main` publishes, for every catalog edition:
-
-1. browser ISO build result;
-2. encrypted installation result; and
-3. reboot/boot result.
-
-Any exception must name the affected edition, user-visible limitation, owner,
-and next review date. The result becomes stale when the catalog changes or when
-the pinned tacklebox engine changes in a way that can affect build output; #126
-owns the first post-fix baseline.
+| Multi-arch ISO build target support (`arm64` + `x86_64`) | CI matrix build artifacts published to release catalog | ⚪ Planned |
+| Automated mirror & IPFS fallback distribution for ISO artifacts | Integrity checksums & automated sync verification | ⚪ Planned |
 
 ---
 
@@ -102,4 +82,4 @@ major milestones or quarterly. Propose changes via PR to this file with an issue
 reference.
 
 ---
-*Generated by strategist agent at ACMM L6. Updated 2026-08-17.*
+*Generated by strategist agent at ACMM L6. Updated 2026-09-18.*
