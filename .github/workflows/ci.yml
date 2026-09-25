@@ -35,6 +35,16 @@
 # almost nothing. Both live in tacklebox's engine — tuna-os/tacklebox#156.
 name: CI
 
+# Least-privilege default (iso-builder#117): no job here needs to write
+# anything through GITHUB_TOKEN — artifact upload/download uses its own
+# runtime token, R2 publishing uses R2_* secrets, and the deploy job uses
+# CLOUDFLARE_API_TOKEN. Every job only reads its own repo (and, in wasm,
+# public commit metadata from tuna-os/tacklebox via `gh api`), so
+# contents: read covers all of them. Widen per-job with a job-level
+# `permissions:` block if a future job genuinely needs more.
+permissions:
+  contents: read
+
 on:
   push:
     branches: [main]
@@ -528,6 +538,22 @@ jobs:
         # instead of buying 20 idle minutes of runner time.
         run: npx playwright test --grep @full --timeout=4500000
 
+      # Pinned to a commit SHA, not the default branch (iso-builder#117):
+      # scripts/iso-e2e.sh from this checkout is sudo-executed a few steps
+      # down, in the same job that later loads the R2 upload secrets — an
+      # unpinned clone would run whatever landed on tunaOS's default branch
+      # most recently, with root and (later in the job) those credentials in
+      # scope. actions/checkout (rather than a raw --depth=1 clone) is used
+      # so fetching an older SHA is reliable rather than depending on it
+      # still being the branch tip at clone time — same convention the wasm
+      # job above uses to pin tacklebox. Bump deliberately through review.
+      - name: checkout tunaOS test scripts (pinned)
+        uses: actions/checkout@v7
+        with:
+          repository: tuna-os/tunaOS
+          ref: 4f870abb6341b35fa2b64e2da8e63b22154b2663
+          path: tunaos-e2e
+
       - name: verify LUKS install + reboot under QEMU (${{ matrix.edition.slug }})
         timeout-minutes: 25
         env:
@@ -557,13 +583,10 @@ jobs:
           sudo udevadm control --reload-rules
           sudo udevadm trigger --name-match=kvm || true
 
-          echo "Cloning tunaOS test scripts..."
-          git clone --depth=1 https://github.com/tuna-os/tunaOS.git /tmp/tunaos
-
           echo "Running LUKS installation and reboot verification..."
           # sudo sanitizes the environment; the VAR=val prefix carries the
           # image ref through to the harness.
-          sudo TBOX_E2E_IMAGE="$TBOX_E2E_IMAGE" /tmp/tunaos/scripts/iso-e2e.sh "$ISO" --luks \
+          sudo TBOX_E2E_IMAGE="$TBOX_E2E_IMAGE" "${GITHUB_WORKSPACE}/tunaos-e2e/scripts/iso-e2e.sh" "$ISO" --luks \
             --output "luks-verify-${SLUG}" \
             --timeout 900
 
