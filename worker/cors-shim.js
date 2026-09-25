@@ -80,6 +80,150 @@ function relayError(message) {
   });
 }
 
+// ── route handlers ──────────────────────────────────────────────────────────
+//
+// Each handler below owns exactly one upstream's method/body validation,
+// request construction, and response mapping. `fetchImpl` defaults to the
+// global `fetch` the Worker runtime provides, but is threaded through as a
+// parameter so tests can substitute a fake without mocking `globalThis.fetch`
+// for the whole module — the same upstream-injection seam issue #200 asks
+// for, applied first to the two routes with no cache-correctness subtleties
+// to preserve (GHCR's Range handling and the DDI channel allowlist are left
+// as they are pending a separate pass).
+
+// Flathub search relay: flathub.org's API only answers CORS for its own
+// origins, so the builder's Flathub autocomplete goes through here. POST,
+// tiny JSON bodies, generously cacheable per query.
+async function handleFlathubSearch(request, fetchImpl = fetch) {
+  if (request.method !== "POST") {
+    return new Response("method not allowed", { status: 405, headers: CORS });
+  }
+  const body = await request.text();
+  if (body.length > 2048) {
+    return new Response("query too large", { status: 413, headers: CORS });
+  }
+  let resp;
+  try {
+    resp = await fetchImpl("https://flathub.org/api/v2/search", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body,
+    });
+  } catch (e) {
+    logEvent("error", "flathub", { error: String(e) });
+    return relayError("flathub search upstream unreachable");
+  }
+  // The upstream body is still relayed verbatim on a non-2xx — the log
+  // exists so a Flathub outage is distinguishable from an empty result
+  // set, which is what the picker shows for both.
+  if (!resp.ok) {
+    logEvent("warn", "flathub", { upstream_status: resp.status });
+  }
+  const out = new Response(resp.body, { status: resp.status, headers: CORS });
+  out.headers.set("Content-Type", "application/json");
+  return out;
+}
+
+// repology repo prefixes per family (best-effort match).
+const PKGSEARCH_FAMILY_PREFIXES = {
+  fedora: ["fedora"], opensuse: ["opensuse"], arch: ["arch"],
+  debian: ["debian", "ubuntu"], gentoo: ["gentoo"], alpine: ["alpine"],
+};
+
+// Cross-distro package search relay: repology maps a package across every
+// distro family (dnf/zypper/pacman/apt/...), so one search box works for any
+// base image. No CORS on repology → proxy it here.
+// ?q=<term>&family=<fedora|opensuse|arch|debian|...>
+async function handlePkgSearch(url, fetchImpl = fetch) {
+  const q = (url.searchParams.get("q") || "").toLowerCase().replace(/[^a-z0-9._+-]/g, "");
+  const family = url.searchParams.get("family") || "";
+  if (q.length < 2) {
+    return new Response(JSON.stringify([]), { status: 200, headers: { ...CORS, "Content-Type": "application/json" } });
+  }
+  const UA = { "User-Agent": "tunaos-iso-builder (+https://iso.tunaos.org)", "Accept": "application/json" };
+  let projects = {};
+  // `upstreamFailed` separates "repology said there is no such package"
+  // from "repology did not answer". Both used to produce an empty array
+  // and a 200, so a repology outage was indistinguishable from a typo in
+  // the search box — for the user and for anyone reading the logs.
+  let upstreamFailed = false;
+  try {
+    const rr = await fetchImpl(`https://repology.org/api/v1/projects/?search=${encodeURIComponent(q)}`, { headers: UA });
+    if (rr.ok) {
+      projects = await rr.json();
+    } else {
+      upstreamFailed = true;
+      logEvent("warn", "pkgsearch", { upstream: "repology_projects", upstream_status: rr.status });
+    }
+  } catch (e) {
+    upstreamFailed = true;
+    projects = {};
+    logEvent("error", "pkgsearch", { upstream: "repology_projects", error: String(e) });
+  }
+  // The exact-name project is often buried under plugins in search;
+  // fetch it directly so the base package always surfaces first.
+  try {
+    const er = await fetchImpl(`https://repology.org/api/v1/project/${encodeURIComponent(q)}`, { headers: UA });
+    if (er.ok) {
+      const ee = await er.json();
+      if (Array.isArray(ee) && ee.length) projects = { [q]: ee, ...projects };
+    } else if (er.status !== 404) {
+      // A 404 is the normal answer for "no project by that exact name"
+      // and is the reason this lookup is best-effort — only anything
+      // else is worth a line.
+      logEvent("warn", "pkgsearch", { upstream: "repology_project", upstream_status: er.status });
+    }
+  } catch (e) {
+    logEvent("error", "pkgsearch", { upstream: "repology_project", error: String(e) });
+  }
+  const prefixes = PKGSEARCH_FAMILY_PREFIXES[family] || [];
+  let out = [];
+  for (const [name, entries] of Object.entries(projects || {})) {
+    let pick = null;
+    for (const e of entries) {
+      if (prefixes.some((p) => (e.repo || "").startsWith(p))) { pick = e; break; }
+    }
+    const any = pick || entries[0];
+    if (!any) continue;
+    out.push({
+      project: name,
+      pkg: (pick && (pick.binname || pick.srcname || pick.visiblename)) || name,
+      summary: any.summary || "",
+      available: !!pick,
+      version: any.version || "",
+    });
+  }
+  // Rank: available-in-this-family first, then exact/prefix name match,
+  // then shorter names (the base package over its plugins).
+  out.sort((a, b) => {
+    if (a.available !== b.available) return a.available ? -1 : 1;
+    const ax = a.project === q ? 0 : a.project.startsWith(q) ? 1 : 2;
+    const bx = b.project === q ? 0 : b.project.startsWith(q) ? 1 : 2;
+    if (ax !== bx) return ax - bx;
+    return a.project.length - b.project.length;
+  });
+  out = out.slice(0, 12);
+  // Don't cache an outage. `max-age=600` on an empty array produced only
+  // because repology was down pins that emptiness at the edge for ten
+  // minutes, so the search box keeps returning nothing for the term long
+  // after repology recovers.
+  const degraded = upstreamFailed && out.length === 0;
+  if (degraded) {
+    // `family` is an unvalidated query param, so it is collapsed to the
+    // six keys the prefix table knows plus "other" — a raw echo would let
+    // a caller mint an unbounded number of distinct log labels.
+    logEvent("warn", "pkgsearch", {
+      result: "empty_after_upstream_failure",
+      family: prefixes.length ? family : "other",
+    });
+  }
+  const o = new Response(JSON.stringify(out), { status: 200, headers: { ...CORS, "Content-Type": "application/json" } });
+  o.headers.set("Cache-Control", degraded ? "no-store" : "public, max-age=600");
+  return o;
+}
+
+export { handleFlathubSearch, handlePkgSearch };
+
 export default {
   async fetch(request) {
     const url = new URL(request.url);
@@ -147,133 +291,18 @@ export default {
       });
     }
 
-    // Flathub search relay: flathub.org's API only answers CORS for its
-    // own origins, so the builder's Flathub autocomplete goes through
-    // here. POST, tiny JSON bodies, generously cacheable per query.
+    // Flathub search relay (handleFlathubSearch): flathub.org's API only
+    // answers CORS for its own origins, so the builder's Flathub autocomplete
+    // goes through here.
     if (url.pathname === "/flathub/search") {
-      if (request.method !== "POST") {
-        return new Response("method not allowed", { status: 405, headers: CORS });
-      }
-      const body = await request.text();
-      if (body.length > 2048) {
-        return new Response("query too large", { status: 413, headers: CORS });
-      }
-      let resp;
-      try {
-        resp = await fetch("https://flathub.org/api/v2/search", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body,
-        });
-      } catch (e) {
-        logEvent("error", "flathub", { error: String(e) });
-        return relayError("flathub search upstream unreachable");
-      }
-      // The upstream body is still relayed verbatim on a non-2xx — the log
-      // exists so a Flathub outage is distinguishable from an empty result
-      // set, which is what the picker shows for both.
-      if (!resp.ok) {
-        logEvent("warn", "flathub", { upstream_status: resp.status });
-      }
-      const out = new Response(resp.body, { status: resp.status, headers: CORS });
-      out.headers.set("Content-Type", "application/json");
-      return out;
+      return handleFlathubSearch(request);
     }
 
-    // Cross-distro package search relay: repology maps a package across
-    // every distro family (dnf/zypper/pacman/apt/...), so one search box
-    // works for any base image. No CORS on repology → proxy it here.
-    // ?q=<term>&family=<fedora|opensuse|arch|debian|...>
+    // Cross-distro package search relay (handlePkgSearch): repology maps a
+    // package across every distro family, so one search box works for any
+    // base image. No CORS on repology → proxy it here.
     if (url.pathname === "/pkgsearch") {
-      const q = (url.searchParams.get("q") || "").toLowerCase().replace(/[^a-z0-9._+-]/g, "");
-      const family = url.searchParams.get("family") || "";
-      if (q.length < 2) {
-        return new Response(JSON.stringify([]), { status: 200, headers: { ...CORS, "Content-Type": "application/json" } });
-      }
-      const UA = { "User-Agent": "tunaos-iso-builder (+https://iso.tunaos.org)", "Accept": "application/json" };
-      let projects = {};
-      // `upstreamFailed` separates "repology said there is no such package"
-      // from "repology did not answer". Both used to produce an empty array
-      // and a 200, so a repology outage was indistinguishable from a typo in
-      // the search box — for the user and for anyone reading the logs.
-      let upstreamFailed = false;
-      try {
-        const rr = await fetch(`https://repology.org/api/v1/projects/?search=${encodeURIComponent(q)}`, { headers: UA });
-        if (rr.ok) {
-          projects = await rr.json();
-        } else {
-          upstreamFailed = true;
-          logEvent("warn", "pkgsearch", { upstream: "repology_projects", upstream_status: rr.status });
-        }
-      } catch (e) {
-        upstreamFailed = true;
-        projects = {};
-        logEvent("error", "pkgsearch", { upstream: "repology_projects", error: String(e) });
-      }
-      // The exact-name project is often buried under plugins in search;
-      // fetch it directly so the base package always surfaces first.
-      try {
-        const er = await fetch(`https://repology.org/api/v1/project/${encodeURIComponent(q)}`, { headers: UA });
-        if (er.ok) {
-          const ee = await er.json();
-          if (Array.isArray(ee) && ee.length) projects = { [q]: ee, ...projects };
-        } else if (er.status !== 404) {
-          // A 404 is the normal answer for "no project by that exact name"
-          // and is the reason this lookup is best-effort — only anything
-          // else is worth a line.
-          logEvent("warn", "pkgsearch", { upstream: "repology_project", upstream_status: er.status });
-        }
-      } catch (e) {
-        logEvent("error", "pkgsearch", { upstream: "repology_project", error: String(e) });
-      }
-      // repology repo prefixes per family (best-effort match).
-      const prefixes = {
-        fedora: ["fedora"], opensuse: ["opensuse"], arch: ["arch"],
-        debian: ["debian", "ubuntu"], gentoo: ["gentoo"], alpine: ["alpine"],
-      }[family] || [];
-      let out = [];
-      for (const [name, entries] of Object.entries(projects || {})) {
-        let pick = null;
-        for (const e of entries) {
-          if (prefixes.some((p) => (e.repo || "").startsWith(p))) { pick = e; break; }
-        }
-        const any = pick || entries[0];
-        if (!any) continue;
-        out.push({
-          project: name,
-          pkg: (pick && (pick.binname || pick.srcname || pick.visiblename)) || name,
-          summary: any.summary || "",
-          available: !!pick,
-          version: any.version || "",
-        });
-      }
-      // Rank: available-in-this-family first, then exact/prefix name match,
-      // then shorter names (the base package over its plugins).
-      out.sort((a, b) => {
-        if (a.available !== b.available) return a.available ? -1 : 1;
-        const ax = a.project === q ? 0 : a.project.startsWith(q) ? 1 : 2;
-        const bx = b.project === q ? 0 : b.project.startsWith(q) ? 1 : 2;
-        if (ax !== bx) return ax - bx;
-        return a.project.length - b.project.length;
-      });
-      out = out.slice(0, 12);
-      // Don't cache an outage. `max-age=600` on an empty array produced only
-      // because repology was down pins that emptiness at the edge for ten
-      // minutes, so the search box keeps returning nothing for the term long
-      // after repology recovers.
-      const degraded = upstreamFailed && out.length === 0;
-      if (degraded) {
-        // `family` is an unvalidated query param, so it is collapsed to the
-        // six keys the prefix table knows plus "other" — a raw echo would let
-        // a caller mint an unbounded number of distinct log labels.
-        logEvent("warn", "pkgsearch", {
-          result: "empty_after_upstream_failure",
-          family: prefixes.length ? family : "other",
-        });
-      }
-      const o = new Response(JSON.stringify(out), { status: 200, headers: { ...CORS, "Content-Type": "application/json" } });
-      o.headers.set("Cache-Control", degraded ? "no-store" : "public, max-age=600");
-      return o;
+      return handlePkgSearch(url);
     }
 
     // DDI artifact relay (tacklebox#172): the Frostyard sysupdate
