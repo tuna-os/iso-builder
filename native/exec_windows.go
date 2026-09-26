@@ -247,6 +247,17 @@ func installKernelUpdate(onLine func(string)) error {
 	}
 	defer os.Remove(msiPath)
 
+	// Verified before it's ever run elevated (iso-builder#115 item 3): the
+	// download above has no integrity check of its own, so a MITM'd
+	// connection or a substituted GitHub release asset would otherwise be
+	// installed with admin rights unnoticed. Requiring a valid Authenticode
+	// signature from a Microsoft-issued certificate is the same bar
+	// Windows' own SmartScreen applies to a downloaded installer.
+	onLine("Verifying WSL2 kernel update signature...")
+	if err := verifyMicrosoftSignature(msiPath); err != nil {
+		return fmt.Errorf("refusing to install an unverified WSL2 kernel update: %w", err)
+	}
+
 	// The kernel update installs machine-wide and needs admin, same as
 	// the optional-feature enable above — msiexec run un-elevated fails
 	// silently for a non-admin user. (This didn't surface during live
@@ -261,6 +272,32 @@ func installKernelUpdate(onLine func(string)) error {
 		onLine(string(out))
 	}
 	return err
+}
+
+// verifyMicrosoftSignature checks that the file at path carries a valid
+// Authenticode signature issued to Microsoft, per the recommendation in
+// iso-builder#115. Get-AuthenticodeSignature (not a third-party tool) keeps
+// this dependency-free — it ships with every Windows PowerShell this app
+// already shells out to elsewhere in this file.
+func verifyMicrosoftSignature(path string) error {
+	script := fmt.Sprintf(
+		`$sig = Get-AuthenticodeSignature -LiteralPath %q; `+
+			`Write-Output "STATUS:$($sig.Status)"; `+
+			`if ($sig.SignerCertificate) { Write-Output "SUBJECT:$($sig.SignerCertificate.Subject)" }`,
+		path,
+	)
+	out, err := exec.Command("powershell", "-NoProfile", "-Command", script).CombinedOutput()
+	output := strings.TrimSpace(string(out))
+	if err != nil {
+		return fmt.Errorf("signature check failed to run: %w (%s)", err, output)
+	}
+	if !strings.Contains(output, "STATUS:Valid") {
+		return fmt.Errorf("signature is not valid (%s)", output)
+	}
+	if !strings.Contains(output, "SUBJECT:") || !strings.Contains(output, "O=Microsoft Corporation") {
+		return fmt.Errorf("signer is not Microsoft Corporation (%s)", output)
+	}
+	return nil
 }
 
 // wslReleaseAsset mirrors the fields this app needs from a GitHub release
