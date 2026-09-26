@@ -360,6 +360,25 @@ jobs:
       - name: resolve every offered image against GHCR
         run: python3 scripts/verify-catalog.py
 
+      # GHCR existence is not correctness: a cell upstream stopped building
+      # still 200s until the registry eventually garbage-collects the tag
+      # (iso-builder#142's "orphaned tags" — flounder:cosmic, grouper:niri).
+      # Only tunaOS's own build-config.yml says what SHOULD be offered.
+      # scripts/verify-tunaos-build-config.py reads it directly and fails on
+      # any cell this repo offers that build-config.yml does not mark
+      # `build_image: true` for.
+      #
+      # Schedule/dispatch only, deliberately not on every push/PR: this repo
+      # does not own build-config.yml's edit cadence, and gating merges on
+      # another team's file is exactly the coupling #142 warned against. This
+      # is what the "Weekly: the app talks to live infra that can drift" cron
+      # comment above always promised and, per #142's own finding ("No job
+      # is gated on github.event_name == 'schedule' ... The declared drift
+      # detector was never implemented"), never actually did until now.
+      - name: cross-check catalog.go against tunaOS's build-config.yml
+        if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+        run: python3 scripts/verify-tunaos-build-config.py
+
   # Resolves e2e/editions.json into the matrix, honouring the `only` input.
   # gh cannot dispatch a single matrix cell, and re-running nine multi-GB
   # pulls to iterate on one edition is indefensible — the first sweep did
