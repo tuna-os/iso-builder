@@ -1,0 +1,41 @@
+{
+  "version": "1.0",
+  "project": "iso-builder",
+  "thresholds": {
+    "build_success_rate": {
+      "native-linux": 0.95,
+      "native-windows": 0.90,
+      "native-macos": 0.90,
+      "wasm": 0.95,
+      "catalog": 0.98
+    },
+    "test_coverage": {
+      "minimum": 0.75,
+      "native": 0.80,
+      "wasm": 0.70
+    },
+    "e2e_reliability": {
+      "baseline": 0.90,
+      "full-matrix": 0.85
+    },
+    "security_scan": {
+      "critical_vulnerabilities": 0,
+      "high_vulnerabilities": 0,
+      "medium_vulnerabilities_allowed": 3
+    }
+  },
+  "checks": [
+    "native-linux",
+    "native-windows",
+    "native-macos",
+    "wasm",
+    "catalog"
+  ],
+  "tuning_strategy": "adaptive",
+  "review_period_days": 30,
+  "auto_adjust": true,
+  "notifications": {
+    "enabled": true,
+    "threshold_deviation": 0.10
+  }
+}
