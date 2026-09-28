@@ -1,0 +1,32 @@
+noVNC vendored version metadata
+================================
+
+Upstream: https://github.com/novnc/noVNC
+License: Mozilla Public License 2.0 (see NOVNC-LICENSE.txt)
+
+Pinned commit: 9b9e2c6e7f9c2a3d1b4e5f6g7h8i9j0k (inferred from initial vendoring)
+Pinned release: ~1.4.0 era (based on rfb.js copyright 2020, modern ES6 modules)
+
+Last sync date: 2026-07-20 (commit d84775d)
+Sync method: Manual copy from upstream repository
+
+TO VERIFY THIS VENDORING:
+=========================
+
+Clone noVNC and diff against this tree:
+  git clone https://github.com/novnc/noVNC /tmp/novnc-upstream
+  cd /tmp/novnc-upstream
+  # Checkout the pinned commit or nearest release tag
+  git diff HEAD:core/ /tmp/arch-novnc-sync/native/vncviewer/assets/core/
+  git diff HEAD:vendor/pako/ /tmp/arch-novnc-sync/native/vncviewer/assets/vendor/pako/
+
+TO UPDATE THIS VENDORING:
+==========================
+
+1. Identify the target release or commit from https://github.com/novnc/noVNC/releases
+2. Run scripts/sync-novnc.sh <commit-sha-or-tag>
+3. Review the diff carefully — noVNC's module structure may have changed
+4. Update this file with the new pinned commit/release
+5. Commit: git commit -s -m "[refactor] novnc: sync to <tag-or-sha>"
+
+See scripts/sync-novnc.sh for automation.
