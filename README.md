@@ -1,6 +1,6 @@
 # TunaOS ISO Builder
 
-Build a bootable **live ISO** from any bootable container image — **entirely in your browser**. No server, no upload: the same engine that CI uses ([tacklebox](https://github.com/tuna-os/tacklebox)) is compiled to WebAssembly and runs client-side.
+Build a bootable **live ISO** from any bootable container image — **entirely in your browser**. No server, no upload: CI uses the same engine ([tacklebox](https://github.com/tuna-os/tacklebox)). We compile it to WebAssembly, and it runs client-side.
 
 **Live:** <https://iso.tunaos.org>
 
@@ -8,17 +8,17 @@ Build a bootable **live ISO** from any bootable container image — **entirely i
 
 ## The Intended Experience
 
-1. **Pick a Base & Desktop:** Select your base (AlmaLinux Kitten, Fedora, Debian, etc.) and desktop environment (GNOME, KDE Plasma, COSMIC, Niri, XFCE).
+1. **Pick a Base & Desktop:** Select your base (AlmaLinux Kitten, Fedora, Debian, etc.). Then select a desktop (GNOME, KDE Plasma, COSMIC, Niri, XFCE).
 2. **Instant Inspection:** The builder downloads metadata and inspects the image layers in seconds.
-3. **Build ISO:** Click build, and a custom bootable ISO is streamed directly to your local storage.
+3. **Build ISO:** Click build. The builder streams a custom bootable ISO to your local storage.
 
-Everything else — preloading Flatpaks, layering system packages ([remora](https://github.com/tuna-os/remora)), custom repos, or pointing to a custom registry relay — lives under **Advanced** and is entirely opt-in.
+All other options are under **Advanced**, and each one is opt-in. You can preload Flatpaks, add system packages ([remora](https://github.com/tuna-os/remora)), add custom repos, or set a custom registry relay.
 
 ---
 
 ## How It Works (Architecture)
 
-The builder is a **serverless, client-side application** designed to bypass traditional resource limitations when handling multi-gigabyte container images in web browsers:
+The builder is a **serverless, client-side application**. Its design avoids the usual browser limits on memory and storage for multi-gigabyte container images:
 
 ```mermaid
 sequenceDiagram
@@ -46,9 +46,9 @@ sequenceDiagram
 ```
 
 ### Key Technical Pillars
-1. **Stateless CORS Relay (`worker/`):** Docker registries like GHCR do not emit browser `Access-Control-Allow-Origin` headers. The Cloudflare Worker shims the CORS preflight requests and adds edge caching (`cf: { cacheEverything: true }`) for immutable blob digests to absorb repeating downloads.
-2. **Back-to-Front Tar Scanning:** Decodes layer tars in reverse order (topmost first) to identify the kernel and initramfs in seconds, enabling it to abort connection streams early rather than pulling gigabytes of unnecessary data.
-3. **File System Access API Streaming:** Instead of buffering the final multi-gigabyte ISO in browser tab memory (which easily triggers OOM tab crashes), it streams chunks directly to disk via `showSaveFilePicker()`. Browsers without this support (Safari, Firefox) fall back to memory buffering with a warning.
+1. **Stateless CORS Relay (`worker/`):** Docker registries (for example, GHCR) do not emit browser `Access-Control-Allow-Origin` headers. The Cloudflare Worker shims the CORS preflight requests. It also keeps an edge cache (`cf: { cacheEverything: true }`) of immutable blob digests to absorb repeat downloads.
+2. **Back-to-Front Tar Scan:** The engine decodes the layer tars in reverse order (topmost first). It finds the kernel and initramfs in seconds. Then it stops the connection streams early, and does not pull gigabytes of unnecessary data.
+3. **Stream to Disk:** The final ISO is multi-gigabyte. A browser tab can crash with OOM if it holds the full ISO in memory. So the engine streams the chunks to disk through `showSaveFilePicker()`. Browsers without this support (Safari, Firefox) keep the ISO in memory instead, and show a warning.
 
 ---
 
@@ -82,7 +82,7 @@ npx playwright test --grep-invert @full        # Runs UI & inspect network flow
 ```
 
 > [!IMPORTANT]
-> Playwright tests run in a persistent browser context located in `~/tmp/` instead of `/tmp`. This ensures Chrome doesn't run out of storage space when downloading real image layers on Linux environments that limit `/tmp` to a small `tmpfs` RAM disk.
+> Playwright tests run in a persistent browser context in `~/tmp/`, not in `/tmp`. Some Linux systems limit `/tmp` to a small `tmpfs` RAM disk. There, Chrome can run out of storage space when it downloads the layers of a real image.
 
 ### Native writer
 
@@ -100,9 +100,9 @@ cd app    && npx wrangler deploy   # Deploys to Pages (iso.tunaos.org)
 cd worker && npx wrangler deploy   # Deploys to Workers (relay.tunaos.org)
 ```
 
-*Note: Requires `CLOUDFLARE_API_TOKEN` configured in your environment with Workers and Pages deployment scope.*
+*Note: You need `CLOUDFLARE_API_TOKEN` in your environment, with the Workers and Pages deployment scope.*
 
-Normally this is automatic: the `deploy` job in `.github/workflows/ci.yml` deploys both surfaces on every push to `main`. Nothing in CI checks production afterwards, so verify by hand — `curl -sS https://relay.tunaos.org/healthz` (expects `{"status":"ok"}`) and `curl -sSI https://iso.tunaos.org/tbox.wasm`. To roll a bad deploy back, and for the rest of the detection and verification checklist, see [`runbooks/deploy-and-rollback.md`](runbooks/deploy-and-rollback.md).
+Normally this is automatic: the `deploy` job in `.github/workflows/ci.yml` deploys both surfaces on every push to `main`. CI does not check production after the deploy. Thus, do a manual check: `curl -sS https://relay.tunaos.org/healthz` (expects `{"status":"ok"}`) and `curl -sSI https://iso.tunaos.org/tbox.wasm`. For the rollback steps and the full checklist, see [`runbooks/deploy-and-rollback.md`](runbooks/deploy-and-rollback.md).
 
 ---
 
@@ -114,7 +114,7 @@ Normally this is automatic: the `deploy` job in `.github/workflows/ci.yml` deplo
 GOOS=js GOARCH=wasm go build -o tbox.wasm ./cmd/tbwasm
 ```
 
-When updating the WASM file, always ensure you copy the matching `wasm_exec.js` from your Go installation:
+When you update the WASM file, always copy the matching `wasm_exec.js` from your Go installation:
 ```sh
 cp "$(go env GOROOT)/lib/wasm/wasm_exec.js" app/public/
 ```
@@ -122,8 +122,8 @@ cp "$(go env GOROOT)/lib/wasm/wasm_exec.js" app/public/
 ## Updating systemd-boot
 
 `app/public/systemd-bootx64.efi` is a committed copy of the systemd-boot EFI
-stub, fetched by the app at runtime for the DDI build path. It is pinned to
-an exact Ubuntu package version with a checksum — see
-[`app/public/sdboot-NOTICE.txt`](app/public/sdboot-NOTICE.txt) for the
-provenance, the pinned version, and the reproduction command used to verify
-or refresh it.
+stub. The app fetches it at runtime for the DDI build path. We pin it to
+one exact version of the Ubuntu package, with a checksum. For the provenance
+and the pinned version, see
+[`app/public/sdboot-NOTICE.txt`](app/public/sdboot-NOTICE.txt). That file also
+has the command to verify or refresh the stub.

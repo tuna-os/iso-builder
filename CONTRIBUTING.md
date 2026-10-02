@@ -1,15 +1,15 @@
 # Contributing to TunaOS ISO Builder
 
-Thank you for your interest in contributing to the **TunaOS ISO Builder**! This document provides guidelines and instructions for submitting contributions to this repository.
+Thank you for your interest in the **TunaOS ISO Builder**! This document gives guidelines and instructions to send contributions to this repository.
 
 ---
 
 ## Development Setup & Verification
 
-Before opening a pull request, ensure your changes have been tested locally across the affected components.
+Before you open a pull request, test your changes locally in each affected component.
 
 ### 1. Web Application (`app/public`)
-- Ensure `tbox.wasm` and `wasm_exec.js` are populated as described in [README.md](README.md#develop).
+- Put `tbox.wasm` and `wasm_exec.js` in place, as [README.md](README.md#develop) describes.
 - Serve locally:
   ```sh
   cd app/public && python3 -m http.server 8080
@@ -33,8 +33,8 @@ Before opening a pull request, ensure your changes have been tested locally acro
   ```
 - `native/` also carries a [`.golangci.yml`](.golangci.yml) (schema `version: "2"`, so it needs
   golangci-lint v2, e.g. `go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@latest`).
-  CI does not run this yet, so lint it yourself before opening a PR (the config's
-  `formatters` section runs `gofmt`/`goimports` as part of this too):
+  CI does not run this yet, so lint it yourself before you open a PR. The
+  `formatters` section of the config also runs `gofmt`/`goimports`:
   ```sh
   cd native
   golangci-lint run
@@ -46,6 +46,6 @@ Before opening a pull request, ensure your changes have been tested locally acro
 
 1. **Branch Naming & DCO**: Create a feature or bugfix branch. Sign all commits with Developer Certificate of Origin (`git commit -s`).
 2. **Pull Requests**: Open a pull request against the `main` branch. Provide a clear description of the changes and link any related issues.
-3. **CI Pipeline**: All PRs must pass automated check workflows — `native-linux`/`native-windows`/`native-macos`
-   (`go vet` + `go test`) and the `e2e` inspect-tier suite. golangci-lint is configured but not yet wired into
-   CI (run it locally per the native step above).
+3. **CI Pipeline**: All PRs must pass the automated checks — `native-linux`/`native-windows`/`native-macos`
+   (`go vet` + `go test`) and the `e2e` inspect-tier suite. The repository has a golangci-lint config, but CI
+   does not run it yet. Run it locally, as the native step above shows.
