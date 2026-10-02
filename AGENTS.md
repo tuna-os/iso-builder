@@ -16,13 +16,14 @@ ISO-building behaviour lives in **tacklebox**. This repo pins it as a Go module
 in `native/go.mod` (Renovate bumps the digest), and CI rebuilds
 `app/public/tbox.wasm` from tacklebox at that pinned commit.
 
-So `app/public/tbox.wasm` and `app/public/wasm_exec.js` are **committed blobs
-that CI overwrites**. The `wasm` job builds the engine, `e2e` downloads that
-artifact over the committed copies so the suite tests current source, and
-`deploy` ships the built artifact — never the committed one. Two consequences:
+So `app/public/tbox.wasm` and `app/public/wasm_exec.js` are **build output,
+not source**, and `.gitignore` excludes them (`app/**/*.wasm`). The `wasm` job
+builds the engine. The `e2e` job puts that artifact in `app/public/` and tests
+it. The `deploy` job ships the same artifact. Two consequences:
 
-- Hand-refreshing the committed blob does not change what users get, and the
-  committed copy can silently skew from the pin without anything failing.
+- Do not commit a rebuilt `tbox.wasm` (or `git add -f` one). Git cannot
+  delta-compress a `.wasm` file, so each revision adds 12 MB of permanent
+  history. This repo history already holds six revisions (#152).
 - To change what the builder does, change tacklebox and bump the pin here.
 
 `wasm_exec.js` is taken from `$(go env GOROOT)/lib/wasm/` rather than git,
