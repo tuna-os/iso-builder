@@ -1,18 +1,18 @@
 # Multi-Boot Drive Management Workflows & CLI Parity
 
-This document specifies the multi-boot drive management lifecycle capabilities exposed in iso-builder as defined in issue #2.
+This document specifies how iso-builder manages the lifecycle of a multi-boot drive, as issue #2 defines.
 
 ---
 
 ## 1. Feature Lifecycle Matrix
 
-iso-builder surfaces tacklebox multi-boot drive lifecycle subcommands through a unified native GUI panel ("Manage this drive") and platform execution bridge (runTackleboxArgs):
+iso-builder gives access to the drive subcommands of tacklebox through one panel in the native GUI ("Manage this drive"). A bridge for each platform (`runTackleboxArgs`) runs the subcommands:
 
-- **Status** (`tacklebox status <drive>`): Identifies whether a drive is managed by tacklebox, listing installed OS environment IDs, boot targets, and allocated partition space.
-- **Add** (`tacklebox add <recipe/img> <drive>`): Installs an additional OS environment onto an existing multi-boot drive alongside existing installations without reformatting.
+- **Status** (`tacklebox status <drive>`): Shows if tacklebox manages a drive. It lists the IDs of each installed OS environment, the boot targets, and the allocated partition space.
+- **Add** (`tacklebox add <recipe/img> <drive>`): Installs one more OS environment on a multi-boot drive, next to the current environments. It does not format the drive again.
 - **Update** (`tacklebox update <recipe/img> <drive>` / `update_all`): Re-installs or upgrades an installed OS environment in place on the drive.
-- **Remove** (`tacklebox remove <envID> <drive> --yes`): Uninstalls a specific OS environment, freeing its space without affecting other environments. Correctly surfaces tacklebox safety refusal when attempting to remove the last remaining environment.
-- **Verify** (`tacklebox verify <drive>`): Performs integrity checks across GPT partition structures, systemd-boot entries, and environment payloads.
+- **Remove** (`tacklebox remove <envID> <drive> --yes`): Uninstalls a specific OS environment and frees its space. Other environments do not change. If you try to remove the last environment, tacklebox refuses, and the GUI shows that refusal.
+- **Verify** (`tacklebox verify <drive>`): Does integrity checks on the GPT partition structures, the systemd-boot entries, and the environment payloads.
 
 ---
 
@@ -30,4 +30,4 @@ iso-builder surfaces tacklebox multi-boot drive lifecycle subcommands through a 
 ## 3. UI Guardrails & Safety
 
 - **Busy State (`busyGuard`)**: Disables all action buttons during in-flight operations to prevent concurrent drive mutations.
-- **Destructive Confirmation**: Deletions and format operations prompt confirmation dialogs specifying the targeted drive path and environment ID.
+- **Destructive Confirmation**: Before a delete or format operation, a dialog asks for confirmation. The dialog shows the drive path and the environment ID.
