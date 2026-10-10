@@ -6,7 +6,7 @@ require (
 	fyne.io/fyne/v2 v2.8.1
 	github.com/tuna-os/tacklebox v0.0.0-20261009181056-8e7002aef753
 	golang.org/x/crypto v0.58.0
-	golang.org/x/net v0.60.0
+	golang.org/x/net v0.61.0
 )
 
 require (
