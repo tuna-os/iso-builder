@@ -12,5 +12,8 @@ native/e2e/screenshots/
 
 # WASM engine build artifacts — built in CI (wasm job) from pinned tacklebox.
 # See "Updating the WASM Engine" in README for local rebuild.
-app/public/tbox.wasm
+# A rebuilt .wasm differs in almost every byte, so git cannot delta-compress
+# it: each committed revision cost ~12 MB of history (#152). Ignore any .wasm
+# under app/ so a renamed or relocated build cannot slip in either.
+app/**/*.wasm
 app/public/wasm_exec.js

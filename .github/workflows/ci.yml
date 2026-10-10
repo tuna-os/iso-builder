@@ -203,14 +203,10 @@ jobs:
         working-directory: native
         run: go build -o tacklebox-app .
 
-  # Build the engine instead of trusting the committed app/public/tbox.wasm.
-  #
-  # That blob is refreshed by hand ("chore(wasm): rebuild tbox.wasm ...") and
-  # has already shipped stale once — see 039ce59, "actually ship the
-  # udev-fallback wasm (prior commit captured stale binary)". At the time of
-  # writing the committed binary is 12,905,395 bytes against 12,908,590 built
-  # from the pinned tacklebox, so the engine users run is not the engine the
-  # source describes, and an engine fix cannot be proven from this repo.
+  # Build the engine from the pinned tacklebox. app/public/tbox.wasm is not in
+  # git (#75, #152): the hand-refreshed blob it replaced ("chore(wasm): rebuild
+  # tbox.wasm ...") shipped stale at least once — see 039ce59, "actually ship
+  # the udev-fallback wasm (prior commit captured stale binary)".
   #
   # The version comes from native/go.mod's existing tacklebox pin, so
   # Renovate's digest bumps now move the CLI, the native app and the web
@@ -256,15 +252,14 @@ jobs:
         run: GOOS=js GOARCH=wasm go build -o "$GITHUB_WORKSPACE/app/public/tbox.wasm" ./cmd/tbwasm
 
       # wasm_exec.js is the toolchain's own shim and must match the compiler
-      # that produced the binary; it is a second committed blob that can skew
-      # independently, so take it from the same toolchain rather than git.
+      # that produced the binary, so take it from the same toolchain rather
+      # than from git, where it could skew independently.
       - name: sync wasm_exec.js from the toolchain
         run: cp "$(go env GOROOT)/lib/wasm/wasm_exec.js" app/public/wasm_exec.js
 
       - name: report
         run: |
           ls -l app/public/tbox.wasm app/public/wasm_exec.js
-          git diff --stat -- app/public/tbox.wasm app/public/wasm_exec.js || true
 
       - uses: actions/upload-artifact@v7
         with:
@@ -284,8 +279,8 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
-      # Overwrites the committed blobs with the freshly built engine, so the
-      # suite tests the current source rather than whatever was last checked in.
+      # The engine is not in git; drop the freshly built one into app/public/
+      # so the suite tests the current source.
       - uses: actions/download-artifact@v8
         with:
           name: engine
@@ -474,7 +469,7 @@ jobs:
       # navigator.storage.persist() or spilling less into OPFS — not df.
 
       # The whole point of this job is testing the engine, so it must be the
-      # built one, not the committed blob.
+      # one the wasm job built from the pin.
       - uses: actions/download-artifact@v8
         with:
           name: engine
@@ -665,9 +660,8 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
-      # iso.tunaos.org gets the engine CI just built and tested. Deploying the
-      # committed blob instead is how a hand-refreshed binary reaches users
-      # without ever having been run.
+      # iso.tunaos.org gets the engine CI just built and tested, never a
+      # hand-built binary that has not been run.
       - uses: actions/download-artifact@v8
         with:
           name: engine
