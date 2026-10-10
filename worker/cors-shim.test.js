@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import worker from "./cors-shim.js";
+import worker, { handleFlathubSearch, handlePkgSearch } from "./cors-shim.js";
 
 function req(url, opts) {
   return new Request(url, opts);
@@ -214,4 +214,105 @@ test("ddi endpoint with an unknown channel falls through to the path allowlist r
 test("ddi endpoint rejects non-GET/HEAD methods", async () => {
   const res = await worker.fetch(req("https://relay.tunaos.org/ddi/snowfield/foo.raw", { method: "POST" }));
   assert.equal(res.status, 405);
+});
+
+// ── handleFlathubSearch, called directly with an injected fetch ──────────────
+
+test("handleFlathubSearch rejects non-POST without calling fetch", async () => {
+  let called = false;
+  const res = await handleFlathubSearch(req("https://relay.tunaos.org/flathub/search"), async () => {
+    called = true;
+    return new Response("[]");
+  });
+  assert.equal(res.status, 405);
+  assert.equal(called, false);
+});
+
+test("handleFlathubSearch rejects an oversized body without calling fetch", async () => {
+  let called = false;
+  const res = await handleFlathubSearch(
+    req("https://relay.tunaos.org/flathub/search", { method: "POST", body: "x".repeat(2049) }),
+    async () => {
+      called = true;
+      return new Response("[]");
+    }
+  );
+  assert.equal(res.status, 413);
+  assert.equal(called, false);
+});
+
+test("handleFlathubSearch forwards the request body and relays the upstream response", async () => {
+  let captured;
+  const res = await handleFlathubSearch(
+    req("https://relay.tunaos.org/flathub/search", { method: "POST", body: JSON.stringify({ query: "gimp" }) }),
+    async (url, opts) => {
+      captured = { url: url.toString(), opts };
+      return new Response("[]", { status: 200 });
+    }
+  );
+  assert.equal(res.status, 200);
+  assert.equal(res.headers.get("Access-Control-Allow-Origin"), "*");
+  assert.equal(captured.url, "https://flathub.org/api/v2/search");
+  assert.equal(captured.opts.method, "POST");
+  assert.equal(captured.opts.body, JSON.stringify({ query: "gimp" }));
+});
+
+test("handleFlathubSearch turns a fetch rejection into a 502", async () => {
+  const res = await handleFlathubSearch(
+    req("https://relay.tunaos.org/flathub/search", { method: "POST", body: "{}" }),
+    async () => { throw new Error("boom"); }
+  );
+  assert.equal(res.status, 502);
+  const body = await res.json();
+  assert.match(body.error, /flathub search upstream unreachable/);
+});
+
+// ── handlePkgSearch, called directly with an injected fetch ────────────────
+
+test("handlePkgSearch returns an empty array for a too-short query without calling fetch", async () => {
+  let called = false;
+  const res = await handlePkgSearch(new URL("https://relay.tunaos.org/pkgsearch?q=a"), async () => {
+    called = true;
+    return new Response("{}");
+  });
+  assert.equal(res.status, 200);
+  assert.deepEqual(await res.json(), []);
+  assert.equal(called, false);
+});
+
+test("handlePkgSearch ranks the family-available package ahead of one from another family", async () => {
+  const res = await handlePkgSearch(
+    new URL("https://relay.tunaos.org/pkgsearch?q=gimp&family=fedora"),
+    async (url) => {
+      const u = url.toString();
+      if (u.includes("/projects/")) {
+        return new Response(
+          JSON.stringify({
+            gimp: [{ repo: "debian_12", binname: "gimp" }],
+            "gimp-fedora-fork": [{ repo: "fedora_40", binname: "gimp-fedora-fork" }],
+          }),
+          { status: 200 }
+        );
+      }
+      return new Response("[]", { status: 404 });
+    }
+  );
+  const body = await res.json();
+  assert.equal(body[0].project, "gimp-fedora-fork");
+  assert.equal(body[0].available, true);
+});
+
+test("handlePkgSearch marks the result degraded and non-cacheable when repology is down", async () => {
+  const res = await handlePkgSearch(new URL("https://relay.tunaos.org/pkgsearch?q=gimp"), async () => new Response("", { status: 500 }));
+  assert.equal(res.status, 200);
+  assert.equal(res.headers.get("Cache-Control"), "no-store");
+  assert.deepEqual(await res.json(), []);
+});
+
+test("handlePkgSearch caches a normal result for ten minutes", async () => {
+  const res = await handlePkgSearch(
+    new URL("https://relay.tunaos.org/pkgsearch?q=gimp"),
+    async (url) => (url.toString().includes("/projects/") ? new Response(JSON.stringify({ gimp: [{ repo: "fedora_40", binname: "gimp" }] }), { status: 200 }) : new Response("[]", { status: 404 }))
+  );
+  assert.equal(res.headers.get("Cache-Control"), "public, max-age=600");
 });
