@@ -32,7 +32,7 @@ function updateShim() {
 // Per-DE defaults distilled from the upstream curation (bluefin/common,
 // aurora/common, zirconium): every desktop ships the Bazaar store + a
 // browser; editors follow the desktop's family. The full upstream sets
-// are one click away (loadCuratedSet fetches the live Brewfiles).
+// are one pick away (see CURATED_SETS).
 const FLATPAK_DEFAULTS = {
   gnome: ["io.github.kolunmi.Bazaar", "org.mozilla.firefox", "org.gnome.TextEditor"],
   kde: ["io.github.kolunmi.Bazaar", "org.mozilla.firefox", "org.kde.kate"],
@@ -42,27 +42,80 @@ const FLATPAK_DEFAULTS = {
   none: [],
 };
 
-// Upstream curated sets, parsed live from the Brewfiles (flatpak "id"
-// lines) so they track upstream without redeploys.
-const CURATED_SETS = {
-  kde: {
-    label: "Aurora full-desktop set",
-    url: "https://raw.githubusercontent.com/get-aurora-dev/common/main/system_files/shared/usr/share/ublue-os/homebrew/full-desktop.Brewfile",
-  },
-  default: {
-    label: "Bluefin full-desktop set",
-    url: "https://raw.githubusercontent.com/projectbluefin/common/main/system_files/bluefin/usr/share/ublue-os/homebrew/full-desktop.Brewfile",
-  },
-};
+// Upstream curated sets, fetched live so they track upstream without
+// redeploys. `desktops` names the desktops each set is curated for: once
+// the image's desktop is known, the picker lists the matching sets first
+// and selects the first of them (iso-builder#192). Bluefin curates GNOME
+// apps, and the other GTK desktops (xfce, cosmic) sit closer to that set
+// than to Aurora's Qt one. Zirconium is the niri set.
+const BLUEFIN_BREW = "https://raw.githubusercontent.com/projectbluefin/common/main/system_files/bluefin/usr/share/ublue-os/homebrew/";
+const AURORA_BREW = "https://raw.githubusercontent.com/get-aurora-dev/common/main/system_files/shared/usr/share/ublue-os/homebrew/";
+const ZIRCONIUM_PREINSTALL = "https://raw.githubusercontent.com/zirconium-dev/zirconium/main/mkosi.extra/usr/share/flatpak/preinstall.d/zirconium.preinstall";
+const CURATED_SETS = [
+  { id: "bluefin-system", label: "Bluefin core apps", desktops: ["gnome", "xfce", "cosmic"], url: BLUEFIN_BREW + "system-flatpaks.Brewfile" },
+  { id: "bluefin-full", label: "Bluefin full desktop", desktops: ["gnome", "xfce", "cosmic"], url: BLUEFIN_BREW + "full-desktop.Brewfile" },
+  { id: "bluefin-dx", label: "Bluefin developer apps", desktops: ["gnome", "xfce", "cosmic"], url: BLUEFIN_BREW + "system-dx-flatpaks.Brewfile" },
+  { id: "aurora-system", label: "Aurora core apps", desktops: ["kde"], url: AURORA_BREW + "system-flatpaks.Brewfile" },
+  { id: "aurora-full", label: "Aurora full desktop", desktops: ["kde"], url: AURORA_BREW + "full-desktop.Brewfile" },
+  { id: "aurora-dx", label: "Aurora developer apps", desktops: ["kde"], url: AURORA_BREW + "system-dx-flatpaks.Brewfile" },
+  { id: "zirconium", label: "Zirconium apps", desktops: ["niri"], url: ZIRCONIUM_PREINSTALL },
+];
+
+// Reads the app ids out of a curated list. Two upstream formats: a
+// Brewfile (`flatpak "id"` lines) and a flatpak preinstall.d file
+// (`[Flatpak Preinstall id]` sections, where IsRuntime=true marks a
+// runtime rather than an app). The text comes from another repo and the
+// ids drive the engine, so anything that is not an app id is dropped.
+function parseCuratedSet(text) {
+  const ids = [...text.matchAll(/^flatpak "([^"]+)"/gm)].map((m) => m[1]);
+  for (const m of text.matchAll(/^\[Flatpak Preinstall ([^\]\s]+)\]([^[]*)/gm)) {
+    if (!/^IsRuntime\s*=\s*true/im.test(m[2])) ids.push(m[1]);
+  }
+  return ids.filter((id) => URL_FLATPAK_ID.test(id));
+}
+
+// Splits CURATED_SETS into the sets curated for `desktop` and the rest,
+// keeping the declared order in each group. No desktop yet (nothing
+// inspected) or "none" matches nothing.
+function curatedSetsFor(desktop) {
+  return {
+    matched: CURATED_SETS.filter((s) => s.desktops.includes(desktop)),
+    other: CURATED_SETS.filter((s) => !s.desktops.includes(desktop)),
+  };
+}
+
+// Fills the #curatedset picker for `desktop`: the matching sets in a group
+// named after the desktop, selected by default; the rest after them.
+function renderCuratedSets(desktop) {
+  const sel = $("curatedset");
+  const { matched, other } = curatedSetsFor(desktop);
+  sel.innerHTML = "";
+  const group = (label, sets) => {
+    if (!sets.length) return;
+    const g = document.createElement("optgroup");
+    g.label = label;
+    for (const s of sets) g.appendChild(new Option(s.label, s.id));
+    sel.appendChild(g);
+  };
+  if (matched.length) {
+    group(`For ${DESKTOPS[desktop]?.name || desktop}`, matched);
+    group("Other desktops", other);
+  } else {
+    group("All sets", other);
+  }
+  sel.value = (matched[0] || other[0]).id;
+}
 
 async function loadCuratedSet() {
-  const set = CURATED_SETS[facts?.desktop] || CURATED_SETS.default;
+  const set = CURATED_SETS.find((s) => s.id === $("curatedset").value) || CURATED_SETS[0];
   $("curated").disabled = true;
   try {
     const r = await fetch(set.url);
-    const ids = [...(await r.text()).matchAll(/^flatpak "([^"]+)"/gm)].map((m) => m[1]);
+    if (!r.ok) throw new Error(`HTTP ${r.status}`);
+    const ids = parseCuratedSet(await r.text());
     for (const id of ids) fpAdd(id);
-    log(`added ${ids.length} apps from the ${set.label}`);
+    log(`added ${ids.length} apps from the ${set.label} set`);
+    updateShare();
   } catch (e) {
     log("curated set fetch failed: " + e);
   } finally {
@@ -410,6 +463,7 @@ async function inspect() {
     if (fpItems.size === 0) {
       for (const id of FLATPAK_DEFAULTS[facts.desktop] || []) fpAdd(id);
     }
+    renderCuratedSets(facts.desktop);
     if (facts.pkgManager) {
       $("pkgsearch").placeholder = `Search packages (${facts.pkgManager} · ${facts.repoFamily})…`;
       const kinds = { fedora: "copr", debian: "ppa", opensuse: "obs" };
@@ -668,6 +722,7 @@ function updateShare() {
 $("introspect").onclick = inspect;
 $("build").onclick = build;
 $("curated").onclick = loadCuratedSet;
+renderCuratedSets(null);
 $("addrepo").onclick = addRepo;
 $("pkgsearch").addEventListener("input", (e) => {
   clearTimeout(pkgTimer);

@@ -176,7 +176,8 @@
       <div id="fplist" class="fplist"></div>
       <div style="display:flex;gap:.5rem;margin-top:.4rem;align-items:center">
         <input type="text" id="fpsearch" placeholder="Search Flathub to add more apps…" spellcheck="false" autocomplete="off" style="flex:1">
-        <button type="button" id="curated" class="secondary" style="white-space:nowrap">+ Curated set</button>
+        <select id="curatedset" aria-label="Curated Flatpak set" style="width:auto"></select>
+        <button type="button" id="curated" class="secondary" style="white-space:nowrap">+ Add set</button>
       </div>
       <div id="fpresults" class="fpresults"></div>
       <label style="margin-top:1rem">System packages (layered on the installed system via <a href="https://github.com/tuna-os/remora" target="_blank" rel="noopener">remora</a> — persists across updates)</label>
