@@ -5,7 +5,7 @@ when a deploy makes either of them worse.
 
 | Surface | Worker name | Source | Serves |
 | --- | --- | --- | --- |
-| `iso.tunaos.org` | `tunaos-iso-builder` | `app/` (`wrangler.jsonc`, static assets from `app/public/`) | The app itself: `index.html`, `app.js`, `tbox.wasm`, `wasm_exec.js` |
+| `iso.tunaos.org` | `tunaos-iso-builder` | `app/` (`wrangler.jsonc`, static assets from `app/public/`) | The app itself: `index.html`, `app.js`, `layercache.js`, `tbox.wasm`, `wasm_exec.js` |
 | `relay.tunaos.org` | `ghcr-shim` | `worker/` (`wrangler.toml`, `cors-shim.js`) | The CORS relay for GHCR, Flathub search, repology search and Frostyard DDI artifacts |
 
 Both are deployed by the `deploy` job in `.github/workflows/ci.yml`, which runs
