@@ -3,14 +3,16 @@ package main
 import (
 	"bytes"
 	"embed"
+	"encoding/json"
 	"fmt"
 	"image"
 	_ "image/png"
+	"slices"
 
 	"fyne.io/fyne/v2"
 )
 
-//go:embed assets/*.png
+//go:embed assets/*.png catalog-snapshot.json
 var catalogAssetsFS embed.FS
 
 // curatedImage is one entry in the hand-picked image list — the guided
@@ -20,20 +22,21 @@ var catalogAssetsFS embed.FS
 // three other bootc/ublue-style projects — see buildExternalCatalog's
 // doc comment for why "verified" matters here specifically.
 type curatedImage struct {
-	Name          string
-	Image         string // <repo>:<tag>
-	Org           string // display grouping — project/publisher, not TunaOS's own desktop-variant axis
-	Description   string
-	LogoAsset     string   // filename under assets/, e.g. "tuna-os.png" — "" falls back to no icon
-	Base          string   // searchable base/variant identifier
-	Desktop       string   // searchable desktop identifier (gnome, kde, ...)
-	Architectures []string // architectures advertised by the image
+	Name                string
+	Image               string // <repo>:<tag>
+	Org                 string // display grouping — project/publisher, not TunaOS's own desktop-variant axis
+	Description         string
+	LogoAsset           string   // filename under assets/, e.g. "tuna-os.png" — "" falls back to no icon
+	Base                string   // searchable base/variant identifier
+	Desktop             string   // searchable desktop identifier (gnome, kde, ...)
+	Architectures       []string // architectures advertised by the image
+	Platforms           []string // canonical OCI platforms from CatalogSnapshot v1
+	QualificationStatus string   // qualified | local-only | unqualified | unsupported
+	External            bool     // true for third-party/external references
 }
 
-// desktopName maps a desktop ID to its display name — copied from
-// ../app/public/app.js's DESKTOPS map (source of truth; keep in sync by
-// hand, there are only 5). Deliberately dropping app.js's emoji: this is a
-// native desktop app, not a web picker skinned to match the browser one.
+// desktopName maps a desktop ID to its display name — shared with
+// ../app/public/app.js's DESKTOPS map.
 var desktopName = map[string]string{
 	"gnome":  "GNOME",
 	"kde":    "KDE Plasma",
@@ -42,41 +45,129 @@ var desktopName = map[string]string{
 	"xfce":   "XFCE",
 }
 
-// variant is one base OS in the image matrix, copied from
-// ../app/public/app.js's VARIANTS array — real tuna-os image IDs
-// (fish-themed codenames, not a coincidence). Community desktops
-// (kde/cosmic/niri/xfce) aren't published as ISOs there either, so this
-// app is one of the only ways to get them, same as the browser picker.
+var desktopOrder = []string{"gnome", "kde", "cosmic", "niri", "xfce"}
+
+type variantMeta struct {
+	id   string
+	name string
+}
+
+var pickerVariantOrder = []variantMeta{
+	{id: "yellowfin", name: "AlmaLinux Kitten 10 (flagship)"},
+	{id: "bonito", name: "Fedora 44"},
+	{id: "sailfin", name: "openSUSE Tumbleweed"},
+	{id: "flounder", name: "Debian 13 Trixie"},
+	{id: "grouper", name: "Ubuntu 26.04"},
+	{id: "marlin", name: "Arch Linux"},
+	{id: "skipjack", name: "CentOS Stream 10"},
+	{id: "albacore", name: "AlmaLinux 10"},
+	{id: "guppy", name: "Gentoo (source-based)"},
+}
+
+// variant is one base OS in the image matrix, derived from the shared
+// CatalogSnapshot v1 (catalog-snapshot.json) that both app/public/app.js
+// and native/catalog.go consume.
 type variant struct {
 	id       string
 	name     string
 	desktops []string
 }
 
-var variants = []variant{
-	{"yellowfin", "AlmaLinux Kitten 10 (flagship)", []string{"gnome", "kde", "cosmic", "niri"}},
-	{"bonito", "Fedora 44", []string{"gnome", "kde", "cosmic", "niri", "xfce"}},
-	{"sailfin", "openSUSE Tumbleweed", []string{"gnome", "kde", "niri", "xfce"}},
-	// No niri here for the same reason app.js drops it: flounder:niri is a 404
-	// on GHCR and not a flavor in tunaOS's build-config.yml.
-	{"flounder", "Debian 13 Trixie", []string{"gnome", "kde", "cosmic", "xfce"}},
-	{"grouper", "Ubuntu 26.04", []string{"gnome", "kde", "niri", "xfce"}},
-	{"marlin", "Arch Linux", []string{"gnome", "kde", "cosmic", "niri", "xfce"}},
-	{"skipjack", "CentOS Stream 10", []string{"gnome", "kde", "cosmic", "niri"}},
-	{"albacore", "AlmaLinux 10", []string{"gnome", "kde", "cosmic", "niri"}},
-	{"guppy", "Gentoo (source-based)", []string{"gnome", "kde"}},
+type catalogSnapshotDoc struct {
+	SchemaVersion  int                  `json:"schemaVersion"`
+	Kind           string               `json:"kind"`
+	CoverageDigest string               `json:"coverageDigest"`
+	SnapshotDigest string               `json:"snapshotDigest"`
+	Targets        []catalogTargetEntry `json:"targets"`
 }
 
-// curatedImages is the full picker list: TunaOS's own variant×desktop
-// matrix plus a curated set of real external projects. Generated from
-// variants/desktopName and buildExternalCatalog rather than one giant
-// hand-typed literal — the fabricated-image-list bug this replaced
-// happened specifically because a hand-typed list wasn't checked against
-// a source of truth until after the fact. Generating the TunaOS half from
-// the same structured data app.js itself iterates over, and sourcing the
-// external half from actually-queried GHCR package listings (see that
-// function's doc comment), makes that class of bug structurally harder
-// to reintroduce on either half.
+type catalogTargetEntry struct {
+	TargetKey string `json:"targetKey"`
+	Required  bool   `json:"required"`
+	Scheduled bool   `json:"scheduled"`
+	Target    struct {
+		Variant       string `json:"variant"`
+		Flavor        string `json:"flavor"`
+		Platform      string `json:"platform"`
+		CPUBaseline   string `json:"cpuBaseline"`
+		HardwareScope string `json:"hardwareScope"`
+	} `json:"target"`
+	Publication struct {
+		Repository string `json:"repository"`
+		Tag        string `json:"tag"`
+		Ref        string `json:"ref"`
+	} `json:"publication"`
+	Availability struct {
+		Available   bool `json:"available"`
+		OCIPlatform struct {
+			OS           string  `json:"os"`
+			Architecture string  `json:"architecture"`
+			Variant      *string `json:"variant"`
+		} `json:"ociPlatform"`
+	} `json:"availability"`
+	Qualification struct {
+		Status string  `json:"status"`
+		Reason *string `json:"reason"`
+	} `json:"qualification"`
+}
+
+func loadEmbeddedCatalogSnapshot() (*catalogSnapshotDoc, error) {
+	data, err := catalogAssetsFS.ReadFile("catalog-snapshot.json")
+	if err != nil {
+		return nil, fmt.Errorf("read embedded catalog-snapshot.json: %w", err)
+	}
+	var doc catalogSnapshotDoc
+	if err := json.Unmarshal(data, &doc); err != nil {
+		return nil, fmt.Errorf("decode catalog-snapshot.json: %w", err)
+	}
+	if doc.SchemaVersion != 1 || doc.Kind != "catalog-snapshot" || len(doc.Targets) == 0 {
+		return nil, fmt.Errorf("invalid catalog-snapshot.json header (schemaVersion=%d kind=%q targets=%d)",
+			doc.SchemaVersion, doc.Kind, len(doc.Targets))
+	}
+	return &doc, nil
+}
+
+func loadVariantsFromSnapshot(doc *catalogSnapshotDoc) []variant {
+	if doc == nil {
+		return nil
+	}
+	offered := make(map[string]map[string]bool)
+	for _, entry := range doc.Targets {
+		vid := entry.Target.Variant
+		fid := entry.Target.Flavor
+		if _, ok := desktopName[fid]; !ok {
+			continue
+		}
+		if !entry.Scheduled && !entry.Availability.Available {
+			continue
+		}
+		if offered[vid] == nil {
+			offered[vid] = make(map[string]bool)
+		}
+		offered[vid][fid] = true
+	}
+	var out []variant
+	for _, vm := range pickerVariantOrder {
+		desMap := offered[vm.id]
+		if len(desMap) == 0 {
+			continue
+		}
+		var des []string
+		for _, de := range desktopOrder {
+			if desMap[de] {
+				des = append(des, de)
+			}
+		}
+		if len(des) > 0 {
+			out = append(out, variant{id: vm.id, name: vm.name, desktops: des})
+		}
+	}
+	return out
+}
+
+var embeddedSnapshot, _ = loadEmbeddedCatalogSnapshot()
+var variants = loadVariantsFromSnapshot(embeddedSnapshot)
+
 var curatedImages = append(buildCuratedImages(), buildExternalCatalog()...)
 
 func buildCuratedImages() []curatedImage {
@@ -87,19 +178,54 @@ func buildCuratedImages() []curatedImage {
 			if name == "" {
 				name = de
 			}
+			arches, plats, qualStatus := snapshotTargetMetadata(embeddedSnapshot, v.id, de)
 			out = append(out, curatedImage{
-				Name:          v.name + " — " + name,
-				Image:         fmt.Sprintf("ghcr.io/tuna-os/%s:%s", v.id, de),
-				Org:           "TunaOS",
-				Description:   "Part of the TunaOS project's own curated fish-themed image set.",
-				LogoAsset:     "tuna-os.png",
-				Base:          v.id,
-				Desktop:       de,
-				Architectures: []string{"amd64", "arm64"},
+				Name:                v.name + " — " + name,
+				Image:               fmt.Sprintf("ghcr.io/tuna-os/%s:%s", v.id, de),
+				Org:                 "TunaOS",
+				Description:         "Part of the TunaOS project's own curated fish-themed image set.",
+				LogoAsset:           "tuna-os.png",
+				Base:                v.id,
+				Desktop:             de,
+				Architectures:       arches,
+				Platforms:           plats,
+				QualificationStatus: qualStatus,
+				External:            false,
 			})
 		}
 	}
 	return out
+}
+
+func snapshotTargetMetadata(doc *catalogSnapshotDoc, variantID, desktopID string) (arches, platforms []string, qualStatus string) {
+	qualStatus = "unqualified"
+	if doc != nil {
+		for _, entry := range doc.Targets {
+			if entry.Target.Variant != variantID || entry.Target.Flavor != desktopID {
+				continue
+			}
+			if !entry.Scheduled && !entry.Availability.Available {
+				continue
+			}
+			plat := entry.Target.Platform
+			if plat != "" && !slices.Contains(platforms, plat) {
+				platforms = append(platforms, plat)
+			}
+			arch := entry.Availability.OCIPlatform.Architecture
+			if arch != "" && !slices.Contains(arches, arch) {
+				arches = append(arches, arch)
+			}
+			if entry.Qualification.Status == "qualified" {
+				qualStatus = "qualified"
+			} else if qualStatus != "qualified" && entry.Qualification.Status != "" {
+				qualStatus = entry.Qualification.Status
+			}
+		}
+	}
+	if len(arches) == 0 {
+		arches = []string{"amd64", "arm64"}
+	}
+	return arches, platforms, qualStatus
 }
 
 // buildExternalCatalog returns a curated (not exhaustive) set of real
@@ -130,74 +256,88 @@ func buildCuratedImages() []curatedImage {
 func buildExternalCatalog() []curatedImage {
 	return []curatedImage{
 		{
-			Name:          "Bluefin (GNOME)",
-			Image:         "ghcr.io/projectbluefin/bluefin:stable",
-			Org:           "Project Bluefin",
-			Description:   "The next-generation Linux workstation, from the project's own dedicated org (projectbluefin.io).",
-			LogoAsset:     "projectbluefin.png",
-			Base:          "fedora",
-			Desktop:       "gnome",
-			Architectures: []string{"amd64", "arm64"},
+			Name:                "Bluefin (GNOME)",
+			Image:               "ghcr.io/projectbluefin/bluefin:stable",
+			Org:                 "Project Bluefin",
+			Description:         "The next-generation Linux workstation, from the project's own dedicated org (projectbluefin.io).",
+			LogoAsset:           "projectbluefin.png",
+			Base:                "fedora",
+			Desktop:             "gnome",
+			Architectures:       []string{"amd64", "arm64"},
+			QualificationStatus: "unqualified",
+			External:            true,
 		},
 		{
-			Name:          "Bluefin DX (GNOME, developer-focused)",
-			Image:         "ghcr.io/ublue-os/bluefin-dx:latest",
-			Org:           "Universal Blue",
-			Description:   "Bluefin's developer-focused variant — container toolboxes, dev tooling preinstalled.",
-			LogoAsset:     "ublue-os.png",
-			Base:          "fedora",
-			Desktop:       "gnome",
-			Architectures: []string{"amd64", "arm64"},
+			Name:                "Bluefin DX (GNOME, developer-focused)",
+			Image:               "ghcr.io/ublue-os/bluefin-dx:latest",
+			Org:                 "Universal Blue",
+			Description:         "Bluefin's developer-focused variant — container toolboxes, dev tooling preinstalled.",
+			LogoAsset:           "ublue-os.png",
+			Base:                "fedora",
+			Desktop:             "gnome",
+			Architectures:       []string{"amd64", "arm64"},
+			QualificationStatus: "unqualified",
+			External:            true,
 		},
 		{
-			Name:          "Aurora (KDE Plasma)",
-			Image:         "ghcr.io/ublue-os/aurora:latest",
-			Org:           "Universal Blue",
-			Description:   "Universal Blue's KDE Plasma desktop image — Bluefin's KDE sibling.",
-			LogoAsset:     "ublue-os.png",
-			Base:          "fedora",
-			Desktop:       "kde",
-			Architectures: []string{"amd64", "arm64"},
+			Name:                "Aurora (KDE Plasma)",
+			Image:               "ghcr.io/ublue-os/aurora:latest",
+			Org:                 "Universal Blue",
+			Description:         "Universal Blue's KDE Plasma desktop image — Bluefin's KDE sibling.",
+			LogoAsset:           "ublue-os.png",
+			Base:                "fedora",
+			Desktop:             "kde",
+			Architectures:       []string{"amd64", "arm64"},
+			QualificationStatus: "unqualified",
+			External:            true,
 		},
 		{
-			Name:          "Aurora DX (KDE Plasma, developer-focused)",
-			Image:         "ghcr.io/ublue-os/aurora-dx:latest",
-			Org:           "Universal Blue",
-			Description:   "Aurora's developer-focused variant — container toolboxes, dev tooling preinstalled.",
-			LogoAsset:     "ublue-os.png",
-			Base:          "fedora",
-			Desktop:       "kde",
-			Architectures: []string{"amd64", "arm64"},
+			Name:                "Aurora DX (KDE Plasma, developer-focused)",
+			Image:               "ghcr.io/ublue-os/aurora-dx:latest",
+			Org:                 "Universal Blue",
+			Description:         "Aurora's developer-focused variant — container toolboxes, dev tooling preinstalled.",
+			LogoAsset:           "ublue-os.png",
+			Base:                "fedora",
+			Desktop:             "kde",
+			Architectures:       []string{"amd64", "arm64"},
+			QualificationStatus: "unqualified",
+			External:            true,
 		},
 		{
-			Name:          "Bazzite (gaming-focused)",
-			Image:         "ghcr.io/ublue-os/bazzite:latest",
-			Org:           "Universal Blue",
-			Description:   "Universal Blue's gaming-focused image — SteamOS-like, built for handhelds and living-room PCs.",
-			LogoAsset:     "ublue-os.png",
-			Base:          "fedora",
-			Desktop:       "unknown",
-			Architectures: []string{"amd64", "arm64"},
+			Name:                "Bazzite (gaming-focused)",
+			Image:               "ghcr.io/ublue-os/bazzite:latest",
+			Org:                 "Universal Blue",
+			Description:         "Universal Blue's gaming-focused image — SteamOS-like, built for handhelds and living-room PCs.",
+			LogoAsset:           "ublue-os.png",
+			Base:                "fedora",
+			Desktop:             "unknown",
+			Architectures:       []string{"amd64", "arm64"},
+			QualificationStatus: "unqualified",
+			External:            true,
 		},
 		{
-			Name:          "Zirconium (Niri)",
-			Image:         "ghcr.io/zirconium-dev/zirconium:latest",
-			Org:           "Zirconium",
-			Description:   "An opinionated Niri (scrollable-tiling Wayland compositor) bootc image.",
-			LogoAsset:     "zirconium-dev.png",
-			Base:          "freedesktop-sdk",
-			Desktop:       "niri",
-			Architectures: []string{"amd64", "arm64"},
+			Name:                "Zirconium (Niri)",
+			Image:               "ghcr.io/zirconium-dev/zirconium:latest",
+			Org:                 "Zirconium",
+			Description:         "An opinionated Niri (scrollable-tiling Wayland compositor) bootc image.",
+			LogoAsset:           "zirconium-dev.png",
+			Base:                "freedesktop-sdk",
+			Desktop:             "niri",
+			Architectures:       []string{"amd64", "arm64"},
+			QualificationStatus: "unqualified",
+			External:            true,
 		},
 		{
-			Name:          "Zirconium Hawaii (Niri, Freedesktop-SDK based)",
-			Image:         "ghcr.io/zirconium-dev/zirconium-hawaii:latest",
-			Org:           "Zirconium",
-			Description:   "Zirconium's Niri image built on top of Freedesktop-SDK instead of a traditional distro base.",
-			LogoAsset:     "zirconium-dev.png",
-			Base:          "freedesktop-sdk",
-			Desktop:       "niri",
-			Architectures: []string{"amd64", "arm64"},
+			Name:                "Zirconium Hawaii (Niri, Freedesktop-SDK based)",
+			Image:               "ghcr.io/zirconium-dev/zirconium-hawaii:latest",
+			Org:                 "Zirconium",
+			Description:         "Zirconium's Niri image built on top of Freedesktop-SDK instead of a traditional distro base.",
+			LogoAsset:           "zirconium-dev.png",
+			Base:                "freedesktop-sdk",
+			Desktop:             "niri",
+			Architectures:       []string{"amd64", "arm64"},
+			QualificationStatus: "unqualified",
+			External:            true,
 		},
 	}
 }

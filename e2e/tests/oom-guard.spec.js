@@ -25,17 +25,83 @@ test.describe("engine OOM guard", () => {
     await page.goto("/");
   });
 
-  test("reports out of memory when the heap parks at the ceiling", async ({ page }) => {
+  test("reports out of memory when the heap parks at the ceiling and offers target-preserving local fallback", async ({ page }) => {
+    await page.locator("#variant").selectOption("bonito");
+    await page.locator('#editions .edition[data-de="kde"]').click();
+    await expect(page.locator("#build")).toBeEnabled();
+    const selectedRequest = await page.evaluate(() => window.tboxGetBuildRequest());
+
     await armGuard(page, 4000);
     // Past the 120s no-progress window; the guard polls every 5s.
     await page.clock.fastForward("03:00");
 
     await expect(page.locator("#stage")).toContainText(/Out of memory/i);
-    await expect(page.locator("#stage")).toContainText(/too large for the browser engine/i);
-    // The user needs to know it is unrecoverable — the engine cannot be
-    // restarted in place, so a reload is the only way forward.
-    await expect(page.locator("#log")).toContainText(/reload the page/i);
-    await expect(page.locator("#log")).toContainText(/tacklebox\/issues\/156/);
+    await expect(page.locator("#build")).toBeDisabled();
+    await expect(page.locator("#postcard")).toBeHidden();
+    await expect(page.locator("#fallbackcard")).toBeVisible();
+    await expect(page.locator("#fallbackcmd")).toContainText(
+      "tacklebox purebuild --request build-request.json",
+    );
+
+    const fallbackReq = await page.evaluate(() =>
+      JSON.parse(document.getElementById("fallbackjson").textContent),
+    );
+    expect(fallbackReq).toEqual(selectedRequest);
+    expect(fallbackReq.schemaVersion).toBe(1);
+    expect(fallbackReq.kind).toBe("build-request");
+    expect(fallbackReq.image).toBe("tuna-os/bonito:kde");
+    expect(fallbackReq.target).toEqual({
+      variant: "bonito",
+      flavor: "kde",
+      platform: "linux/amd64",
+      cpuBaseline: "x86-64",
+      hardwareScope: "generic",
+    });
+    expect(fallbackReq.resolvedInputs.platformManifestDigest).toMatch(
+      /^sha256:[0-9a-f]{64}$/,
+    );
+  });
+
+  test("blocks browser build when storage quota is below prerequisite and preserves BuildRequest v1 in fallback", async ({ page }) => {
+    await page.locator('#editions .edition[data-de="gnome"]').click();
+    await expect(page.locator("#build")).toBeEnabled();
+    const selectedRequest = await page.evaluate(() => window.tboxGetBuildRequest());
+    await page.evaluate(() => {
+      navigator.storage.estimate = async () => ({
+        quota: 2_000_000_000, usage: 500_000_000,
+      });
+    });
+
+    await page.getByText("Or build from any bootable container image").click();
+    await page.locator("#introspect").click();
+
+    await expect(page.locator("#build")).toBeDisabled();
+    await expect(page.locator("#stage")).toContainText(/insufficient.*storage/i);
+    await expect(page.locator("#fallbackcard")).toBeVisible();
+
+    const opState = await page.evaluate(() => ({
+      state: window.tboxCurrentOperation?.state,
+      ready: window.tboxCurrentOperation?.ready,
+      storageBlocked: window.tboxCurrentOperation?.storageBlocked,
+      fallbackReq: JSON.parse(document.getElementById("fallbackjson").textContent),
+    }));
+    expect(opState.state).toBe("blocked");
+    expect(opState.ready).toBe(false);
+    expect(opState.storageBlocked).toBe(true);
+    expect(opState.fallbackReq).toEqual(selectedRequest);
+    expect(opState.fallbackReq.schemaVersion).toBe(1);
+    expect(opState.fallbackReq.kind).toBe("build-request");
+    expect(opState.fallbackReq.image).toBe("tuna-os/yellowfin:gnome");
+    expect(opState.fallbackReq.target).toEqual({
+      variant: "yellowfin",
+      flavor: "gnome",
+      platform: "linux/amd64/v2",
+      cpuBaseline: "x86-64-v2",
+      hardwareScope: "generic",
+    });
+    expect(opState.fallbackReq.resolvedInputs.platformManifestDigest).toMatch(
+      /^sha256:[0-9a-f]{64}$/,
+    );
   });
 
   test("warns while climbing but does not declare failure", async ({ page }) => {

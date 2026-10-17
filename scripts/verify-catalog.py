@@ -26,6 +26,7 @@ failing the build on a flaky HEAD would train people to ignore it.
 
 from __future__ import annotations
 
+import hashlib
 import json
 import re
 import sys
@@ -35,9 +36,10 @@ import urllib.request
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
-APP_JS = REPO_ROOT / "app" / "public" / "app.js"
+DEFAULT_APP_JS = REPO_ROOT / "app" / "public" / "app.js"
+APP_JS = DEFAULT_APP_JS
 CATALOG_GO = REPO_ROOT / "native" / "catalog.go"
-
+CATALOG_SNAPSHOT = REPO_ROOT / "app" / "public" / "catalog-snapshot.json"
 GHCR = "https://ghcr.io"
 MANIFEST_ACCEPT = ", ".join(
     [
@@ -57,6 +59,66 @@ VARIANT_ENTRY = re.compile(
 QUOTED = re.compile(r'"([^"]+)"')
 GO_IMAGE_FIELD = re.compile(r'Image:\s*"ghcr\.io/([^"]+)"')
 
+DIGEST_RE = re.compile(r"^sha256:[0-9a-f]{64}$")
+VALID_STATUSES = {"qualified", "local-only", "unqualified", "unsupported"}
+OFFERED_VARIANTS = {
+    "yellowfin", "bonito", "sailfin", "flounder", "grouper",
+    "marlin", "skipjack", "albacore", "guppy",
+}
+DESKTOP_IDS = {"gnome", "kde", "cosmic", "niri", "xfce"}
+
+
+def validate_snapshot(snapshot_path: Path | None = None) -> dict:
+    """Load and validate a CatalogSnapshot v1 JSON file."""
+    path = snapshot_path or CATALOG_SNAPSHOT
+    try:
+        doc = json.loads(path.read_text())
+    except Exception as exc:
+        sys.exit(f"failed to load catalog snapshot {path}: {exc}")
+    if not isinstance(doc, dict) or doc.get("schemaVersion") != 1 or doc.get("kind") != "catalog-snapshot":
+        sys.exit(f"invalid CatalogSnapshot v1 header in {path}")
+    if not DIGEST_RE.match(str(doc.get("coverageDigest", ""))):
+        sys.exit(f"invalid coverageDigest in {path}")
+    snap_digest = str(doc.get("snapshotDigest", ""))
+    if not DIGEST_RE.match(snap_digest):
+        sys.exit(f"invalid snapshotDigest in {path}")
+    targets = doc.get("targets")
+    if not isinstance(targets, list) or not targets:
+        sys.exit(f"empty targets list in {path}")
+    canonical = json.dumps(targets, sort_keys=True, separators=(",", ":"), ensure_ascii=True, allow_nan=False).encode("utf-8")
+    expected_digest = "sha256:" + hashlib.sha256(canonical).hexdigest()
+    if snap_digest != expected_digest:
+        sys.exit(f"snapshotDigest mismatch in {path}: got {snap_digest}, expected {expected_digest}")
+    for entry in targets:
+        qual = entry.get("qualification") or {}
+        if qual.get("status") not in VALID_STATUSES:
+            sys.exit(f"invalid qualification.status in {path}: {qual.get('status')!r}")
+        avail = entry.get("availability") or {}
+        pm_digest = (entry.get("resolvedInputs") or {}).get("platformManifestDigest")
+        if avail.get("available") and not DIGEST_RE.match(str(pm_digest or "")):
+            sys.exit(f"available entry {entry.get('targetKey')} missing platformManifestDigest in {path}")
+    return doc
+
+
+def snapshot_refs(snapshot_path: Path | None = None) -> list[tuple[str, str]]:
+    """(ref, source) for every offered desktop ref in catalog-snapshot.json."""
+    doc = validate_snapshot(snapshot_path)
+    seen: set[str] = set()
+    out: list[tuple[str, str]] = []
+    for entry in doc["targets"]:
+        target = entry.get("target") or {}
+        vid = target.get("variant")
+        fid = target.get("flavor")
+        if vid not in OFFERED_VARIANTS or fid not in DESKTOP_IDS:
+            continue
+        if not entry.get("scheduled") and not (entry.get("availability") or {}).get("available"):
+            continue
+        ref = str((entry.get("publication") or {}).get("ref", "")).removeprefix("ghcr.io/")
+        if ref and ref not in seen:
+            seen.add(ref)
+            out.append((ref, "catalog-snapshot.json"))
+    return out
+
 
 def picker_refs() -> list[tuple[str, str]]:
     """(ref, source) for every ghcr.io/tuna-os/<variant>:<desktop> in app.js."""
@@ -71,9 +133,16 @@ def picker_refs() -> list[tuple[str, str]]:
     for variant_id, desktops in VARIANT_ENTRY.findall(block.group(1)):
         for desktop in QUOTED.findall(desktops):
             out.append((f"tuna-os/{variant_id}:{desktop}", "app.js VARIANTS"))
+    if APP_JS == DEFAULT_APP_JS and CATALOG_SNAPSHOT.exists():
+        snap_set = {ref for ref, _ in snapshot_refs(CATALOG_SNAPSHOT)}
+        js_set = {ref for ref, _ in out}
+        if snap_set != js_set:
+            sys.exit(
+                f"app.js VARIANTS and catalog-snapshot.json disagree: "
+                f"only in app.js={sorted(js_set - snap_set)}, "
+                f"only in snapshot={sorted(snap_set - js_set)}"
+            )
     return out
-
-
 def external_refs() -> list[tuple[str, str]]:
     """(ref, source) for every literal ghcr.io ref in native/catalog.go.
 

@@ -59,6 +59,7 @@ GitHub being unreachable.
 
 from __future__ import annotations
 
+import json
 import re
 import sys
 import urllib.error
@@ -66,7 +67,9 @@ import urllib.request
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
-CATALOG_GO = REPO_ROOT / "native" / "catalog.go"
+DEFAULT_CATALOG_GO = REPO_ROOT / "native" / "catalog.go"
+CATALOG_GO = DEFAULT_CATALOG_GO
+CATALOG_SNAPSHOT = REPO_ROOT / "app" / "public" / "catalog-snapshot.json"
 
 BUILD_CONFIG_URL = (
     "https://raw.githubusercontent.com/tuna-os/tunaos/main/.github/build-config.yml"
@@ -78,6 +81,10 @@ TIMEOUT = 20
 # include base/hwe/nvidia/asahi variants this picker never claims to offer,
 # so those are deliberately not compared.
 DESKTOP_IDS = {"gnome", "kde", "cosmic", "niri", "xfce"}
+OFFERED_VARIANT_IDS = {
+    "yellowfin", "bonito", "sailfin", "flounder", "grouper",
+    "marlin", "skipjack", "albacore", "guppy",
+}
 
 VARIANT_RE = re.compile(r'\{"([^"]+)",\s*"[^"]*",\s*\[\]string\{([^}]*)\}\}')
 QUOTED = re.compile(r'"([^"]+)"')
@@ -92,15 +99,45 @@ def fetch(url: str) -> str | None:
         return None
 
 
+def parse_catalog_snapshot(snapshot_path: Path | None = None) -> dict[str, set[str]]:
+    """variant id -> desktop ids offered from CatalogSnapshot v1."""
+    path = snapshot_path or CATALOG_SNAPSHOT
+    if not path.exists():
+        return {}
+    try:
+        doc = json.loads(path.read_text())
+    except Exception:
+        return {}
+    if not isinstance(doc, dict) or doc.get("schemaVersion") != 1 or doc.get("kind") != "catalog-snapshot":
+        return {}
+    out: dict[str, set[str]] = {}
+    for entry in doc.get("targets") or []:
+        target = entry.get("target") or {}
+        vid = target.get("variant")
+        fid = target.get("flavor")
+        if vid not in OFFERED_VARIANT_IDS or fid not in DESKTOP_IDS:
+            continue
+        if not entry.get("scheduled") and not (entry.get("availability") or {}).get("available"):
+            continue
+        out.setdefault(vid, set()).add(fid)
+    return out
+
+
 def parse_catalog_go() -> dict[str, set[str]]:
-    """variant id -> desktop ids, from native/catalog.go's `variants` table."""
+    """variant id -> desktop ids, from native/catalog.go (or its embedded catalog-snapshot.json)."""
     src = CATALOG_GO.read_text()
     out: dict[str, set[str]] = {}
     for variant_id, desktops in VARIANT_RE.findall(src):
         out[variant_id] = set(QUOTED.findall(desktops))
+    if out:
+        return out
+    if "catalog-snapshot.json" in src:
+        local_snap = CATALOG_GO.parent / "catalog-snapshot.json"
+        if local_snap.exists():
+            return parse_catalog_snapshot(local_snap)
+        if CATALOG_GO == DEFAULT_CATALOG_GO and CATALOG_SNAPSHOT.exists():
+            return parse_catalog_snapshot(CATALOG_SNAPSHOT)
     return out
-
-
 def parse_build_config(text: str) -> dict[str, set[str]]:
     """variant id -> build_image:true desktop ids, from the top-level
     `variants:` list only (sibling_images: is a different set of repos

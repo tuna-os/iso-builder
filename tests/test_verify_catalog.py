@@ -84,6 +84,24 @@ def test_picker_refs_exits_when_variants_block_missing(vc, tmp_path):
         vc.picker_refs()
 
 
+def test_validate_snapshot_and_snapshot_refs_parse_catalog_snapshot(vc):
+    doc = vc.validate_snapshot()
+    assert doc["schemaVersion"] == 1
+    assert doc["kind"] == "catalog-snapshot"
+    assert len(doc["targets"]) > 0
+
+    refs = vc.snapshot_refs()
+    assert ("tuna-os/yellowfin:gnome", "catalog-snapshot.json") in refs
+    assert ("tuna-os/flounder:kde", "catalog-snapshot.json") in refs
+    assert ("tuna-os/flounder:niri", "catalog-snapshot.json") not in refs
+
+
+def test_picker_refs_agrees_with_catalog_snapshot(vc):
+    picker = {ref for ref, _ in vc.picker_refs()}
+    snap = {ref for ref, _ in vc.snapshot_refs()}
+    assert picker == snap
+
+
 # --- external_refs -----------------------------------------------------------
 
 

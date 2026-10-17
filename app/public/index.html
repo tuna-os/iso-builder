@@ -152,8 +152,20 @@
      compiled to WebAssembly). Nothing is uploaded anywhere.</p>
 
   <div class="card">
-    <label for="variant">Choose your TunaOS edition</label>
-    <select id="variant" class="variant-select"></select>
+    <div class="row" style="align-items:end">
+      <div>
+        <label for="variant">Choose your TunaOS edition</label>
+        <select id="variant" class="variant-select"></select>
+      </div>
+      <div style="flex:0 0 220px">
+        <label for="platform">Target platform</label>
+        <select id="platform" class="variant-select" aria-label="Target platform">
+          <option value="linux/amd64/v2">linux/amd64/v2 (x86-64-v2)</option>
+          <option value="linux/amd64">linux/amd64 (x86-64)</option>
+          <option value="linux/arm64">linux/arm64 (aarch64)</option>
+        </select>
+      </div>
+    </div>
     <div class="editions" id="editions"></div>
     <details>
       <summary>Or build from any bootable container image</summary>
@@ -226,6 +238,20 @@
     <div class="note hidden" id="initrdnote"></div>
     <div id="log"></div>
   </div>
+  <div class="card hidden" id="fallbackcard">
+    <h3 style="margin-top:0">Build locally with tacklebox</h3>
+    <p class="sub" id="fallbackreason" style="margin-top:-.4rem;margin-bottom:.75rem">Export the pinned BuildRequest v1 contract to build this exact target locally without browser memory or storage limits.</p>
+    <pre style="padding:.6rem;overflow-x:auto;margin:.4rem 0;font:12px var(--mono)"><code id="fallbackcmd">tacklebox purebuild --request build-request.json</code></pre>
+    <div style="display:flex;gap:.5rem;margin-top:.6rem;flex-wrap:wrap">
+      <button type="button" id="downloadrequest" class="secondary">Download build-request.json</button>
+      <button type="button" id="copyfallback" class="secondary">Copy command &amp; request</button>
+    </div>
+    <details style="margin-top:.6rem">
+      <summary>Inspect BuildRequest v1 JSON</summary>
+      <pre style="padding:.6rem;overflow-x:auto;margin:.4rem 0;font:12px var(--mono)"><code id="fallbackjson">{}</code></pre>
+    </details>
+  </div>
+
 
   <div class="card hidden" id="postcard">
     <h3 style="margin-top:0">ISO build complete</h3>

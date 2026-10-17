@@ -56,6 +56,14 @@ def test_parse_catalog_go_empty_when_no_variants(vtbc, tmp_path):
     assert vtbc.parse_catalog_go() == {}
 
 
+def test_parse_catalog_go_loads_from_shared_catalog_snapshot(vtbc):
+    parsed = vtbc.parse_catalog_go()
+    assert "yellowfin" in parsed
+    assert parsed["yellowfin"] == {"gnome", "kde", "cosmic", "niri", "xfce"}
+    assert parsed["flounder"] == {"kde", "xfce"}
+    assert parsed == vtbc.parse_catalog_snapshot()
+
+
 # --- parse_build_config -------------------------------------------------------
 
 

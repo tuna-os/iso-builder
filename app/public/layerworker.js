@@ -46,6 +46,34 @@ self.onmessage = async ({ data: job }) => {
 async function download(dir, job) {
   // job.bytes is a whole number of chunks: the caller only counts closed ones.
   let chunks = job.bytes / CHUNK;
+  if (job.bytes > 0) {
+    // Resume scrub: a previous attempt may have left a short or zero-byte
+    // tail chunk on disk (recorded: c3 zero bytes after three complete 4MiB
+    // chunks). The caller only counts whole chunks, so that tail is stale:
+    // drop it and resume from the last whole-chunk boundary instead of
+    // appending after it or treating the layer as complete. A short file is
+    // kept only when it is the known-final tail, i.e. the manifest size says
+    // the layer ends inside it.
+    for (;;) {
+      let last = -1;
+      let size = -1;
+      for (let i = 0; i < 1048576; i++) {
+        let f;
+        try {
+          f = await (await dir.getFileHandle("c" + i)).getFile();
+        } catch {
+          break;
+        }
+        last = i;
+        size = f.size;
+      }
+      if (last < 0 || size === CHUNK) break;
+      if (size > 0 && size < CHUNK && job.want >= 0 && last * CHUNK + size === job.want) break;
+      await dir.removeEntry("c" + last);
+      job.bytes = last * CHUNK;
+      chunks = last;
+    }
+  }
   let attempts = 0;
   for (;;) {
     const off = job.bytes;
@@ -95,12 +123,26 @@ async function download(dir, job) {
       if (len >= 0 && got !== len) throw new Error(`short body: ${got} of ${len} bytes`);
       if (fill > 0) await flush(buf.subarray(0, fill));
       if (job.want >= 0 && job.bytes !== job.want) {
-        // Wrong length for this digest: not a layer worth keeping.
-        for (let i = 0; i < chunks; i++) await dir.removeEntry("c" + i).catch(() => {});
+        // Wrong length for this digest: not a layer worth keeping. Drop every
+        // chunk file so a truncated/corrupt layer is evicted, never committed.
+        for (let i = 0; ; i++) {
+          try {
+            await dir.removeEntry("c" + i);
+          } catch {
+            break;
+          }
+        }
         job.bytes = 0;
         throw Object.assign(new Error(`size ${got}, manifest says ${job.want}`), { fatal: true });
       }
-      await writeFile(dir, "meta.json", new TextEncoder().encode(JSON.stringify({ size: job.bytes, used: Date.now() })));
+      try {
+        await writeFile(dir, "meta.json", new TextEncoder().encode(JSON.stringify({ size: job.bytes, used: Date.now() })));
+      } catch (err) {
+        // Never leave a meta.json marking the layer complete after an I/O
+        // failure: the error propagates and the layer stays uncached.
+        await dir.removeEntry("meta.json").catch(() => {});
+        throw err;
+      }
       return;
     } catch (err) {
       clearTimeout(timer);

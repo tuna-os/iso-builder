@@ -97,7 +97,7 @@
     const d = await dir.getDirectoryHandle(hex, { create: true });
     const e = {
       hex, dir: d, url: "", headers: new Headers(),
-      want: -1, chunks: 0, bytes: 0, done: false,
+      want: -1, chunks: 0, bytes: 0, done: false, verified: false,
       running: null, failed: null, waiters: [],
     };
     const meta = await readMeta(d);
@@ -194,7 +194,11 @@
           j.e.bytes = m.bytes;
           j.e.chunks = Math.ceil(m.bytes / CHUNK);
         }
-        if (m.done) j.e.done = true;
+        if (m.done) {
+          j.e.done = true;
+          // These bytes were just written by this session's worker.
+          j.e.verified = true;
+        }
         if (m.done || m.error) {
           jobs.delete(m.hex);
           if (m.error) j.reject(new Error(m.error));
@@ -211,10 +215,167 @@
     });
   }
 
+  // Minimal incremental SHA-256 (FIPS 180-4). crypto.subtle only offers
+  // one-shot digests, and per-chunk digests do not combine into the layer
+  // digest, so the serve path hashes chunk files with this as they are read.
+  const SHA256_K = new Int32Array([
+    0x428a2f98, 0x71374491, 0xb5c0fbcf, 0xe9b5dba5,
+    0x3956c25b, 0x59f111f1, 0x923f82a4, 0xab1c5ed5,
+    0xd807aa98, 0x12835b01, 0x243185be, 0x550c7dc3,
+    0x72be5d74, 0x80deb1fe, 0x9bdc06a7, 0xc19bf174,
+    0xe49b69c1, 0xefbe4786, 0x0fc19dc6, 0x240ca1cc,
+    0x2de92c6f, 0x4a7484aa, 0x5cb0a9dc, 0x76f988da,
+    0x983e5152, 0xa831c66d, 0xb00327c8, 0xbf597fc7,
+    0xc6e00bf3, 0xd5a79147, 0x06ca6351, 0x14292967,
+    0x27b70a85, 0x2e1b2138, 0x4d2c6dfc, 0x53380d13,
+    0x650a7354, 0x766a0abb, 0x81c2c92e, 0x92722c85,
+    0xa2bfe8a1, 0xa81a664b, 0xc24b8b70, 0xc76c51a3,
+    0xd192e819, 0xd6990624, 0xf40e3585, 0x106aa070,
+    0x19a4c116, 0x1e376c08, 0x2748774c, 0x34b0bcb5,
+    0x391c0cb3, 0x4ed8aa4a, 0x5b9cca4f, 0x682e6ff3,
+    0x748f82ee, 0x78a5636f, 0x84c87814, 0x8cc70208,
+    0x90befffa, 0xa4506ceb, 0xbef9a3f7, 0xc67178f2,
+  ]);
+
+  function sha256Rotr(x, n) {
+    return (x >>> n) | (x << (32 - n));
+  }
+
+  function sha256Block(H, b, o) {
+    const w = new Int32Array(64);
+    for (let i = 0; i < 16; i++) {
+      w[i] = (b[o + i * 4] << 24) | (b[o + i * 4 + 1] << 16) | (b[o + i * 4 + 2] << 8) | b[o + i * 4 + 3];
+    }
+    for (let i = 16; i < 64; i++) {
+      const s0 = sha256Rotr(w[i - 15], 7) ^ sha256Rotr(w[i - 15], 18) ^ (w[i - 15] >>> 3);
+      const s1 = sha256Rotr(w[i - 2], 17) ^ sha256Rotr(w[i - 2], 19) ^ (w[i - 2] >>> 10);
+      w[i] = (w[i - 16] + s0 + w[i - 7] + s1) | 0;
+    }
+    let a = H[0], bb = H[1], c = H[2], d = H[3], e = H[4], f = H[5], g = H[6], h = H[7];
+    for (let i = 0; i < 64; i++) {
+      const S1 = sha256Rotr(e, 6) ^ sha256Rotr(e, 11) ^ sha256Rotr(e, 25);
+      const ch = (e & f) ^ (~e & g);
+      const t1 = (h + S1 + ch + SHA256_K[i] + w[i]) | 0;
+      const S0 = sha256Rotr(a, 2) ^ sha256Rotr(a, 13) ^ sha256Rotr(a, 22);
+      const mj = (a & bb) ^ (a & c) ^ (bb & c);
+      const t2 = (S0 + mj) | 0;
+      h = g; g = f; f = e; e = (d + t1) | 0; d = c; c = bb; bb = a; a = (t1 + t2) | 0;
+    }
+    H[0] = (H[0] + a) | 0; H[1] = (H[1] + bb) | 0; H[2] = (H[2] + c) | 0; H[3] = (H[3] + d) | 0;
+    H[4] = (H[4] + e) | 0; H[5] = (H[5] + f) | 0; H[6] = (H[6] + g) | 0; H[7] = (H[7] + h) | 0;
+  }
+
+  // Single-use: feed chunk bytes with update(), then read the hex digest with
+  // hex(). At most one chunk file (4 MiB) is held at a time.
+  class Sha256 {
+    constructor() {
+      this.H = new Int32Array([0x6a09e667, 0xbb67ae85, 0x3c6ef372, 0xa54ff53a, 0x510e527f, 0x9b05688c, 0x1f83d9ab, 0x5be0cd19]);
+      this.b = new Uint8Array(64);
+      this.nb = 0;
+      this.count = 0;
+    }
+    update(d) {
+      this.count += d.length;
+      this.write(d);
+      return this;
+    }
+    write(d) {
+      let off = 0;
+      if (this.nb) {
+        const take = Math.min(64 - this.nb, d.length);
+        this.b.set(d.subarray(0, take), this.nb);
+        this.nb += take;
+        off = take;
+        if (this.nb === 64) {
+          sha256Block(this.H, this.b, 0);
+          this.nb = 0;
+        }
+      }
+      for (; off + 64 <= d.length; off += 64) sha256Block(this.H, d, off);
+      if (off < d.length) {
+        this.b.set(d.subarray(off));
+        this.nb = d.length - off;
+      }
+    }
+    hex() {
+      const total = this.count;
+      const zeros = (56 - ((total + 1) % 64) + 64) % 64;
+      const pad = new Uint8Array(1 + zeros + 8);
+      pad[0] = 0x80;
+      const bits = total * 8;
+      const dv = new DataView(pad.buffer, pad.byteOffset, pad.byteLength);
+      dv.setUint32(pad.length - 8, Math.floor(bits / 4294967296));
+      dv.setUint32(pad.length - 4, bits >>> 0);
+      this.write(pad);
+      let s = "";
+      for (let i = 0; i < 8; i++) s += (this.H[i] >>> 0).toString(16).padStart(8, "0");
+      return s;
+    }
+  }
+
+  // Incrementally hashes every chunk file of a complete layer and compares
+  // the digest against the entry key, the expected sha256 hex. A missing or
+  // short chunk file, a byte total that disagrees with the entry, or a
+  // digest mismatch all report false.
+  async function verifyLayer(e) {
+    const h = new Sha256();
+    let total = 0;
+    for (let i = 0; i < e.chunks; i++) {
+      const f = await chunkFile(e, i);
+      if (!f) return false;
+      const u8 = new Uint8Array(await f.arrayBuffer());
+      h.update(u8);
+      total += u8.length;
+    }
+    if (total !== e.bytes) return false;
+    if (h.hex() !== e.hex) return false;
+    e.verified = true;
+    return true;
+  }
+
+  // Deletes every file of a rejected layer (meta.json + c*) and resets the
+  // entry so the next pull re-downloads it from the network.
+  async function evictLayer(e) {
+    let names = null;
+    try {
+      if (typeof e.dir.entries === "function") {
+        names = [];
+        for await (const [name] of e.dir.entries()) names.push(name);
+      }
+    } catch {
+      names = null;
+    }
+    if (!names) {
+      names = ["meta.json"];
+      for (let i = 0; i <= e.chunks; i++) names.push("c" + i);
+    }
+    for (const name of names) {
+      await e.dir.removeEntry(name, { recursive: true }).catch(() => {});
+    }
+    e.done = false;
+    e.bytes = 0;
+    e.chunks = 0;
+    e.failed = null;
+    e.verified = false;
+  }
+
   // ── Serving the engine ──────────────────────────────────────────────────
+  // A digest names its content, so a complete layer whose bytes no longer
+  // hash to its digest is not that layer and is rejected before a single
+  // byte reaches the engine. OPFS stays writable by page script after the
+  // worker commits, so even a layer this session verified is re-read from
+  // disk and checked here — the check costs disk reads, never network, which
+  // keeps warm builds transfer-free while catching tamper (flipped bytes, a
+  // rewritten tail) on the very next request. A rejected layer is evicted
+  // and re-downloaded, and the same response streams the fresh bytes.
   // The response exists at once, so the engine's header timeout never sees
   // the queue. Each pull hands over the next chunk the moment it is closed.
-  function serve(e, from) {
+  async function serve(e, from) {
+    if (e.done && !(await verifyLayer(e).catch(() => false))) {
+      say(`layer cache: ${e.hex.slice(0, 12)} failed verification; re-downloading`);
+      await evictLayer(e);
+      start(e);
+    }
     let idx = Math.floor(from / CHUNK);
     let skip = from % CHUNK;
     const body = new ReadableStream({
@@ -340,25 +501,84 @@
     return free >= need;
   }
 
+  let prefetchEnabled = true;
+  const activeLeases = new Set();
+
+  function isMetadataOnlyRequest(init) {
+    if (!prefetchEnabled) return true;
+    if (init && init.tboxMetadataOnly) return true;
+    try {
+      if (init?.headers && new Headers(init.headers).get("x-tbox-metadata-only") === "1") {
+        return true;
+      }
+    } catch {}
+    return false;
+  }
+
+  function stripMetadataHeader(init) {
+    if (!init) return init;
+    const copy = { ...init };
+    delete copy.tboxMetadataOnly;
+    if (copy.headers) {
+      const h = new Headers(copy.headers);
+      if (h.has("x-tbox-metadata-only")) {
+        h.delete("x-tbox-metadata-only");
+        copy.headers = h;
+      }
+    }
+    return copy;
+  }
+
   // ── fetch hook ──────────────────────────────────────────────────────────
   window.fetch = function (input, init) {
     const url = typeof input === "string" ? input : (input && input.url) || String(input);
     const method = (init && init.method) || (input && input.method) || "GET";
+    const metadataOnly = isMetadataOnlyRequest(init);
+    const netInit = stripMetadataHeader(init);
     if (method.toUpperCase() === "GET") {
       const b = BLOB_RE.exec(url);
-      if (b) return blobFetch(url, b[1], init);
+      if (b) return blobFetch(url, b[1], netInit);
       if (MANIFEST_RE.test(url)) {
-        return netFetch(input, init).then((r) => {
-          if (r.ok) r.clone().json().then((m) => plan(url, m, init)).catch(() => {});
+        return netFetch(input, netInit).then((r) => {
+          if (r.ok && !metadataOnly) {
+            r.clone().json().then((m) => plan(url, m, netInit)).catch(() => {});
+          }
           return r;
         });
       }
     }
-    return netFetch(input, init);
+    return netFetch(input, netInit);
   };
 
   // ── UI hooks ────────────────────────────────────────────────────────────
   globalThis.tboxLayerCache = {
+    setPrefetchEnabled(enabled) {
+      prefetchEnabled = Boolean(enabled);
+      return prefetchEnabled;
+    },
+    isPrefetchEnabled() {
+      return prefetchEnabled;
+    },
+    pullManifestAndPrefetch(url, manifest, init) {
+      return plan(url, manifest, init);
+    },
+    fetchMetadata(input, init = {}) {
+      return window.fetch(input, { ...init, tboxMetadataOnly: true });
+    },
+    acquireBuildLease(id = "default") {
+      const key = String(id || "default");
+      activeLeases.add(key);
+      return () => {
+        activeLeases.delete(key);
+      };
+    },
+    releaseBuildLease(id = "default") {
+      activeLeases.delete(String(id || "default"));
+      return activeLeases.size === 0;
+    },
+    hasActiveLease() {
+      return activeLeases.size > 0 || active > 0;
+    },
     // Total bytes of complete layers on disk.
     async size() {
       const dir = await cacheDir;
@@ -375,19 +595,28 @@
       }
       return { layers: n, bytes };
     },
-    // Drops every layer that is not downloading right now.
+    // Drops every layer that is not downloading right now; refuses when a build lease is active.
     async clear() {
+      if (activeLeases.size > 0 || active > 0) {
+        say("layer cache: cannot clear while an operation is active");
+        return { cleared: false, activeBuild: true };
+      }
       const dir = await cacheDir;
-      if (!dir) return;
+      if (!dir) return { cleared: true, activeBuild: false };
       const names = [];
       for await (const [name, h] of dir.entries()) if (h.kind === "directory") names.push(name);
+      let skippedRunning = false;
       for (const name of names) {
         const live = entries.has(name) ? await entries.get(name) : null;
-        if (live?.running) continue;
+        if (live?.running) {
+          skippedRunning = true;
+          continue;
+        }
         await dir.removeEntry(name, { recursive: true }).catch(() => {});
         entries.delete(name);
       }
       bypass.clear();
+      return { cleared: !skippedRunning, activeBuild: skippedRunning };
     },
   };
 })();

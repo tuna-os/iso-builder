@@ -1,5 +1,5 @@
-// E2E for the TunaOS ISO Builder web app — drives the real WASM engine
-// against the real registry relay.
+// Catalog selection/inspection uses the real app and layer cache. Small builds
+// replace only engine and file-sink boundaries; @full uses the real WASM engine.
 //
 // The @walkthrough tests double as the documentation pipeline: every
 // screenshot lands in ../../../../docs/iso-builder/ and is embedded by
@@ -12,6 +12,7 @@
 const { test, expect } = require("./fixtures");
 const path = require("path");
 const fs = require("fs");
+const CATALOG = require("../../app/public/catalog-snapshot.json");
 
 const SHOTS = process.env.TBOX_E2E_SHOTS
   ? path.resolve(process.env.TBOX_E2E_SHOTS)
@@ -70,6 +71,13 @@ function shot(page, name) {
 // "tuna-os/bonito:kde" -> "bonito-kde", for filenames.
 const slug = (ref) => ref.replace(/^.*\//, "").replace(/[^a-zA-Z0-9]+/g, "-");
 
+// Keep the real catalog loader and layer cache in these tests. Only build-engine
+// calls and the file-picker boundary are replaced for small, deterministic builds.
+async function inspectPreset(page) {
+  await page.getByText("Or build from any bootable container image").click();
+  await page.locator("#introspect").click();
+}
+
 test.describe("iso builder", () => {
   test("page loads with the edition picker @walkthrough", async ({ page }) => {
     await page.goto("/");
@@ -87,9 +95,10 @@ test.describe("iso builder", () => {
     await page.locator("#variant").selectOption("bonito");
     const chip = page.locator('#editions .edition[data-de="kde"]');
     await expect(chip).toBeVisible();
-    // Read the ref the chip would build without kicking off a network inspect.
-    const de = await chip.getAttribute("data-de");
-    expect(de).toBe("kde");
+    await chip.click();
+    await expect(page.locator("#image")).toHaveValue("bonito:kde");
+    await expect(chip).toHaveClass(/selected/);
+    await expect(page.locator("#facts .badge.de")).toContainText("kde");
   });
 
   test("url params prefill the form and reflect in the picker", async ({ page }) => {
@@ -101,18 +110,248 @@ test.describe("iso builder", () => {
     await expect(page.locator("#share")).toContainText("image=bonito");
   });
 
+  test("deep-link preset selects target and catalog inspect transfers zero image layers", async ({ page }) => {
+    const blobRequests = [];
+    const manifestRequests = [];
+    page.on("request", (req) => {
+      const url = req.url();
+      if (/\/v2\/.*\/blobs\//.test(url)) blobRequests.push(url);
+      if (/\/v2\/.*\/manifests\//.test(url)) manifestRequests.push(url);
+    });
+
+    await page.goto("/?variant=yellowfin&flavor=gnome&platform=linux%2Famd64%2Fv2");
+    await expect(page.locator("#variant")).toHaveValue("yellowfin");
+    await expect(page.locator("#platform")).toHaveValue("linux/amd64/v2");
+    await expect(page.locator("#image")).toHaveValue("yellowfin:gnome");
+    await expect(page.locator('#editions .edition[data-de="gnome"]')).toHaveClass(/selected/);
+
+    await inspectPreset(page);
+
+    await expect(page.locator("#facts")).toBeVisible();
+    const entry = CATALOG.targets.find(
+      (target) => target.targetKey === "yellowfin:gnome:linux/amd64/v2",
+    );
+    await expect(page.locator("#facts")).toContainText(entry.facts.kernelVer);
+    await expect(page.locator("#facts")).toContainText(`layers ${entry.facts.layerCount}`);
+    await expect(page.locator("#facts")).toContainText(`packaging ${entry.facts.pkgManager}`);
+    await expect(page.locator(".badge.de")).toContainText("gnome");
+    await expect(page.locator(".badge.platform")).toContainText("linux/amd64/v2");
+    await expect(page.locator(".badge.status")).toContainText("qualified");
+    await expect(page.locator(".badge.digest")).toContainText("sha256:");
+    await expect(page.locator("#build")).toBeEnabled();
+
+    const req = await page.evaluate(() => window.tboxGetBuildRequest());
+    expect(req.schemaVersion).toBe(1);
+    expect(req.kind).toBe("build-request");
+    expect(req.customImage).toBe(false);
+    expect(req.image).toBe("tuna-os/yellowfin:gnome");
+    expect(req.target).toEqual({
+      variant: "yellowfin",
+      flavor: "gnome",
+      platform: "linux/amd64/v2",
+      cpuBaseline: "x86-64-v2",
+      hardwareScope: "generic",
+    });
+    expect(req.resolvedInputs.platformManifestDigest).toMatch(/^sha256:[0-9a-f]{64}$/);
+    expect(req.resolvedInputs).toEqual(Object.fromEntries(
+      Object.entries(entry.resolvedInputs).map(([key, value]) => [key, value || ""]),
+    ));
+    expect(blobRequests).toEqual([]);
+    expect(manifestRequests).toEqual([]);
+  });
+
+  for (const control of ["platform", "variant", "image", "edition"]) {
+    test(`changing ${control} after inspect clears readiness and rejects stale builds`, async ({ page }) => {
+      await page.goto("/?variant=bonito&flavor=kde&platform=linux%2Famd64");
+      await inspectPreset(page);
+      await expect(page.locator("#build")).toBeEnabled();
+      await expect(page.locator(".badge.de")).toContainText("kde");
+
+      await page.evaluate(() => {
+        window.__buildCalls = 0;
+        window.tboxBuildIso = async () => { window.__buildCalls++; return 4; };
+        // Edition selection auto-inspects. Pause it so a fast replacement
+        // inspect cannot hide stale facts or readiness.
+        const estimate = navigator.storage.estimate.bind(navigator.storage);
+        navigator.storage.estimate = () => {
+          navigator.storage.estimate = estimate;
+          return new Promise((resolve) => {
+            window.__resumeInspect = () => resolve({ quota: 100e9, usage: 0 });
+          });
+        };
+      });
+      if (control === "platform") await page.locator("#platform").selectOption("linux/arm64");
+      if (control === "variant") await page.locator("#variant").selectOption("sailfin");
+      if (control === "image") await page.locator("#image").fill("sailfin:gnome");
+      if (control === "edition") await page.locator('#editions .edition[data-de="gnome"]').click();
+
+      await expect(page.locator("#build")).toBeDisabled();
+      await expect(page.locator("#facts")).toBeHidden();
+      await expect(page.locator("#postcard")).toBeHidden();
+      expect(await page.evaluate(() => window.tboxCurrentOperation.ready)).toBe(false);
+      // Test the operation guard too, not just the disabled DOM button.
+      await page.evaluate(() => window.build());
+      expect(await page.evaluate(() => window.__buildCalls)).toBe(0);
+      if (control === "edition") {
+        await page.evaluate(() => window.__resumeInspect());
+        await expect(page.locator(".badge.de")).toContainText("gnome");
+      } else {
+        await expect(page.locator("#stage")).toContainText(/Inspect required/i);
+      }
+    });
+  }
+
+  test("an unqualified platform displays its status and exact local-build target", async ({ page }) => {
+    await page.goto("/?variant=yellowfin&flavor=gnome&platform=linux%2Farm64");
+    await inspectPreset(page);
+    await expect(page.locator(".badge.status")).toContainText("unqualified");
+    await expect(page.locator("#build")).toBeDisabled();
+    await expect(page.locator("#fallbackcard")).toBeVisible();
+    const request = JSON.parse(await page.locator("#fallbackjson").textContent());
+    expect(request.target).toMatchObject({
+      variant: "yellowfin", flavor: "gnome", platform: "linux/arm64",
+    });
+  });
+
+  test("sink write rejection aborts build without reporting Done and surfaces target-preserving fallback", async ({ page }) => {
+    await page.goto("/?variant=sailfin&flavor=xfce&platform=linux%2Famd64");
+    await inspectPreset(page);
+    await expect(page.locator("#build")).toBeEnabled();
+
+    const selectedRequest = await page.evaluate(() => window.tboxGetBuildRequest());
+
+    await page.evaluate(() => {
+      window.showSaveFilePicker = async () => ({
+        createWritable: async () => ({
+          write: async () => {
+            throw new Error("sink write error: simulated disk full");
+          },
+          close: async () => {},
+          abort: async () => {
+            window.__sinkAborted = true;
+          },
+        }),
+      });
+      window.tboxIntrospect = async () => JSON.stringify({ desktop: "xfce" });
+      window.tboxBuildIso = async (_opts, writeChunk) => {
+        await writeChunk(new Uint8Array([1, 2, 3, 4]));
+        return 4;
+      };
+    });
+
+    await page.locator("#build").click();
+
+    await expect(page.locator("#stage")).toContainText(/Build failed — sink write error/i);
+    await expect(page.locator("#stage")).not.toContainText(/Done/);
+    await expect(page.locator("#postcard")).toBeHidden();
+    await expect(page.locator("#fallbackcard")).toBeVisible();
+    expect(await page.evaluate(() => Boolean(window.__sinkAborted))).toBe(true);
+
+    const fallbackReq = await page.evaluate(() =>
+      JSON.parse(document.getElementById("fallbackjson").textContent),
+    );
+    expect(fallbackReq.image).toBe("tuna-os/sailfin:xfce");
+    expect(fallbackReq.target).toMatchObject({
+      variant: "sailfin",
+      flavor: "xfce",
+      platform: "linux/amd64",
+    });
+    expect(fallbackReq).toEqual(selectedRequest);
+    const downloading = page.waitForEvent("download");
+    await page.locator("#downloadrequest").click();
+    const download = await downloading;
+    expect(download.suggestedFilename()).toBe("build-request.json");
+    expect(JSON.parse(fs.readFileSync(await download.path(), "utf8"))).toEqual(selectedRequest);
+  });
+
+  test("completed build saves ISO and populates USB-write guidance with target-specific filename", async ({ page }) => {
+    await page.goto("/?variant=bonito&flavor=kde&platform=linux%2Famd64");
+    await inspectPreset(page);
+    await expect(page.locator("#build")).toBeEnabled();
+    const previousRequest = await page.evaluate(() => window.tboxGetBuildRequest());
+    await page.locator("#image").fill("sailfin:gnome");
+    await expect(page.locator("#build")).toBeDisabled();
+    await expect(page.locator("#facts")).toBeHidden();
+    await page.locator("#introspect").click();
+    await expect(page.locator("#build")).toBeEnabled();
+
+    await page.evaluate(() => {
+      window.__writtenChunks = 0;
+      window.__suggestedName = null;
+      window.showSaveFilePicker = async (opts) => {
+        window.__suggestedName = opts.suggestedName;
+        return {
+          createWritable: async () => ({
+            write: async (chunk) => {
+              window.__writtenChunks += chunk.byteLength;
+            },
+            close: async () => { window.__sinkClosed = true; },
+            abort: async () => {},
+          }),
+        };
+      };
+      window.tboxIntrospect = async (req) => {
+        window.__introspectedReq = req;
+        return JSON.stringify({ desktop: "gnome" });
+      };
+      window.tboxBuildIso = async (opts, writeChunk) => {
+        window.__builtReq = opts.request;
+        globalThis.tboxOnProgress("erofs", 1, 2);
+        await new Promise((resolve) => { window.__continueBuild = resolve; });
+        await writeChunk(new Uint8Array(2048));
+        globalThis.tboxOnProgress("iso", 2, 2);
+        return 2048;
+      };
+    });
+
+    await page.locator("#build").click();
+    await expect(page.locator("#stage")).toContainText("Authoring EROFS");
+    await expect(page.locator("#bar")).toHaveJSProperty("value", 1);
+    await expect(page.locator("#postcard")).toBeHidden();
+    for (const id of ["variant", "platform", "image", "clearcache"]) {
+      await expect(page.locator(`#${id}`)).toBeDisabled();
+    }
+    expect(await page.evaluate(() => window.tboxLayerCache.hasActiveLease())).toBe(true);
+    await page.evaluate(() => window.__continueBuild());
+
+    await expect(page.locator("#stage")).toContainText(/Done/);
+    await expect(page.locator("#postcard")).toBeVisible();
+    await expect(page.locator("#tab-etcher")).toContainText("USB");
+    await page.getByRole("button", { name: "Terminal (dd)", exact: true }).click();
+    await expect(page.locator("#tab-dd pre code")).toContainText("tunaos-sailfin-gnome-amd64.iso");
+    await expect(page.locator("#tab-dd")).toContainText("of=/dev/sdX");
+
+    const result = await page.evaluate(() => ({
+      suggestedName: window.__suggestedName,
+      writtenChunks: window.__writtenChunks,
+      request: window.__builtReq,
+      inspectedRequest: window.__introspectedReq,
+      closed: window.__sinkClosed,
+    }));
+    expect(result.suggestedName).toBe("tunaos-sailfin-gnome-amd64.iso");
+    expect(result.request.options.outputFilename).toBe("tunaos-sailfin-gnome-amd64.iso");
+    expect(result.writtenChunks).toBe(2048);
+    expect(result.closed).toBe(true);
+    expect(result.request.target).toMatchObject({
+      variant: "sailfin", flavor: "gnome", platform: "linux/amd64",
+    });
+    expect(result.inspectedRequest).toEqual(result.request);
+    expect(result.request.resolvedInputs.platformManifestDigest).not.toBe(
+      previousRequest.resolvedInputs.platformManifestDigest,
+    );
+    expect(await page.evaluate(() => window.tboxLayerCache.hasActiveLease())).toBe(false);
+  });
+
   test("inspect detects the image and fills flatpak defaults @walkthrough", async ({ page }) => {
     await page.goto("/");
-    // Freeform 'any image' path lives under a disclosure — open it to type a
-    // :base image the picker doesn't list.
+    // Published catalog inspection is lightweight; full unpack belongs to @full.
     await page.getByText("Or build from any bootable container image").click();
-    await page.locator("#image").fill(IMAGE);
+    await page.locator("#image").fill("sailfin:gnome");
     await shot(page, "02-image-entered.png");
     await page.locator("#introspect").click();
 
-    // Engine load + manifest resolve + full unpack (network).
-    await expect(page.locator("#facts")).toBeVisible({ timeout: 600_000 });
-    await expect(page.locator(".badge.de")).toContainText(/gnome|kde|niri|cosmic|xfce|none/);
+    await expect(page.locator("#facts")).toBeVisible();
+    await expect(page.locator(".badge.de")).toContainText("gnome");
     await expect(page.locator("#build")).toBeEnabled();
     await shot(page, "03-inspected.png");
 
