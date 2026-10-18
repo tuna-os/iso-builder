@@ -426,6 +426,27 @@ test.describe("iso builder", () => {
         })
         .catch(() => "<unreadable>");
 
+    // QualificationEvidence v1 (browser half): phase timings, resource
+    // profile, and output identity for cold / unchanged-warm /
+    // related-image runs. Boundaries use Date.now() around the existing
+    // stage gates; peaks reuse the existing tboxWasmMB/tboxJsHeapMB
+    // hooks; registry bytes reuse the layer-cache size counter. No new
+    // engine instrumentation.
+    const T0 = Date.now();
+    const phases = { inspectMs: null, buildMs: null, saveMs: null };
+    const peaks = { tboxWasmMB: -1, tboxJsHeapMB: -1 };
+    const samplePeaks = async () => {
+      const w = await wasmMB();
+      const j = await page.evaluate(() => globalThis.tboxJsHeapMB?.() ?? -1).catch(() => -1);
+      if (w > peaks.tboxWasmMB) peaks.tboxWasmMB = Math.round(w);
+      if (j > peaks.tboxJsHeapMB) peaks.tboxJsHeapMB = Math.round(j);
+    };
+    const cacheSize = () =>
+      page
+        .evaluate(() => globalThis.tboxLayerCache?.size?.() ?? { layers: 0, bytes: 0 })
+        .catch(() => ({ layers: 0, bytes: 0 }));
+    const cacheBeforeP = cacheSize();
+
     // Heartbeat + watchdogs. The 30 s [stage] log is what proves after the
     // fact whether a phase was advancing or wedged; the rejection is what
     // stops a terminal failure from eating the whole per-phase budget.
@@ -442,6 +463,7 @@ test.describe("iso builder", () => {
         const tick = setInterval(async () => {
           const sig = await progress();
           if (++ticks % 6 === 0) {
+          samplePeaks().catch(() => {});
             console.log(`[stage] ${await stageText()}  wasm=${Math.round(await wasmMB())} MB`);
           }
           if (death) return stop(new Error(`engine died during ${what}: ${death}`));
@@ -496,14 +518,19 @@ test.describe("iso builder", () => {
     } finally {
       inspectWatch.cancel();
     }
+    phases.inspectMs = Date.now() - T0;
+    await samplePeaks();
 
     const buildWatch = watch("build", BUILD_STALL_MS);
     let dl;
     try {
       const download = page.waitForEvent("download", { timeout: WAIT_MS });
+      const buildClickedAt = Date.now();
       await page.locator("#build").click();
       await shot(page, "05-building.png");
       dl = await Promise.race([download, buildWatch.promise]);
+      phases.buildMs = Date.now() - buildClickedAt;
+      await samplePeaks();
     } catch (e) {
       throw await describe("build", e);
     } finally {
@@ -511,6 +538,7 @@ test.describe("iso builder", () => {
     }
     const out = process.env.TBOX_E2E_ISO_OUT || path.join(SHOTS, "..", "iso-builder-e2e-output.iso");
     console.log("saving iso to:", out, "(env override:", process.env.TBOX_E2E_ISO_OUT || "none", ")");
+    const saveStartedAt = Date.now();
     await dl.saveAs(out);
     console.log("saved:", out, fs.statSync(out).size, "bytes");
     // Playwright reclaims download artifacts at context close — even the
@@ -520,6 +548,8 @@ test.describe("iso builder", () => {
       fs.copyFileSync(out, process.env.TBOX_E2E_ISO_COPY);
       console.log("copied to:", process.env.TBOX_E2E_ISO_COPY, fs.statSync(process.env.TBOX_E2E_ISO_COPY).size, "bytes");
     }
+    phases.saveMs = Date.now() - saveStartedAt;
+    await samplePeaks();
     const size = fs.statSync(out).size;
     expect(size).toBeGreaterThan(100 * 1024 * 1024);
     // ISO9660 PVD signature at sector 16.
@@ -530,6 +560,58 @@ test.describe("iso builder", () => {
     expect(buf.toString("latin1", 1, 6)).toBe("CD001");
     await expect(page.locator("#stage")).toContainText(/Done/, { timeout: 120_000 });
     await shot(page, "06-done.png");
+    // Browser half of QualificationEvidence v1. The guest half (LUKS
+    // install + reboot) is appended by the CI step running iso-e2e.sh;
+    // both halves share target identity + digests below.
+    const cacheAfter = await cacheSize();
+    const cacheBefore = await cacheBeforeP;
+    const storage = await page
+      .evaluate(() => (navigator.storage?.estimate ? navigator.storage.estimate() : {}))
+      .catch(() => ({}));
+    const userAgent = await page.evaluate(() => navigator.userAgent).catch(() => "unknown");
+    const imgShort = IMAGE.replace(/^.*\//, "");
+    const evPlatform = process.env.TBOX_E2E_PLATFORM || null;
+    const catalogEntry =
+      CATALOG.targets.find((t) =>
+        evPlatform ? t.targetKey === `${imgShort}:${evPlatform}` : t.targetKey && t.targetKey.startsWith(`${imgShort}:`),
+      ) || null;
+    const evidence = {
+      schemaVersion: 1,
+      kind: "qualification-evidence",
+      half: "browser",
+      browser: { name: "chromium", userAgent },
+      target: {
+        image: IMAGE,
+        slug: slug(IMAGE),
+        platform: evPlatform,
+        digest: (catalogEntry && catalogEntry.facts.digest) || null,
+        layerCount: (catalogEntry && catalogEntry.facts.layerCount) || null,
+        compressedBytes: (catalogEntry && catalogEntry.facts.compressedSize) || null,
+      },
+      run: {
+        cacheMode: process.env.TBOX_E2E_CACHE_MODE || "unknown",
+        sample: Number(process.env.TBOX_E2E_SAMPLE || 1),
+        startedAt: new Date(T0).toISOString(),
+      },
+      phasesMs: { inspect: phases.inspectMs, build: phases.buildMs, save: phases.saveMs },
+      resources: {
+        peakTboxWasmMB: peaks.tboxWasmMB,
+        peakTboxJsHeapMB: peaks.tboxJsHeapMB,
+        cacheLayersBefore: cacheBefore.layers || 0,
+        cacheBytesBefore: cacheBefore.bytes || 0,
+        cacheLayersAfter: cacheAfter.layers || 0,
+        cacheBytesAfter: cacheAfter.bytes || 0,
+        opfsQuota: storage.quota ?? null,
+        opfsUsage: storage.usage ?? null,
+        isoBytes: size,
+      },
+    };
+    const evPath =
+      process.env.TBOX_E2E_EVIDENCE ||
+      path.join(SHOTS, "..", "test-results", `qual-evidence-${slug(IMAGE)}-s${evidence.run.sample}.json`);
+    fs.mkdirSync(path.dirname(evPath), { recursive: true });
+    fs.writeFileSync(evPath, `${JSON.stringify(evidence, null, 2)}\n`);
+    console.log("wrote browser evidence:", evPath);
     fs.unlinkSync(out);
   });
 });

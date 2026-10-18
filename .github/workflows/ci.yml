@@ -63,6 +63,10 @@ on:
         description: "Publish each built ISO to R2 instead of discarding it (boot testing)"
         type: boolean
         default: false
+      benchmark:
+        description: "Run each @full build three times and attach median/range evidence"
+        type: boolean
+        default: false
   schedule:
     # Weekly: the app talks to live infra (relay, GHCR) that can drift.
     - cron: "40 5 * * 1"
@@ -535,11 +539,14 @@ jobs:
           # the tuna-os/ prefix; reference editions carry their own org
           # (projectbluefin/dakota:stable) and pass through as-is.
           TBOX_E2E_IMAGE: ${{ contains(matrix.edition.ref, '/') && matrix.edition.ref || format('tuna-os/{0}', matrix.edition.ref) }}
-          # The spec deletes the ISO right after `saved:` prints, so
-          # without this there is nothing left to boot — and @full only
-          # ever proved format (size >100 MB, CD001 at sector 16), never
-          # boot. Set only when asked for, because these are multi-GB.
-          TBOX_E2E_ISO_COPY: ${{ format('{0}/{1}.iso', runner.temp, matrix.edition.slug) }}
+          # The spec deletes the ISO right after `saved:` prints, so the
+          # per-sample TBOX_E2E_ISO_COPY in the run script below is what
+          # survives to boot — @full only ever proved format (size
+          # >100 MB, CD001 at sector 16), never boot. Multi-GB, so only
+          # ever a RUNNER_TEMP path, never an artifact.
+          TBOX_E2E_PLATFORM: ${{ matrix.edition.platform }}
+          # Fresh Playwright profile per sample, so every sample is cold.
+          TBOX_E2E_CACHE_MODE: "cold"
         # The config's 900s per-test cap was sized against sailfin:base
         # (2.5 GB, 4.2 min). Desktop editions are several times that, so
         # the default would time out on payload size rather than on a bug.
@@ -550,7 +557,26 @@ jobs:
         # seconds once the engine is provably dead, or after a few minutes
         # of a frozen progress bar, so a broken cell reports the reason
         # instead of buying 20 idle minutes of runner time.
-        run: npx playwright test --grep @full --timeout=4500000
+        run: |
+          set -euo pipefail
+          # Benchmark mode: three paired @full samples per edition; the
+          # spec writes one QualificationEvidence v1 file per sample and
+          # the evidence step below merges median/range.
+          if [ "${{ github.event.inputs.benchmark }}" = "true" ]; then SAMPLES="1 2 3"; else SAMPLES="1"; fi
+          for s in $SAMPLES; do
+            echo "=== @full sample ${s} ==="
+            TBOX_E2E_SAMPLE="${s}" \
+              TBOX_E2E_ISO_COPY="${RUNNER_TEMP}/${{ matrix.edition.slug }}-s${s}.iso" \
+              TBOX_E2E_EVIDENCE="test-results/qual-evidence-${{ matrix.edition.slug }}-s${s}.json" \
+              npx playwright test --grep @full --timeout=4500000
+          done
+          # The guest-verify step below expects ${SLUG}.iso: keep the last
+          # sample there and drop the rest (multi-GB; never retained).
+          last="${SAMPLES##* }"
+          cp "${RUNNER_TEMP}/${{ matrix.edition.slug }}-s${last}.iso" "${RUNNER_TEMP}/${{ matrix.edition.slug }}.iso"
+          for s in $SAMPLES; do
+            if [ "${s}" != "${last}" ]; then rm -f "${RUNNER_TEMP}/${{ matrix.edition.slug }}-s${s}.iso"; fi
+          done
 
       # Pinned to a commit SHA, not the default branch (iso-builder#117):
       # scripts/iso-e2e.sh from this checkout is sudo-executed a few steps
@@ -565,12 +591,13 @@ jobs:
         uses: actions/checkout@v7
         with:
           repository: tuna-os/tunaOS
-          ref: ad55e2678c165e546466ecd9e04a882027ec4abe
+          ref: e89bf562d7488242295bf02c228bbba4c509b388
           path: tunaos-e2e
 
-      - name: verify LUKS install + reboot under QEMU (${{ matrix.edition.slug }})
+      - name: verify guest under QEMU (${{ matrix.edition.slug }})
         timeout-minutes: 25
         env:
+          QUALIFY: ${{ matrix.edition.qualify }}
           SLUG: ${{ matrix.edition.slug }}
           # Same resolution as the build step above. The harness needs the
           # image ref for its generic (no-fisherman) install path: reference
@@ -597,14 +624,23 @@ jobs:
           sudo udevadm control --reload-rules
           sudo udevadm trigger --name-match=kvm || true
 
-          echo "Running LUKS installation and reboot verification..."
+          # Qualification targets run Task 11's strict offline-GUI
+          # contract; upstream pipeline references keep the LUKS check.
           # sudo sanitizes the environment; the VAR=val prefix carries the
           # image ref through to the harness.
-          sudo TBOX_E2E_IMAGE="$TBOX_E2E_IMAGE" "${GITHUB_WORKSPACE}/tunaos-e2e/scripts/iso-e2e.sh" "$ISO" --luks \
-            --output "luks-verify-${SLUG}" \
-            --timeout 900
+          if [ "${QUALIFY}" = "true" ]; then
+            echo "Running strict offline-GUI verification..."
+            sudo TBOX_E2E_IMAGE="$TBOX_E2E_IMAGE" "${GITHUB_WORKSPACE}/tunaos-e2e/scripts/iso-e2e.sh" "$ISO" --strict-offline-gui \
+              --output "luks-verify-${SLUG}" \
+              --timeout 900
+          else
+            echo "Running LUKS installation and reboot verification..."
+            sudo TBOX_E2E_IMAGE="$TBOX_E2E_IMAGE" "${GITHUB_WORKSPACE}/tunaos-e2e/scripts/iso-e2e.sh" "$ISO" --luks \
+              --output "luks-verify-${SLUG}" \
+              --timeout 900
+          fi
 
-          echo "LUKS installation and reboot verification completed successfully!"
+          echo "Guest verification completed successfully!"
 
       - name: disk after build
         if: always()
@@ -693,6 +729,67 @@ jobs:
             !luks-verify-*/swtpm/
             !luks-verify-*/vsock-ssh-key*
           if-no-files-found: ignore
+
+      # The spec writes one browser-half QualificationEvidence v1 file
+      # per sample under e2e/test-results/. Validate the schema here and,
+      # in benchmark mode, merge the three paired samples into
+      # median/range evidence. Only *.json travels — never a multi-GB
+      # ISO or qcow2 (those stay excluded above).
+      - name: validate + merge qualification evidence
+        if: success()
+        working-directory: e2e
+        env:
+          SLUG: ${{ matrix.edition.slug }}
+          BENCHMARK: ${{ github.event.inputs.benchmark }}
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import glob, json, os, statistics
+          slug = os.environ["SLUG"]
+          files = sorted(glob.glob(f"test-results/qual-evidence-{slug}-s*.json"))
+          if not files:
+              raise SystemExit(f"no browser evidence for {slug} in test-results/")
+          required = {"schemaVersion", "kind", "half", "browser", "target", "run", "phasesMs", "resources"}
+          samples = []
+          for f in files:
+              ev = json.load(open(f))
+              missing = required - set(ev)
+              if missing or ev.get("kind") != "qualification-evidence" or ev.get("schemaVersion") != 1:
+                  raise SystemExit(f"{f}: invalid QualificationEvidence v1 (missing {sorted(missing)})")
+              samples.append(ev)
+          print(f"validated {len(samples)} browser evidence file(s)")
+          if os.environ.get("BENCHMARK") == "true":
+              if len(samples) != 3:
+                  raise SystemExit(f"benchmark mode needs 3 samples, found {len(samples)}")
+              def series(key, sub):
+                  return [s[key][sub] for s in samples if isinstance(s[key].get(sub), (int, float))]
+              summary = {}
+              for key, subs in (("phasesMs", ("inspect", "build", "save")),
+                                ("resources", ("isoBytes", "peakTboxWasmMB", "peakTboxJsHeapMB"))):
+                  for sub in subs:
+                      vals = series(key, sub)
+                      if vals:
+                          summary[f"{key}.{sub}"] = {
+                              "samples": vals,
+                              "median": statistics.median(vals),
+                              "range": max(vals) - min(vals),
+                          }
+              merged = {"schemaVersion": 1, "kind": "qualification-evidence",
+                        "half": "browser-benchmark", "slug": slug,
+                        "target": samples[0]["target"], "browser": samples[0]["browser"],
+                        "samples": samples, "summary": summary}
+              out = f"test-results/qual-evidence-{slug}-benchmark.json"
+              json.dump(merged, open(out, "w"), indent=2)
+              print(f"wrote {out}")
+          PY
+
+      - name: upload qualification evidence
+        if: success()
+        uses: actions/upload-artifact@v7
+        with:
+          name: qual-${{ matrix.edition.slug }}-evidence
+          path: e2e/test-results/qual-evidence-${{ matrix.edition.slug }}*.json
+          if-no-files-found: error
 
   deploy:
     needs: [e2e, wasm]
