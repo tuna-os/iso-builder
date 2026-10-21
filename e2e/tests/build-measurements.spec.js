@@ -402,8 +402,20 @@ test.describe("diagnostic record validation", () => {
     expect(record.phasesMs).toEqual(input.phasesMs);
     expect(record.timingNote).toMatch(/no performance qualification/);
     expect(Object.keys(record).sort()).toEqual([
-      "schemaVersion", "kind", "qualification", "iso", "loadedWasm", "engineBuildResult", "missingIdentity", "browser", "phasesMs", "timingNote",
+      "schemaVersion", "kind", "qualification", "iso", "loadedWasm", "loadedFrontend", "engineBuildResult", "missingIdentity", "browser", "phasesMs", "timingNote",
     ].sort());
+  });
+  test("loaded frontend observations do not fill authenticated identity gaps", () => {
+    const input = validRecord();
+    input.loadedFrontend = { schemaVersion: 1, kind: "diagnostic-loaded-frontend", qualification: "not-assessed",
+      coverage: "page-target-only",
+      authentication: "not-verified", assets: [] };
+    const record = diagnosticRecord(input);
+    expect(record.loadedFrontend).toEqual(input.loadedFrontend);
+    expect(record.qualification).toBe("not-assessed");
+    expect(record.missingIdentity).toEqual(["producer", "frontend"]);
+    input.loadedFrontend.authentication = "verified";
+    expect(() => diagnosticRecord(input)).toThrow(/frontend observation/);
   });
 
   test("joins exact operation result only when its output count matches independently saved bytes", () => {

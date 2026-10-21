@@ -119,7 +119,7 @@ async function completedBuildResult(page, expectedIdentity = null) {
   }, expectedIdentity);
 }
 
-function diagnosticRecord({ iso, wasm, browser, phasesMs, buildResult = null }) {
+function diagnosticRecord({ iso, wasm, browser, phasesMs, buildResult = null, loadedFrontend = null }) {
   for (const value of [iso, wasm]) {
     if (!value || typeof value.sha256 !== "string" || !/^sha256:[0-9a-f]{64}$/.test(value.sha256) || !Number.isSafeInteger(value.sizeBytes) || value.sizeBytes <= 0) {
       throw new Error("invalid byte measurement");
@@ -130,10 +130,16 @@ function diagnosticRecord({ iso, wasm, browser, phasesMs, buildResult = null }) 
   for (const name of ["inspect", "build", "save"]) {
     if (typeof phasesMs?.[name] !== "number" || !Number.isFinite(phasesMs[name]) || phasesMs[name] < 0) throw new Error("invalid phase duration");
   }
+  if (loadedFrontend !== null && (loadedFrontend?.schemaVersion !== 1 ||
+      loadedFrontend.kind !== "diagnostic-loaded-frontend" || loadedFrontend.coverage !== "page-target-only" ||
+      loadedFrontend.qualification !== "not-assessed" || loadedFrontend.authentication !== "not-verified")) {
+    throw new Error("invalid diagnostic frontend observation");
+  }
   return {
     schemaVersion: 1, kind: "diagnostic-build-measurements", qualification: "not-assessed",
     iso: { sha256: iso.sha256, sizeBytes: iso.sizeBytes },
     loadedWasm: { sha256: wasm.sha256, sizeBytes: wasm.sizeBytes },
+    loadedFrontend,
     engineBuildResult: buildResult === null ? null : validateBuildResult(buildResult, iso.sizeBytes),
     missingIdentity: ["producer", "frontend"],
     browser: { product: browser.product, userAgent: browser.userAgent },

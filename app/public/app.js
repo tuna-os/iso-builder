@@ -597,6 +597,7 @@ function clearBuildResult() {
   if (currentOp) {
     currentOp.buildResult = null;
     currentOp.outputDelivery = null;
+    currentOp.buildTiming = null;
     currentOp.buildAttempt = null;
   }
   if ($("postcard")) $("postcard").classList.add("hidden");
@@ -754,6 +755,7 @@ function rebuildCurrentOperation(state = "idle") {
     storageBlocked: false,
     error: null,
     buildResult: null,
+    buildTiming: null,
     outputDelivery: null,
     buildAttempt: null,
     ...built,
@@ -996,7 +998,12 @@ async function inspect() {
     if (!hasTestStub) {
       globalThis.tboxLayerCache?.setPrefetchEnabled?.(true);
     }
-    facts = JSON.parse(await window.tboxIntrospect(image, registry, op.platform, op.request));
+    // The engine accepts requests through its object form. Keep the explicit
+    // platform for custom images, whose BuildRequest has no curated target.
+    const inspectRequest = Object.freeze({
+      image, registry, platform: op.platform, request: JSON.stringify(op.request),
+    });
+    facts = JSON.parse(await window.tboxIntrospect(inspectRequest));
     renderFactsBadges(facts, op);
     applyDetectedDesktopAndPackaging(facts);
     syncOperationOptions();
@@ -1218,6 +1225,7 @@ async function build() {
   let stopWatch = () => {};
   let s = null;
   try {
+    const preparationStarted = performance.now();
     stopWatch = watchEngineMemory();
     if (iurl) {
       log("fetching tbox initramfs…");
@@ -1229,6 +1237,7 @@ async function build() {
       log("initramfs: auto (tbox overlay appended to the image's own initramfs)");
     }
     const name = req.options.outputFilename || `tunaos-${($("image").value.split("/").pop() || "image").replace(/[:]/g, "-")}.iso`;
+    const preparationMs = performance.now() - preparationStarted;
     s = await isoSink(name);
     if (!s) {
       op.state = "ready";
@@ -1237,6 +1246,10 @@ async function build() {
       return;
     }
 
+    // Exclude time spent choosing a file, but include this build's engine
+    // setup and catalog-path resolve/unpack. Earlier UI inspection is reused.
+    const engineStarted = performance.now();
+    const inspectionReused = op.inspectedVia === "wasm";
     const hasBuildStub =
       (typeof window.tboxBuildIso === "function" && window.tboxBuildIso !== wasmNativeBuildIso) ||
       (typeof window.tboxBuildIsoWithResult === "function" && window.tboxBuildIsoWithResult !== wasmNativeBuildIsoWithResult);
@@ -1253,7 +1266,7 @@ async function build() {
       }
     }
 
-    const t0 = performance.now();
+    const inspectionFinished = performance.now();
     const flatpaks = req.options.flatpaks.slice();
     const packages = req.options.packages.slice();
     const extraRun = req.options.extraRun.slice();
@@ -1283,11 +1296,25 @@ async function build() {
     if (currentOp !== op || resultRevision !== buildResultRevision || !operationMatchesForm(op)) {
       throw new Error("build selection changed before save completed");
     }
+    const phasesMs = {
+      preparation: preparationMs,
+      engineSetupAndInspection: inspectionFinished - engineStarted,
+      buildAndSave: performance.now() - inspectionFinished,
+    };
+    if (Object.values(phasesMs).some(value => !Number.isFinite(value) || value < 0)) {
+      throw new Error("invalid build duration");
+    }
+    const elapsedMs = Object.values(phasesMs).reduce((sum, value) => sum + value, 0);
+    if (!Number.isFinite(elapsedMs)) throw new Error("invalid build duration");
     updatePostcardFilename(name);
     op.state = "completed";
     op.buildResult = pendingResult;
     op.outputDelivery = deepFreeze(outputDelivery);
-    const dt = ((performance.now() - t0) / 1000).toFixed(1);
+    op.buildTiming = deepFreeze({
+      operationId: op.id, buildAttempt: resultRevision,
+      policy: "active-build-phases-v1", inspectionReused, phasesMs, elapsedMs,
+    });
+    const dt = (elapsedMs / 1000).toFixed(1);
     $("stage").textContent = `Done — ${(bytes / 1e9).toFixed(2)} GB in ${dt}s.`;
     notify("ISO ready 🐟", `${(bytes / 1e9).toFixed(2)} GB written in ${dt}s`);
     log(`iso written: ${bytes} bytes`);
@@ -1298,6 +1325,7 @@ async function build() {
     }
     clearBuildResult();
     op.buildResult = null;
+    op.buildTiming = null;
     op.state = "failed";
     op.error = String(e);
     $("postcard").classList.add("hidden");

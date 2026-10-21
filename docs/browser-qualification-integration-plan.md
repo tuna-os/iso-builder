@@ -8,7 +8,7 @@ to run, publish, deploy, or change download routes.
 - iso-builder `f6a0bfa`: `.github/workflows/ci.yml`,
   `e2e/tests/builder.spec.js`, `e2e/tests/build-measurements.js`.
 - tacklebox pin: `b2c917d7e896d49d095daefe6a812beb9d4398d6`.
-- tunaOS draft #3431 `ed1d226a0aeff09f186a6a129a8ce9f029a18385`:
+- tunaOS draft #3431 `ce442239dc9ee12fc1de324d8f641bc8f319cad7`:
   `scripts/iso-e2e.sh`, `.github/workflows/iso-builder-parity.yml`.
 
 These revisions record the inspection, not live status. Re-review the harness and
@@ -93,7 +93,7 @@ Keep `qualification: not-assessed` until this integration exists and succeeds.
 ### C. Run strict qualification on those same bytes
 
 Review and pin the complete harness tree, including helper scripts, to an immutable commit.
-The reviewed candidate `ed1d226a` does not authorize an automatic pin change.
+The reviewed candidate `ce442239` does not authorize an automatic pin change.
 Use disposable VM disks only, under the dedicated output directory.
 Rehash the retained ISO immediately before boot. Its hash must match the expected value.
 
@@ -178,7 +178,7 @@ Do not add an account lifecycle rule or delete objects under this proposal.
 
 ## Local producer-observation regression proposal
 
-`scripts/collect-candidate-provenance.py` has no CI integration.
+The step for opt-in retention calls `scripts/collect-candidate-provenance.py`.
 It validates the manual-run context and compares the checkout SHA with the claimed workflow/run SHA.
 It hashes the tracked frontend files, workflow and generated WASM/shim from the served tree.
 It rejects changes to tracked files, unexpected untracked files, symlinks, empty files and concurrent file changes.
@@ -199,6 +199,8 @@ Frontend delivery and the remote artifact association remain unverified.
 It emits no receipt digest and fills no identity gaps.
 
 An external verifier must check the run/job/artifact.
-A browser response observer must bind the served frontend bytes to those that the browser loaded.
+The [response proposal for the frontend](browser-frontend-observation.md) compares
+the loaded bytes with served files. Its page-only observer does not cover worker targets.
+The full build must not use it until worker coverage is complete.
 The installed-installer frontend needs its own identity.
 This local snapshot does not complete the trusted producer/consumer protocol.

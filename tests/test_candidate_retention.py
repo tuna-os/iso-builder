@@ -222,3 +222,62 @@ def test_restore_altered_chunk_hash_still_fails_independent_whole_hash(candidate
     client.objects[key] = m.encoded(manifest)
     with pytest.raises(ValueError, match='whole-ISO'):
         m.restore(client, bucket, key, tmp_path / 'restored.iso', provenance['iso']['sha256'])
+
+
+def test_manifest_hash_binds_exact_retained_metadata(candidate, tmp_path):
+    client, bucket, path, provenance, _ = candidate
+    result = m.retain(*candidate, chunk_bytes=8)
+    raw = client.objects[result['manifestKey']]
+    assert result['manifestSha256'] == 'sha256:' + hashlib.sha256(raw).hexdigest()
+    restored = m.restore(client, bucket, result['manifestKey'], tmp_path / 'exact.iso',
+                         provenance['iso']['sha256'], result['manifestSha256'])
+    assert restored['manifestHashChecked'] is True
+    assert restored['manifestSha256'] == result['manifestSha256']
+    assert (tmp_path / 'exact.iso').read_bytes() == path.read_bytes()
+    assert restored['qualification'] == 'not-assessed'
+
+
+def test_manifest_metadata_swap_fails_before_output_creation(candidate, tmp_path):
+    client, bucket, _, provenance, _ = candidate
+    result = m.retain(*candidate, chunk_bytes=8)
+    manifest = json.loads(client.objects[result['manifestKey']])
+    manifest['warning'] = 'changed metadata with identical ISO and chunks'
+    client.objects[result['manifestKey']] = m.encoded(manifest)
+    output = tmp_path / 'swapped.iso'
+    with pytest.raises(ValueError, match='manifest SHA-256'):
+        m.restore(client, bucket, result['manifestKey'], output,
+                  provenance['iso']['sha256'], result['manifestSha256'])
+    assert not output.exists()
+
+
+@pytest.mark.parametrize('field,value', [
+    ('repository', 'other/iso-builder'), ('job', 'deploy'),
+    ('runId', '456'), ('runAttempt', '2'),
+])
+def test_restore_rejects_wrong_producer_context_even_with_matching_iso(candidate, tmp_path, field, value):
+    client, bucket, _, provenance, _ = candidate
+    result = m.retain(*candidate, chunk_bytes=8)
+    manifest = json.loads(client.objects[result['manifestKey']])
+    manifest['provenance']['producerContext'][field] = value
+    client.objects[result['manifestKey']] = m.encoded(manifest)
+    output = tmp_path / 'wrong-origin.iso'
+    with pytest.raises(ValueError, match='origin or run'):
+        m.restore(client, bucket, result['manifestKey'], output, provenance['iso']['sha256'])
+    assert not output.exists()
+
+
+def test_legacy_restore_does_not_claim_expected_manifest_check(candidate, tmp_path):
+    client, bucket, _, provenance, _ = candidate
+    result = m.retain(*candidate, chunk_bytes=8)
+    restored = m.restore(client, bucket, result['manifestKey'], tmp_path / 'legacy.iso', provenance['iso']['sha256'])
+    assert restored['manifestHashChecked'] is False
+    assert restored['qualification'] == 'not-assessed'
+
+
+@pytest.mark.parametrize('bad', ['', 'main', 'sha256:' + 'A' * 64, True])
+def test_invalid_manifest_digest_fails_before_storage_read(candidate, tmp_path, bad):
+    client, bucket, _, provenance, _ = candidate
+    # No objects exist, so a storage read would raise KeyError.
+    with pytest.raises(ValueError, match='manifest SHA-256'):
+        m.restore(client, bucket, 'browser-iso/candidates/123/1/yellowfin-gnome/s1/manifest.json',
+                  tmp_path / 'bad.iso', provenance['iso']['sha256'], bad)

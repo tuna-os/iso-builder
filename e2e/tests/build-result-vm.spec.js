@@ -66,6 +66,7 @@ function expectFailed({ op, element }) {
   expect(op.state).toBe("failed");
   expect(op.buildResult).toBeNull();
   expect(op.outputDelivery).toBeNull();
+  expect(op.buildTiming).toBeNull();
   expect(element("stage").textContent).toContain("Build failed");
   expect(element("postcard").classList.hidden).toBe(true);
 }
@@ -228,5 +229,62 @@ test.describe("app result lifecycle VM", () => {
     await a.c.build(); expect(a.op.state).toBe("completed");
     expect(a.op.outputDelivery).toEqual({ kind: "download", status: "initiated" });
     expect(a.trace.downloads).toBe(1); expect(a.op.buildResult).toEqual(observedBuildFixture());
+  });
+});
+
+
+test.describe("active build duration VM", () => {
+  for (const catalog of [true, false]) {
+    test(`includes current inspection without re-counting prior UI work: ${catalog}`, async () => {
+      const a = app(); let now = 0;
+      a.c.performance = { now: () => now };
+      a.op.inspectedVia = catalog ? "catalog" : "wasm";
+      a.c.isoSink = async () => { now += 1000000; return a.sink; };
+      a.c.tboxIntrospect = async () => { now += 100000; };
+      a.c.tboxBuildIsoWithResult = async (_opts, write) => {
+        now += 7000; await write(new Uint8Array([1, 2, 3, 4])); return observedBuildFixture();
+      };
+      a.sink.w.close = async () => { now += 2000; };
+      await a.c.build();
+      expect(a.op.state).toBe("completed");
+      expect(a.op.buildTiming.elapsedMs).toBe(catalog ? 109000 : 9000);
+      expect(a.op.buildTiming.inspectionReused).toBe(!catalog);
+      expect(a.op.buildTiming.phasesMs).toEqual({ preparation: 0, engineSetupAndInspection: catalog ? 100000 : 0, buildAndSave: 9000 });
+      expect(a.op.buildTiming.operationId).toBe(a.op.id);
+      expect(a.op.buildTiming.buildAttempt).toBe(a.op.buildAttempt);
+      expect(Object.isFrozen(a.op.buildTiming.phasesMs)).toBe(true);
+      expect(a.element("stage").textContent).toContain(catalog ? "109.0s" : "9.0s");
+      expect(a.op.buildTiming.qualification).toBeUndefined();
+      const firstTiming = a.op.buildTiming;
+      await a.c.build();
+      expect(a.op.buildTiming.elapsedMs).toBe(9000);
+      expect(a.op.buildTiming.phasesMs.engineSetupAndInspection).toBe(0);
+      expect(a.op.buildTiming.buildAttempt).not.toBe(firstTiming.buildAttempt);
+      expect(firstTiming.elapsedMs).toBe(catalog ? 109000 : 9000);
+    });
+  }
+  test("counts initrd preparation without counting the file-picker wait", async () => {
+    const a = app(); let now = 0;
+    a.c.performance = { now: () => now };
+    a.element("initrdurl").value = "https://fixture.invalid/initrd";
+    a.c.fetch = async () => { now += 4000; return { ok: true, arrayBuffer: async () => new ArrayBuffer(4) }; };
+    a.c.isoSink = async () => { now += 1000000; return a.sink; };
+    await a.c.build();
+    expect(a.op.state).toBe("completed");
+    expect(a.op.buildTiming.phasesMs.preparation).toBe(4000);
+    expect(a.op.buildTiming.elapsedMs).toBe(4000);
+  });
+  test("cancelled file selection publishes no timing or engine result", async () => {
+    const a = app(); a.op.buildTiming = { stale: true };
+    a.c.isoSink = async () => null;
+    await a.c.build();
+    expect(a.op.buildTiming).toBeNull();
+    expect(a.op.buildResult).toBeNull();
+    expect(a.trace.calls).toBe(0);
+  });
+  test("close failure clears a previous timing", async () => {
+    const a = app(); a.op.buildTiming = { stale: true };
+    a.sink.w.close = async () => { throw new Error("close failed"); };
+    await a.c.build(); expectFailed(a);
   });
 });

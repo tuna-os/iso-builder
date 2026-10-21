@@ -144,15 +144,21 @@ def retain(client, bucket, iso_path, provenance, env, chunk_bytes=CHUNK_BYTES):
         raise ValueError('remote whole-ISO SHA-256 mismatch')
     key = prefix + 'manifest.json'
     put_new(client, bucket, key, manifest_bytes, 'application/json')
-    read_verified(client, bucket, key, len(manifest_bytes), hashlib.sha256(manifest_bytes).hexdigest())
-    return {'manifestKey': key, 'iso': iso, 'chunks': len(parts), 'qualification': 'not-assessed', 'expiry': None}
+    manifest_hash = hashlib.sha256(manifest_bytes).hexdigest()
+    read_verified(client, bucket, key, len(manifest_bytes), manifest_hash)
+    return {'manifestKey': key, 'manifestSha256': 'sha256:' + manifest_hash,
+            'iso': iso, 'chunks': len(parts), 'qualification': 'not-assessed', 'expiry': None}
 
 
-def restore(client, bucket, manifest_key, output, expected_sha256):
+def restore(client, bucket, manifest_key, output, expected_sha256, expected_manifest_sha256=None):
     if not re.fullmatch(r'browser-iso/candidates/[1-9][0-9]*/[1-9][0-9]*/yellowfin-gnome/s1/manifest\.json', manifest_key):
         raise ValueError('unexpected candidate manifest key')
     if not re.fullmatch(r'sha256:[0-9a-f]{64}', expected_sha256):
         raise ValueError('independent expected ISO SHA-256 required')
+    if expected_manifest_sha256 is not None and (
+            not isinstance(expected_manifest_sha256, str) or
+            not re.fullmatch(r'sha256:[0-9a-f]{64}', expected_manifest_sha256)):
+        raise ValueError('independent expected manifest SHA-256 is invalid')
     result = client.get_object(Bucket=bucket, Key=manifest_key)
     body = result['Body']
     try:
@@ -163,6 +169,9 @@ def restore(client, bucket, manifest_key, output, expected_sha256):
             raise ValueError('manifest length mismatch')
     finally:
         body.close()
+    manifest_hash = 'sha256:' + hashlib.sha256(data).hexdigest()
+    if expected_manifest_sha256 is not None and manifest_hash != expected_manifest_sha256:
+        raise ValueError('manifest SHA-256 differs from independently expected value')
     manifest = json.loads(data)
     iso, parts = manifest.get('iso', {}), manifest.get('chunks', [])
     if (manifest.get('kind') != 'retained-browser-candidate' or manifest.get('state') != 'complete'
@@ -171,6 +180,14 @@ def restore(client, bucket, manifest_key, output, expected_sha256):
             or not 0 < iso['sizeBytes'] <= MAX_ISO_BYTES or not isinstance(parts, list) or not 1 <= len(parts) <= MAX_CHUNKS):
         raise ValueError('invalid or mismatched candidate manifest')
     prefix = manifest_key.removesuffix('manifest.json')
+    provenance = manifest.get('provenance', {})
+    context = provenance.get('producerContext', {})
+    run_id, run_attempt = manifest_key.split('/')[2:4]
+    if (provenance.get('kind') != 'candidate-producer-observations'
+            or provenance.get('qualification') != 'not-assessed' or provenance.get('iso') != iso
+            or context.get('repository') != 'tuna-os/iso-builder' or context.get('job') != 'full-matrix'
+            or context.get('runId') != run_id or context.get('runAttempt') != run_attempt):
+        raise ValueError('candidate provenance differs from manifest origin or run')
     for i, part in enumerate(parts):
         if (not isinstance(part, dict) or part.get('key') != prefix + f'chunks/{i:05d}'
                 or type(part.get('sizeBytes')) is not int or not 0 < part['sizeBytes'] <= CHUNK_BYTES
@@ -186,7 +203,8 @@ def restore(client, bucket, manifest_key, output, expected_sha256):
             read_verified(client, bucket, part['key'], part['sizeBytes'], part['sha256'], whole=whole, output=out)
         if whole.hexdigest() != expected_sha256[7:]:
             raise ValueError('restored whole-ISO SHA-256 mismatch; partial output remains')
-    return {'restored': str(output), 'iso': iso, 'qualification': 'not-assessed'}
+    return {'restored': str(output), 'iso': iso, 'manifestSha256': manifest_hash,
+            'manifestHashChecked': expected_manifest_sha256 is not None, 'qualification': 'not-assessed'}
 
 
 def main():
@@ -196,12 +214,13 @@ def main():
     parser.add_argument('--restore-manifest')
     parser.add_argument('--output', type=Path)
     parser.add_argument('--expected-sha256')
+    parser.add_argument('--expected-manifest-sha256')
     args = parser.parse_args()
     if args.restore_manifest:
         if not args.output or not args.expected_sha256 or args.iso or args.provenance:
             parser.error('restore needs --output and --expected-sha256 only')
     else:
-        if not args.iso or not args.provenance or args.output or args.expected_sha256:
+        if not args.iso or not args.provenance or args.output or args.expected_sha256 or args.expected_manifest_sha256:
             parser.error('retention needs --iso and --provenance only')
         if args.provenance.stat().st_size > MAX_PROVENANCE_BYTES:
             raise ValueError('provenance exceeds 1 MiB cap')
@@ -219,7 +238,8 @@ def main():
     if 'IfNoneMatch' not in client.meta.service_model.operation_model('PutObject').input_shape.members:
         raise RuntimeError('installed S3 client lacks conditional PutObject; refusing upload')
     if args.restore_manifest:
-        result = restore(client, os.environ['R2_BUCKET'], args.restore_manifest, args.output, args.expected_sha256)
+        result = restore(client, os.environ['R2_BUCKET'], args.restore_manifest, args.output,
+                         args.expected_sha256, args.expected_manifest_sha256)
     else:
         result = retain(client, os.environ['R2_BUCKET'], args.iso, provenance, os.environ)
     print(json.dumps(result, sort_keys=True))

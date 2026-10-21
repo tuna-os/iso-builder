@@ -1,0 +1,39 @@
+name: Tiny EROFS feasibility
+
+on:
+  pull_request:
+    paths:
+      - .github/workflows/erofs-feasibility.yml
+      - scripts/measure_erofs_fixture.py
+      - tests/test_measure_erofs_fixture.py
+
+permissions:
+  contents: read
+
+jobs:
+  native-erofs-fixture:
+    if: github.event.pull_request.number == 285
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    container:
+      image: debian:trixie-slim@sha256:62bd423aeee912639ca8ee681c2b762cb3e25137e0a92b20be455898a9f034ad
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+      - name: Install versioned official userspace tools
+        env:
+          DEBIAN_FRONTEND: noninteractive
+        run: |
+          apt-get update
+          apt-cache show erofs-utils=1.8.6-1 | grep -Fx 'SHA256: 81042b8c0c3eb63699aa7d0763dceedc675a747d9f5cfebf914b4160233f411e'
+          apt-get install --yes --no-install-recommends erofs-utils=1.8.6-1 python3
+          test "$(dpkg-query -W -f='${Version}' erofs-utils)" = 1.8.6-1
+          dpkg-query -W -f='${Package} ${Version}\n' erofs-utils python3 liblz4-1
+          sha256sum "$(command -v mkfs.erofs)" "$(command -v fsck.erofs)"
+          mkfs.erofs --version
+          fsck.erofs --version
+      - name: Test tiny fixture safety and comparison helpers
+        run: python3 tests/test_measure_erofs_fixture.py
+      - name: Measure native plain, LZ4 and verified prebuilt copies
+        run: python3 scripts/measure_erofs_fixture.py --output erofs-fixture-result.json

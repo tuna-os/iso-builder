@@ -16,6 +16,25 @@
     }
     return { architecture: value.architecture, ...(value.variant !== undefined ? { variant: value.variant } : {}) };
   }
+  function sourceRequest(source) {
+    const keys = ["registryEndpoint", "repository", "requestedReference"];
+    if (keys.every(key => source[key] === undefined)) return {};
+    if (keys.some(key => typeof source[key] !== "string" || !source[key] || source[key].length > 2048)) {
+      throw new Error("incomplete observed source request");
+    }
+    let endpoint;
+    try { endpoint = new URL(source.registryEndpoint); } catch { throw new Error("invalid observed source endpoint"); }
+    if (!/^https?:\/\//.test(source.registryEndpoint) || endpoint.href.replace(/\/$/, "") !== source.registryEndpoint ||
+        !/^(?:\/[A-Za-z0-9._~-]+)*$/.test(endpoint.pathname === "/" ? "" : endpoint.pathname) ||
+        !["http:", "https:"].includes(endpoint.protocol) || endpoint.username || endpoint.password || endpoint.search || endpoint.hash ||
+        source.registryEndpoint.endsWith("/") || /[?#]/.test(source.registryEndpoint) || /\/\.{1,2}(?:\/|$)/.test(source.registryEndpoint) || /[%\\\s]/.test(source.registryEndpoint) ||
+        endpoint.pathname.split("/").some(part => part === "." || part === "..") ||
+        source.repository.length > 255 || !/^[a-z0-9]+(?:(?:[._]|__|-+)[a-z0-9]+)*(?:\/[a-z0-9]+(?:(?:[._]|__|-+)[a-z0-9]+)*)*$/.test(source.repository) ||
+        !/^(?:[A-Za-z0-9_][A-Za-z0-9_.-]{0,127}|sha256:[0-9a-f]{64})$/.test(source.requestedReference)) {
+      throw new Error("invalid observed source request");
+    }
+    return Object.fromEntries(keys.map(key => [key, source[key]]));
+  }
   function validateBuildResult(value, writtenBytes) {
     if (!Number.isSafeInteger(writtenBytes) || writtenBytes <= 0 || !record(value) ||
         !Number.isSafeInteger(value.bytesWritten) || value.bytesWritten !== writtenBytes) {
@@ -50,6 +69,7 @@
       observedInputs: {
         schemaVersion: 1,
         source: {
+          ...sourceRequest(source),
           manifestDigest: source.manifestDigest,
           ...(source.indexDigest !== undefined ? { indexDigest: source.indexDigest } : {}),
           ...(source.platformDescriptor !== undefined ? { platformDescriptor: platform(source.platformDescriptor) } : {}),

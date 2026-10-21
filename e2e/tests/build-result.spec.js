@@ -7,6 +7,35 @@ const fs = require("node:fs/promises");
 const crypto = require("node:crypto");
 
 test.describe("engine result validation", () => {
+  for (const repository of ["team/my__image", "team/my--image", "team/my.image"]) {
+    test(`preserves OCI repository separator ${repository}`, () => {
+      const input = observedBuildFixture();
+      Object.assign(input.observedInputs.source, {registryEndpoint: "https://relay.invalid", repository, requestedReference: "v1.2"});
+      expect(validateBuildResult(input, 4)).toEqual(input);
+    });
+  }
+  test("preserves explicit HTTP diagnostic transport without qualifying its origin", () => {
+    const input = observedBuildFixture();
+    Object.assign(input.observedInputs.source, {registryEndpoint: "http://127.0.0.1:5443/proxy", repository: "team/image", requestedReference: "latest"});
+    expect(validateBuildResult(input, 4)).toEqual(input);
+  });
+  test("preserves exact operation request coordinates without inferring origin", () => {
+    const input = observedBuildFixture();
+    Object.assign(input.observedInputs.source, {registryEndpoint: "https://relay.invalid:5443/proxy", repository: "team/image", requestedReference: "latest"});
+    const result = validateBuildResult(input, 4);
+    expect(result).toEqual(input);
+    expect(result.observedInputs.source.origin).toBeUndefined();
+    input.observedInputs.source.repository = "mutated/image";
+    expect(result.observedInputs.source.repository).toBe("team/image");
+  });
+  for (const [key, value] of [["registryEndpoint", "https:relay.invalid"], ["registryEndpoint", "https://relay.invalid:0443"], ["registryEndpoint", "https://relay.invalid/a//b"], ["registryEndpoint", "https://relay.invalid/proxy/../other"], ["registryEndpoint", "https://relay.invalid?"], ["registryEndpoint", "https://relay.invalid#"], ["repository", undefined], ["repository", "../image"], ["repository", "team/image@sha256:bad"], ["registryEndpoint", "https://user:secret@relay.invalid"], ["registryEndpoint", "https://relay.invalid?other"], ["registryEndpoint", "https://relay.invalid/#other"], ["requestedReference", "sha256:bad"], ["requestedReference", "tag/other"]]) {
+    test(`rejects malformed observed request ${key} ${String(value)}`, () => {
+      const input = observedBuildFixture();
+      Object.assign(input.observedInputs.source, {registryEndpoint: "https://relay.invalid", repository: "team/image", requestedReference: "latest", [key]: value});
+      expect(() => validateBuildResult(input, 4)).toThrow(/observed source/);
+    });
+  }
+
   test("copies observed facts only, retaining unverified config and overlay linkage", () => {
     const input = observedBuildFixture();
     input.observedInputs.source.requestedPlatform = "linux/arm64";

@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 """Local producer/served-tree observations, never an authenticated receipt.
 
-This proposal is not wired into CI. GitHub environment fields are claims until
-an external consumer verifies the run/job and artifact association. Hashes of
-local served files do not prove that the browser received them.
+The opt-in retention step calls this collector. GitHub environment fields are
+claims until an external consumer verifies the run/job and artifact association.
+Loaded response hashes can match local files without authenticating the host.
 """
 import argparse
 import hashlib
@@ -12,9 +12,79 @@ import os
 from pathlib import Path
 import re
 import subprocess
+from urllib.parse import urlsplit
 
 REPOSITORY = 'tuna-os/iso-builder'
 GENERATED = {'app/public/tbox.wasm', 'app/public/wasm_exec.js'}
+FRONTEND_REQUIRED = {'index.html', 'wasm_exec.js', 'layercache.js', 'build-result.js', 'app.js', 'tbox.wasm'}
+
+
+def bind_loaded_frontend(record, served):
+    """Compare host-observed response bytes, without authenticating the host."""
+    if (not isinstance(record, dict) or type(record.get('schemaVersion')) is not int or
+            record.get('schemaVersion') != 1 or record.get('kind') != 'diagnostic-loaded-frontend'):
+        raise ValueError('invalid loaded frontend observation')
+    if record.get('qualification') != 'not-assessed' or record.get('authentication') != 'not-verified':
+        raise ValueError('frontend observation cannot claim authentication or qualification')
+    if record.get('coverage') != 'page-target-only':
+        raise ValueError('unsupported frontend target coverage')
+    origin = record.get('origin')
+    if not isinstance(origin, str) or not re.fullmatch(r'http://127\.0\.0\.1:[1-9][0-9]{0,4}', origin):
+        raise ValueError('frontend origin must be the literal loopback server')
+    doc = record.get('documentURL')
+    if not isinstance(doc, str) or not doc.startswith(origin + '/'):
+        raise ValueError('frontend document differs from loopback origin')
+    document = urlsplit(doc)
+    if document.path != '/' or document.fragment or document.username or document.password:
+        raise ValueError('unexpected frontend document URL')
+    assets = record.get('assets')
+    if not isinstance(assets, list) or not 1 <= len(assets) <= 64:
+        raise ValueError('invalid frontend response count')
+    seen, result = set(), {}
+    count, total_bytes = 0, 0
+    for asset in assets:
+        if not isinstance(asset, dict) or not isinstance(asset.get('url'), str):
+            raise ValueError('invalid frontend asset')
+        url = asset['url']
+        if not url.startswith(origin + '/') or url in seen:
+            raise ValueError('foreign or duplicate frontend URL')
+        seen.add(url)
+        parsed = urlsplit(url)
+        if parsed.fragment or parsed.username or parsed.password:
+            raise ValueError('invalid frontend URL')
+        if asset.get('resourceType') == 'document':
+            if url != doc or asset.get('responseCount') != 1:
+                raise ValueError('frontend navigation changed')
+            relative = 'app/public/index.html'
+        else:
+            if parsed.query or not re.fullmatch(r'/[A-Za-z0-9_.-]+', parsed.path):
+                raise ValueError('frontend asset path is not canonical')
+            relative = 'app/public' + parsed.path
+        if relative in result:
+            raise ValueError('ambiguous frontend file')
+        if relative.endswith('.js') and asset.get('resourceType') != 'script':
+            raise ValueError('frontend JavaScript was not observed as a script')
+        if relative == 'app/public/index.html' and asset.get('resourceType') != 'document':
+            raise ValueError('frontend HTML was not observed as a document')
+        if relative.endswith('.wasm') and asset.get('resourceType') != 'wasm':
+            raise ValueError('frontend WASM was not observed as WASM')
+        if asset.get('resourceType') not in ('document', 'script', 'stylesheet', 'wasm'):
+            raise ValueError('unknown frontend resource type')
+        measured = {k: asset.get(k) for k in ('sha256', 'sizeBytes')}
+        if (type(measured['sizeBytes']) is not int or not 0 < measured['sizeBytes'] <= 64 * 1024**2 or
+                type(asset.get('responseCount')) is not int or not 1 <= asset['responseCount'] <= 64 or
+                measured != served.get(relative)):
+            raise ValueError('loaded frontend differs from served bytes')
+        count += asset['responseCount']
+        total_bytes += measured['sizeBytes'] * asset['responseCount']
+        if count > 64 or total_bytes > 96 * 1024**2:
+            raise ValueError('frontend responses exceed total limits')
+        result[relative] = measured
+    if not {'app/public/' + p for p in FRONTEND_REQUIRED}.issubset(result):
+        raise ValueError('required frontend response is missing')
+    return {'status': 'observed-bytes-match-served-tree', 'authentication': 'not-verified',
+            'coverage': 'page-target-only',
+            'files': result}
 
 
 def git(root, *args):
@@ -107,6 +177,8 @@ def collect(root, measurement, env, candidate_iso):
             raise ValueError('served bytes do not match committed frontend/workflow blob')
     if observations['app/public/tbox.wasm'] != measurement['loadedWasm']:
         raise ValueError('served WASM does not match browser observation')
+    frontend = measurement.get('loadedFrontend')
+    binding = bind_loaded_frontend(frontend, observations) if frontend is not None else None
     if git(root, 'rev-parse', 'HEAD') != head or git(root, 'diff', '--no-ext-diff', '--no-textconv', 'HEAD', '--', 'app/public', '.github/workflows/ci.yml'):
         raise ValueError('checkout changed during collection')
     return {
@@ -123,6 +195,7 @@ def collect(root, measurement, env, candidate_iso):
         'loadedWasm': dict(measurement['loadedWasm']),
         'missingIdentity': ['authenticated-producer', 'browser-loaded-frontend', 'installed-installer-frontend'],
         'artifactBinding': 'not-verified',
+        'loadedFrontendBinding': binding,
     }
 
 

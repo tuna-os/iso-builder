@@ -77,7 +77,7 @@ other writers.
 
 ## Reconstruct and verify
 
-Use the manifest key and whole ISO SHA-256 from the successful workflow result.
+Use the manifest key, manifest SHA-256, and whole ISO SHA-256 from the successful workflow result.
 You can also use the browser measurement that you saved independently.
 Do not take the expected whole-file hash only from the remote manifest under test.
 With the same existing R2 credentials configured in the environment:
@@ -86,8 +86,14 @@ With the same existing R2 credentials configured in the environment:
 python3 scripts/retain-browser-candidate.py \
   --restore-manifest browser-iso/candidates/RUN/ATTEMPT/yellowfin-gnome/s1/manifest.json \
   --expected-sha256 sha256:INDEPENDENT_ISO_HASH \
+  --expected-manifest-sha256 sha256:INDEPENDENT_MANIFEST_HASH \
   --output candidate.iso
 ```
+
+The hash of the manifest binds the exact metadata bytes before output creation.
+Without it, restoration remains a legacy diagnostic check; it cannot support
+v2 evidence for retained media. The result reports `manifestHashChecked`.
+Neither mode authenticates the producer.
 
 The script needs `boto3` and accepts only the candidate namespace.
 It verifies each chunk and the whole ISO, and exclusively creates the local output.

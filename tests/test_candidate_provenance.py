@@ -148,3 +148,33 @@ def test_index_and_external_diff_cannot_hide_missing_asset(candidate):
     git('config', 'diff.external', 'true')
     with pytest.raises(ValueError):
         m.collect(root, ev, env, iso)
+
+
+def test_loaded_frontend_join_stays_diagnostic(candidate):
+    root, ev, env, iso = candidate
+    for name in ('layercache.js', 'build-result.js'):
+        (root / 'app/public' / name).write_text('synthetic frontend fixture')
+    subprocess.check_call(['git', '-C', str(root), 'add', '.'])
+    subprocess.check_call(['git', '-C', str(root), '-c', 'user.name=Fixture',
+                           '-c', 'user.email=fixture@example.invalid', 'commit', '-qm', 'scripts'])
+    env['GITHUB_SHA'] = env['GITHUB_WORKFLOW_SHA'] = m.git(root, 'rev-parse', 'HEAD')
+    origin = 'http://127.0.0.1:8931'
+    ev['loadedFrontend'] = {
+        'schemaVersion': 1, 'kind': 'diagnostic-loaded-frontend',
+        'qualification': 'not-assessed', 'authentication': 'not-verified',
+        'coverage': 'page-target-only',
+        'origin': origin, 'documentURL': origin + '/', 'assets': [
+            {**m.digest_file(root / 'app/public' / name),
+             'url': origin + ('/' if name == 'index.html' else '/' + name),
+             'resourceType': 'document' if name == 'index.html' else 'wasm' if name == 'tbox.wasm' else 'script',
+             'responseCount': 1} for name in sorted(m.FRONTEND_REQUIRED)],
+    }
+    result = m.collect(root, ev, env, iso)
+    assert result['loadedFrontendBinding']['status'] == 'observed-bytes-match-served-tree'
+    assert result['producerContext']['authentication'] == 'not-verified'
+    assert result['qualification'] == 'not-assessed'
+    assert result['artifactBinding'] == 'not-verified'
+    assert 'authenticated-producer' in result['missingIdentity']
+    ev['loadedFrontend']['assets'][0]['sha256'] = 'sha256:' + 'f' * 64
+    with pytest.raises(ValueError, match='served bytes'):
+        m.collect(root, ev, env, iso)
