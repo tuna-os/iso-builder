@@ -65,8 +65,8 @@ var pickerVariantOrder = []variantMeta{
 }
 
 // variant is one base OS in the image matrix, derived from the shared
-// CatalogSnapshot v1 (catalog-snapshot.json) that both app/public/app.js
-// and native/catalog.go consume.
+// CatalogSnapshot v1 (catalog-snapshot.json) that app/public/catalog.js and
+// native/catalog.go consume.
 type variant struct {
 	id       string
 	name     string

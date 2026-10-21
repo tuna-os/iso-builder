@@ -22,7 +22,7 @@ def valid_entry():
 
 
 def browser_status(entry):
-    src = (ROOT / 'app/public/app.js').read_text()
+    src = (ROOT / 'app/public/catalog.js').read_text()
     start = src.index('function catalogQualification(')
     fn = src[start:src.index('\n}\n', start) + 3]
     script = fn + '\nprocess.stdout.write(catalogQualification(JSON.parse(process.argv[1])).status);'
@@ -59,7 +59,7 @@ def test_shipped_catalogs_and_embedded_fallback_share_truthful_status():
     raw = (ROOT / 'app/public/catalog-snapshot.json').read_bytes()
     assert raw == (ROOT / 'native/catalog-snapshot.json').read_bytes()
     doc = vc.validate_snapshot()
-    src = (ROOT / 'app/public/app.js').read_text()
+    src = (ROOT / 'app/public/catalog.js').read_text()
     embedded = json.loads(src.split('const DEFAULT_CATALOG_SNAPSHOT = ', 1)[1].split(';\n', 1)[0])
     assert embedded == doc
     assert all(e['qualification']['status'] != 'qualified' or vc.qualification_provenance_complete(e) for e in doc['targets'])

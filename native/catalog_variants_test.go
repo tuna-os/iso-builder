@@ -52,17 +52,25 @@ func TestWebAndNativeCatalogLoadersPreserveVariantFlavorPlatformCoverage(t *test
 		t.Fatalf("loadEmbeddedCatalogSnapshot: %v", err)
 	}
 
-	// Evaluate the web loader directly in Node against ../app/public/app.js and ../app/public/catalog-snapshot.json
-	// so we test the actual JS catalog loader behavior rather than regex-scraping source text.
+	// Evaluate the web loader directly in Node against ../app/public/catalog.js,
+	// ../app/public/app.js, and ../app/public/catalog-snapshot.json so we test
+	// the actual browser catalog boundary rather than regex-scraping source text.
 	nodePath, err := exec.LookPath("node")
 	if err != nil {
 		t.Fatalf("node runtime required for web catalog loader behavioral test: %v", err)
 	}
-	// Reading in Go also makes app.js an input to go test's result cache.
+	// Reading both scripts also makes them inputs to go test's result cache.
+	catalogJS, err := os.ReadFile("../app/public/catalog.js")
+	if err != nil {
+		t.Fatalf("read web catalog boundary: %v", err)
+	}
 	appJS, err := os.ReadFile("../app/public/app.js")
 	if err != nil {
-		t.Fatalf("read web loader: %v", err)
+		t.Fatalf("read web application: %v", err)
 	}
+	webJS := append(catalogJS, '\n')
+	webJS = append(webJS, appJS...)
+	webJS = append(webJS, '\n')
 
 	script := `
 const fs = require("fs");
@@ -154,7 +162,7 @@ vm.runInContext(code + "\n;globalThis.__variants = VARIANTS; globalThis.__findCa
 })();
 `
 	cmd := exec.Command(nodePath, "-e", script)
-	cmd.Stdin = bytes.NewReader(appJS)
+	cmd.Stdin = bytes.NewReader(webJS)
 	out, err := cmd.CombinedOutput()
 	if err != nil {
 		t.Fatalf("node web catalog evaluation failed: %v\n%s", err, string(out))
