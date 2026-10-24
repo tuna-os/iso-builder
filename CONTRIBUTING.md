@@ -21,6 +21,31 @@ Never post account credentials or API keys in issues or pull requests.
 
 Before you open a pull request, test your changes locally in each affected component.
 
+### JavaScript Unit Tests (`tests/*.test.cjs`)
+
+For changes to JavaScript helpers such as configuration validation, catalog selection,
+or Flatpak defaults, start with the offline unit suites. Use **Node.js 24**, the
+version configured in [CI](.github/workflows/ci.yml), and run these commands from
+the repository root:
+
+```sh
+# Run all JavaScript unit tests
+node --test tests/*.test.cjs
+
+# Run one focused suite while iterating
+node --test tests/builder-config-flatpak-ids.test.cjs
+```
+
+These suites use Node's built-in test runner with local CommonJS helpers and
+fixtures. With Node installed, they need no `npm install`, WASM build, browser
+download, native GUI toolkit, registry access, or credentials.
+
+For browser UI or WASM integration changes, also run the
+[Playwright end-to-end checks](#2-end-to-end-tests-e2e), which exercise the real
+engine and registry access. For changes to the native Go application, run the
+[native checks](#3-native-application-native) with its platform prerequisites.
+The offline unit suites complement those checks and do not replace them.
+
 ### 1. Web Application (`app/public`)
 - Put `tbox.wasm` and `wasm_exec.js` in place, as [README.md](README.md#develop) describes.
 - Serve locally:
