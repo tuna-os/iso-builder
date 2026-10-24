@@ -21,6 +21,8 @@ Never post account credentials or API keys in issues or pull requests.
 
 ## The Intended Experience
 
+For step-by-step browser instructions and current limits, see the [browser quickstart](docs/browser-quickstart.md).
+
 1. **Pick a Base & Desktop:** Select your base (AlmaLinux Kitten, Fedora, Debian, etc.). Then select a desktop (GNOME, KDE Plasma, COSMIC, Niri, XFCE).
 2. **Instant Inspection:** The builder downloads metadata and inspects the image layers in seconds.
 3. **Build ISO:** Click build. The builder streams a custom bootable ISO to your local storage.
