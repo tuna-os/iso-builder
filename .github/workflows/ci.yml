@@ -704,8 +704,14 @@ jobs:
 
           echo "Installing QEMU, OVMF, swtpm dependencies..."
           sudo apt-get update -qq
+          # imagemagick (magick/convert/compare), tesseract-ocr and sshpass are
+          # what the strict walkthrough measures with. Without them it reports
+          # stddev 0.0 for every frame and skips screen detection, so a guest that
+          # painted fine is reported blank (run 40235407606). jq is used by the
+          # harness's evidence printing.
           sudo apt-get install -y --no-install-recommends \
-            qemu-system-x86 qemu-utils ovmf swtpm swtpm-tools socat netpbm python3-pil
+            qemu-system-x86 qemu-utils ovmf swtpm swtpm-tools socat netpbm python3-pil \
+            imagemagick tesseract-ocr sshpass jq
 
           echo "Enabling KVM permissions..."
           echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | \

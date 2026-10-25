@@ -52,3 +52,14 @@ def test_browser_evidence_needs_only_the_build_and_not_the_guest():
 def test_qualification_evidence_upload_stays_success_only():
     assert str(step('upload qualification evidence')['if']) == 'success()'
     assert str(step('validate + merge qualification evidence')['if']) == 'success()'
+
+
+def test_guest_step_installs_what_the_strict_walkthrough_measures_with():
+    run = step('verify guest under QEMU')['run']
+    install = run[run.index('apt-get install'):]
+    install = install[:install.index('\n\n')]
+    packages = set(install.replace('\\', ' ').split())
+    # Without ImageMagick and tesseract the walkthrough reports every frame blank.
+    assert {'imagemagick', 'tesseract-ocr', 'sshpass', 'jq'} <= packages
+    # Still present: what the harness needs to boot the guest with a TPM.
+    assert {'qemu-system-x86', 'qemu-utils', 'ovmf', 'swtpm', 'socat', 'netpbm', 'python3-pil'} <= packages
