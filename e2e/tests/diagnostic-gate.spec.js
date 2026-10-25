@@ -32,6 +32,7 @@ test.describe("catalog gate with the diagnostic grant", () => {
     await expect(page.locator(".badge.status")).not.toContainText("diagnostic");
     await expect(page.locator("#build")).toBeDisabled();
     await expect(page.locator("#stage")).toContainText("Browser build unavailable");
+    await expect(page.locator("#fallbackcard")).toBeVisible();
     const request = JSON.parse(await page.locator("#fallbackjson").textContent());
     expect(request.qualificationId).toBeUndefined();
   });
@@ -93,6 +94,8 @@ test.describe("catalog gate with the diagnostic grant", () => {
   test("the refused-stage text parses to the gate reason the job summary reports", async ({ page }) => {
     await page.goto(PRESET);
     await inspectPreset(page);
+    // Inspection is asynchronous: wait for the refusal before reading the stage.
+    await expect(page.locator("#stage")).toContainText("Browser build unavailable");
     const stage = await page.locator("#stage").textContent();
     const reason = parseGateRefusal(stage);
     expect(reason).toBe("unqualified (incomplete-qualification-provenance)");
@@ -198,7 +201,9 @@ test.describe("diagnostic pin refresh", () => {
     await page.route("**/catalog-snapshot.json", (route) => route.fulfill({ json: doc }));
     await page.goto(PRESET);
     await inspectPreset(page);
+    await expect(page.locator("#stage")).toContainText("Browser build unavailable");
     await expect(page.locator("#build")).toBeDisabled();  // no grant: still refused
+    await expect(page.locator("#fallbackcard")).toBeVisible();
     const request = JSON.parse(await page.locator("#fallbackjson").textContent());
     expect(request.resolvedInputs).toMatchObject(live);
     expect(request.qualificationId).toBeUndefined();
