@@ -29,3 +29,32 @@ test.describe("full-build budgets", () => {
     expect(spec).toMatch(/\|opfs=\$\{grown\}/);
   });
 });
+
+const { test: fixtureTest, expect: fixtureExpect } = require("./fixtures");
+const { removeSavePicker, buildFailedSignature } = require("./full-harness");
+
+fixtureTest.describe("full-build save path", () => {
+  fixtureTest("headless Chromium rejects the save picker at once; the harness removes it", async ({ page }) => {
+    await page.goto("/");
+    const before = await page.evaluate(async () => {
+      if (typeof window.showSaveFilePicker !== "function") return { defined: false };
+      try { await window.showSaveFilePicker(); return { defined: true, outcome: "resolved" }; }
+      catch (e) { return { defined: true, outcome: e.name }; }
+    });
+    // Defined but unusable without a user gesture: the failure the CI run saw.
+    fixtureExpect(before.defined).toBe(true);
+    fixtureExpect(before.outcome).not.toBe("resolved");
+    await page.evaluate(removeSavePicker);
+    fixtureExpect(await page.evaluate(() => typeof window.showSaveFilePicker)).toBe("undefined");
+  });
+
+  fixtureTest("the @full spec installs the picker removal before navigation and fails fast on a failed build", () => {
+    fixtureExpect(spec).toMatch(/addInitScript\(removeSavePicker\)/);
+    fixtureExpect(spec.indexOf("addInitScript(removeSavePicker)")).toBeLessThan(spec.indexOf("await page.goto(`/?image="));
+    fixtureExpect(buildFailedSignature("Build failed.|1/1|opfs=317")).toBe(true);
+    fixtureExpect(buildFailedSignature("Build failed — storage quota exceeded.|1/1|opfs=1")).toBe(true);
+    fixtureExpect(buildFailedSignature("Streaming ISO…|0/1|opfs=317")).toBe(false);
+    fixtureExpect(buildFailedSignature("<unreadable>")).toBe(false);
+    fixtureExpect(spec).toMatch(/what === "build" && buildFailedSignature\(sig\)/);
+  });
+});

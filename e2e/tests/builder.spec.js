@@ -15,6 +15,7 @@ const path = require("path");
 const fs = require("fs");
 const { qualifiedCatalogFixture } = require("./qualified-catalog-fixture");
 const { observeLoadedWasm, loadedWasmMeasurement, hashSavedIso, buildOperationIdentity, completedBuildResult, diagnosticRecord } = require("./build-measurements");
+const { removeSavePicker, buildFailedSignature } = require("./full-harness");
 const CATALOG = require("../../app/public/catalog-snapshot.json");
 
 const SHOTS = process.env.TBOX_E2E_SHOTS
@@ -382,6 +383,7 @@ test.describe("iso builder", () => {
   test("full build streams a bootable ISO @full", async ({ page }) => {
     test.skip(!process.env.TBOX_E2E_FULL, "set TBOX_E2E_FULL=1 for the full build");
     await page.addInitScript(observeLoadedWasm);
+    await page.addInitScript(removeSavePicker);
     const initrd = process.env.TBOX_E2E_INITRD_URL || "";
 
     // Without these, a stalled inspect reports only `Received: disabled` —
@@ -497,6 +499,7 @@ test.describe("iso builder", () => {
             console.log(`[stage] ${await stageText()}  wasm=${Math.round(await wasmMB())} MB`);
           }
           if (death) return stop(new Error(`engine died during ${what}: ${death}`));
+          if (what === "build" && buildFailedSignature(sig)) return stop(new Error(`build failed: stage is "${sig.split("|")[0]}"`));
           if (sig !== last) {
             last = sig;
             moved = Date.now();
