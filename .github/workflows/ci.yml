@@ -71,6 +71,10 @@ on:
         description: "Run each @full build three times and attach median/range evidence"
         type: boolean
         default: false
+      diagnostic_unqualified:
+        description: "DIAGNOSTIC ONLY: let the named only= cell build a target the catalog gate marks unqualified. Result is labelled diagnostic-unqualified, never a qualification. Requires only=; refused with keep_iso."
+        type: boolean
+        default: false
   schedule:
     # Weekly: the app talks to live infra (relay, GHCR) that can drift.
     - cron: "40 5 * * 1"
@@ -428,9 +432,15 @@ jobs:
           RUN_FULL: ${{ github.event.inputs.run_full }}
           BENCHMARK: ${{ github.event.inputs.benchmark }}
           KEEP_ISO: ${{ github.event.inputs.keep_iso }}
+          DIAGNOSTIC_UNQUALIFIED: ${{ github.event.inputs.diagnostic_unqualified }}
         run: |
           python3 - <<'PY' >> "$GITHUB_OUTPUT"
           import json, os
+          if os.environ.get("DIAGNOSTIC_UNQUALIFIED") == "true":
+              if not os.environ.get("ONLY", "").strip():
+                  raise SystemExit("diagnostic_unqualified=true requires only=<slug>: the override is granted per named cell, never to the whole matrix")
+              if os.environ.get("RUN_FULL") != "true" or os.environ.get("KEEP_ISO") == "true":
+                  raise SystemExit("diagnostic_unqualified=true requires run_full=true and keep_iso=false: a diagnostic build is never published")
           if os.environ.get("RETAIN_CANDIDATE") == "true":
               expected = {"ONLY": "yellowfin-gnome", "RUN_FULL": "true", "BENCHMARK": "false", "KEEP_ISO": "false"}
               if any(os.environ.get(k) != v for k, v in expected.items()):
@@ -600,6 +610,13 @@ jobs:
           # >100 MB, CD001 at sector 16), never boot. Multi-GB, so only
           # ever a RUNNER_TEMP path, never an artifact.
           TBOX_E2E_PLATFORM: ${{ matrix.edition.platform }}
+          # TEST-ONLY override of the catalog qualification gate. Set only
+          # when the dispatcher passed diagnostic_unqualified=true AND named
+          # the cell with only=; the spec refuses unless DIAGNOSTIC_TARGET
+          # equals the image it builds. Results are labelled
+          # diagnostic-unqualified and are never a qualification.
+          DIAGNOSTIC_ALLOW_UNQUALIFIED: ${{ github.event.inputs.diagnostic_unqualified == 'true' && github.event.inputs.only != '' && '1' || '' }}
+          DIAGNOSTIC_TARGET: ${{ contains(matrix.edition.ref, '/') && matrix.edition.ref || format('tuna-os/{0}', matrix.edition.ref) }}
           # Fresh Playwright profile per sample, so every sample is cold.
           TBOX_E2E_CACHE_MODE: "cold"
         # The config's 900s per-test cap was sized against sailfin:base
@@ -849,6 +866,8 @@ jobs:
               if missing or ev.get("kind") != "qualification-evidence" or ev.get("schemaVersion") != 1:
                   raise SystemExit(f"{f}: invalid QualificationEvidence v1 (missing {sorted(missing)})")
               samples.append(ev)
+              if ev.get("qualification") == "diagnostic-unqualified":
+                  print(f"::warning::{f} is a DIAGNOSTIC, UNQUALIFIED build; it is not a qualification")
           print(f"validated {len(samples)} browser evidence file(s)")
           if os.environ.get("BENCHMARK") == "true":
               if len(samples) != 3:

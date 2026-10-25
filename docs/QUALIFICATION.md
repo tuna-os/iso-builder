@@ -108,3 +108,31 @@ qualification receipts and change no catalog admission or download route.
 The [integration proposal](browser-qualification-integration-plan.md) describes
 the reviewed retention, provenance and strict-harness gaps. It authorizes no
 build, publication or change to download routes.
+
+## Diagnostic build of an unqualified target (test-only)
+
+The browser gate (`catalogQualification` in `app/public/app.js`) refuses every
+target that lacks complete qualification provenance, so a target cannot produce
+its first qualification evidence through the gate. The `@full` spec can build one
+named, catalog-unqualified target for diagnostics:
+
+```sh
+gh workflow run ci.yml -f run_full=true -f only=skipjack-gnome -f diagnostic_unqualified=true
+```
+
+- Off by default. Requires `only=` (the plan rejects an empty `only`, `keep_iso`
+  and non-`run_full`). `ci.yml` sets `DIAGNOSTIC_ALLOW_UNQUALIFIED=1` and
+  `DIAGNOSTIC_TARGET=<image>` only on the `@full` build step. The spec refuses
+  unless `DIAGNOSTIC_TARGET` equals the image it builds.
+- The deployed app never reads those variables. It honours only a frozen page
+  global installed by Playwright `addInitScript` that names the exact image and
+  platform; URL, storage and UI cannot install it. The page shows status
+  `diagnostic-unqualified (<gate reason>)`, the request carries no
+  `qualificationId`, and the gate itself is unchanged.
+- Every evidence file records `qualification: "diagnostic-unqualified"` plus a
+  `diagnosticUnqualified` block (label, image, platform, gate reason). These
+  files are not qualification: they never carry `qualified`, and the R2 retention
+  scripts, which require `not-assessed`, reject them.
+- When the gate refuses a target, the `@full` cell now fails within seconds with
+  the gate reason (also written to the job summary) instead of after the 5 minute
+  inspect stall watchdog.
