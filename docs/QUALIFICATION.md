@@ -133,6 +133,14 @@ gh workflow run ci.yml -f run_full=true -f only=skipjack-gnome -f diagnostic_unq
   `diagnosticUnqualified` block (label, image, platform, gate reason). These
   files are not qualification: they never carry `qualified`, and the R2 retention
   scripts, which require `not-assessed`, reject them.
+- The snapshot pins registry digests as of its generation date and the engine
+  enforces them (first dispatch: `platformManifestDigest mismatch`, snapshot
+  `01ae7e79…` vs live `5f2ac8b1…`). A diagnostic build therefore refreshes the
+  index, platform-manifest and config pins of the one named target to what GHCR
+  serves now (served to the page via a route; the committed snapshot is never
+  edited) and records before/after in `diagnosticUnqualified.catalogPins`.
+  Dropping the pins instead would change the media shape (no embedded offline
+  layout).
 - When the gate refuses a target, the `@full` cell now fails within seconds with
   the gate reason (also written to the job summary) instead of after the 5 minute
   inspect stall watchdog.

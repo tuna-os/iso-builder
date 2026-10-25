@@ -15,7 +15,7 @@ const path = require("path");
 const fs = require("fs");
 const { qualifiedCatalogFixture } = require("./qualified-catalog-fixture");
 const { observeLoadedWasm, loadedWasmMeasurement, hashSavedIso, buildOperationIdentity, completedBuildResult, diagnosticRecord } = require("./build-measurements");
-const { diagnosticGrantFromEnv, installDiagnosticGrant, parseGateRefusal, gateRefusalMessage, gateRefusalSummary } = require("./diagnostic-gate");
+const { diagnosticGrantFromEnv, installDiagnosticGrant, resolveLiveDigests, catalogEntryFor, refreshDiagnosticSnapshot, parseGateRefusal, gateRefusalMessage, gateRefusalSummary } = require("./diagnostic-gate");
 const CATALOG = require("../../app/public/catalog-snapshot.json");
 
 const SHOTS = process.env.TBOX_E2E_SHOTS
@@ -377,10 +377,18 @@ test.describe("iso builder", () => {
     await page.addInitScript(observeLoadedWasm);
     // Test-only, explicit, named-target override of the catalog gate. Null
     // (the default) leaves the production gate untouched.
+    let diagnosticPins = null;
     const diagnosticGrant = diagnosticGrantFromEnv(process.env, { image: IMAGE, platform: process.env.TBOX_E2E_PLATFORM || undefined });
     if (diagnosticGrant) {
       console.log(`DIAGNOSTIC, UNQUALIFIED BUILD requested for ${IMAGE}: result is not a qualification`);
       await page.addInitScript(installDiagnosticGrant, diagnosticGrant);
+      const entry = catalogEntryFor(CATALOG, IMAGE, process.env.TBOX_E2E_PLATFORM || undefined);
+      if (!entry) throw new Error(`diagnostic target ${IMAGE} is not in the catalog snapshot`);
+      const live = await resolveLiveDigests({ repository: entry.publication.repository, tag: entry.publication.tag, platform: entry.target.platform });
+      const refreshed = refreshDiagnosticSnapshot(CATALOG, entry.targetKey, live);
+      diagnosticPins = refreshed.record;
+      console.log(`diagnostic pin refresh for ${entry.targetKey}: ${JSON.stringify(refreshed.record)}`);
+      await page.route("**/catalog-snapshot.json", (route) => route.fulfill({ json: refreshed.doc }));
     }
     const initrd = process.env.TBOX_E2E_INITRD_URL || "";
 
@@ -623,7 +631,7 @@ test.describe("iso builder", () => {
       expect(badge).not.toMatch(/(^|\s)qualified/);
       const reason = /\(([^)]+)\)/.exec(badge)?.[1];
       expect(reason, "gate reason shown by the app").toBeTruthy();
-      diagnostic = { image: IMAGE, platform: evPlatform, gateReason: reason };
+      diagnostic = { image: IMAGE, platform: evPlatform, gateReason: reason, catalogPins: diagnosticPins };
     }
     const evidence = {
       schemaVersion: 1,

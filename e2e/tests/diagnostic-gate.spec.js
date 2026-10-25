@@ -8,7 +8,7 @@ const fs = require("fs");
 const { spawnSync } = require("child_process");
 const { diagnosticRecord } = require("./build-measurements");
 const {
-  diagnosticGrantFromEnv, installDiagnosticGrant, parseGateRefusal, gateRefusalMessage, gateRefusalSummary,
+  diagnosticGrantFromEnv, installDiagnosticGrant, resolveLiveDigests, catalogEntryFor, refreshDiagnosticSnapshot, parseGateRefusal, gateRefusalMessage, gateRefusalSummary,
 } = require("./diagnostic-gate");
 
 const ROOT = path.resolve(__dirname, "../..");
@@ -131,6 +131,80 @@ test.describe("spec-side grant resolution", () => {
   }
 });
 
+test.describe("diagnostic pin refresh", () => {
+  const CATALOG = require("../../app/public/catalog-snapshot.json");
+  const h = (c) => `sha256:${c.repeat(64)}`;
+  // Fake registry transport: same wire protocol as GHCR, no network.
+  function fakeRegistry({ perPlatform = 1, bad = null } = {}) {
+    const index = { manifests: [
+      { digest: h("a"), platform: { os: "linux", architecture: "amd64" } },
+      { digest: h("b"), platform: { os: "linux", architecture: "amd64/v2" } },
+      ...Array.from({ length: perPlatform - 1 }, () => ({ digest: h("e"), platform: { os: "linux", architecture: "amd64" } })),
+    ] };
+    const calls = [];
+    const fetchImpl = async (url, init = {}) => {
+      calls.push(url);
+      const json = (body, digest) => ({ ok: true, status: 200, json: async () => body, headers: { get: (k) => (k.toLowerCase() === "docker-content-digest" ? digest : null) } });
+      if (url.startsWith("https://ghcr.io/token")) return json({ token: "t" });
+      expect(init.headers.Authorization).toBe("Bearer t");
+      if (url.endsWith("/manifests/gnome")) return json(index, bad ?? h("1"));
+      if (url.endsWith(`/manifests/${h("a")}`)) return json({ config: { digest: h("c") } }, h("a"));
+      if (url.endsWith(`/manifests/${h("b")}`)) return json({ config: { digest: h("d") } }, h("b"));
+      return { ok: false, status: 404 };
+    };
+    return { fetchImpl, calls };
+  }
+
+  test("resolves index, platform manifest and config digests for the exact platform", async () => {
+    const { fetchImpl, calls } = fakeRegistry();
+    const args = { repository: "ghcr.io/tuna-os/skipjack", tag: "gnome", fetchImpl };
+    expect(await resolveLiveDigests({ ...args, platform: "linux/amd64" }))
+      .toEqual({ indexDigest: h("1"), platformManifestDigest: h("a"), configDigest: h("c") });
+    expect(await resolveLiveDigests({ ...args, platform: "linux/amd64/v2" }))
+      .toEqual({ indexDigest: h("1"), platformManifestDigest: h("b"), configDigest: h("d") });
+    expect(calls[0]).toContain("scope=repository:tuna-os/skipjack:pull");
+  });
+
+  test("refuses ambiguous, missing or malformed registry answers", async () => {
+    const base = { repository: "ghcr.io/tuna-os/skipjack", tag: "gnome", platform: "linux/amd64" };
+    await expect(resolveLiveDigests({ ...base, fetchImpl: fakeRegistry({ perPlatform: 2 }).fetchImpl })).rejects.toThrow(/exactly one/);
+    await expect(resolveLiveDigests({ ...base, platform: "linux/arm64", fetchImpl: fakeRegistry().fetchImpl })).rejects.toThrow(/exactly one/);
+    await expect(resolveLiveDigests({ ...base, fetchImpl: fakeRegistry({ bad: "nope" }).fetchImpl })).rejects.toThrow(/malformed digest/);
+    await expect(resolveLiveDigests({ ...base, repository: "docker.io/x/y", fetchImpl: fakeRegistry().fetchImpl })).rejects.toThrow(/cannot resolve/);
+  });
+
+  test("replaces only the named target's three pins and never touches qualification", () => {
+    const entry = catalogEntryFor(CATALOG, "tuna-os/skipjack:gnome", "linux/amd64");
+    expect(entry.targetKey).toBe("skipjack:gnome:linux/amd64");
+    const live = { indexDigest: h("1"), platformManifestDigest: h("a"), configDigest: h("c") };
+    const { doc, record } = refreshDiagnosticSnapshot(CATALOG, entry.targetKey, live);
+    const after = doc.targets.find((t) => t.targetKey === entry.targetKey);
+    expect(after.resolvedInputs).toMatchObject(live);
+    expect(after.qualification).toEqual(entry.qualification);
+    expect(record.before.platformManifestDigest).toBe(entry.resolvedInputs.platformManifestDigest);
+    expect(record.after).toEqual(live);
+    // Every other target and the input document are untouched.
+    expect(entry.resolvedInputs.platformManifestDigest).not.toBe(live.platformManifestDigest);
+    for (const t of doc.targets.filter((x) => x.targetKey !== entry.targetKey)) {
+      expect(t).toEqual(CATALOG.targets.find((x) => x.targetKey === t.targetKey));
+    }
+    expect(() => refreshDiagnosticSnapshot(CATALOG, "nope:gnome:linux/amd64", live)).toThrow(/no catalog target/);
+  });
+
+  test("a refreshed pin reaches the build request while the target stays gated by the app", async ({ page }) => {
+    const entry = catalogEntryFor(CATALOG, IMAGE, PLATFORM);
+    const live = { indexDigest: h("1"), platformManifestDigest: h("a"), configDigest: h("c") };
+    const { doc } = refreshDiagnosticSnapshot(CATALOG, entry.targetKey, live);
+    await page.route("**/catalog-snapshot.json", (route) => route.fulfill({ json: doc }));
+    await page.goto(PRESET);
+    await inspectPreset(page);
+    await expect(page.locator("#build")).toBeDisabled();  // no grant: still refused
+    const request = JSON.parse(await page.locator("#fallbackjson").textContent());
+    expect(request.resolvedInputs).toMatchObject(live);
+    expect(request.qualificationId).toBeUndefined();
+  });
+});
+
 test.describe("evidence labelling", () => {
   const input = () => ({
     iso: { sha256: `sha256:${"a".repeat(64)}`, sizeBytes: 32 },
@@ -146,6 +220,8 @@ test.describe("evidence labelling", () => {
       label: "diagnostic, unqualified build", image: IMAGE, platform: PLATFORM,
       gateReason: "unqualified (incomplete-qualification-provenance)",
     });
+    const pins = { targetKey: "skipjack:gnome:linux/amd64", before: {}, after: {} };
+    expect(diagnosticRecord({ ...input(), diagnostic: { image: IMAGE, gateReason: "x", catalogPins: pins } }).diagnosticUnqualified.catalogPins).toEqual(pins);
   });
 
   test("a record without a diagnostic grant is unchanged", () => {

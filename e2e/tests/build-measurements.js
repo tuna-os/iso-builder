@@ -139,6 +139,7 @@ function diagnosticRecord({ iso, wasm, browser, phasesMs, buildResult = null, di
     ...(diagnostic ? { diagnosticUnqualified: {
       label: "diagnostic, unqualified build", image: diagnostic.image,
       platform: diagnostic.platform ?? null, gateReason: diagnostic.gateReason,
+      ...(diagnostic.catalogPins ? { catalogPins: diagnostic.catalogPins } : {}),
     } } : {}),
     iso: { sha256: iso.sha256, sizeBytes: iso.sizeBytes },
     loadedWasm: { sha256: wasm.sha256, sizeBytes: wasm.sizeBytes },
