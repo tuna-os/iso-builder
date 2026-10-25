@@ -94,6 +94,56 @@ It verifies each chunk and the whole ISO, and exclusively creates the local outp
 It refuses an existing output. A failed reconstruction leaves a partial local
 file and returns failure; do not boot that file or treat it as verified.
 
+## Retain as a GitHub Actions artifact instead (no R2, no secrets)
+
+Independent of the R2 path above, and the preferred route while the org
+removes its dependency on R2 (tuna-os/tunaOS#3470):
+
+```json
+{"run_full":true,"only":"skipjack-gnome","benchmark":false,"keep_iso":false,"retain_iso_artifact":true,"retain_iso_artifact_days":"7"}
+```
+
+Off by default. The plan rejects an empty or multi-slug `only`, benchmark mode,
+`keep_iso` and retention days outside 1-90. Any single named cell is allowed
+(the R2 path stays Yellowfin GNOME only). No `R2_*` secret is read, and the
+workflow permission stays `contents: read`.
+
+After the browser build (and after the guest check, even if it failed),
+`scripts/retain-iso-artifact.py split` verifies that the ISO on disk has the
+sha256 and size the browser measurement recorded, cuts it into 2 GiB chunks
+(`<slug>.iso.partNNNN`) and writes `manifest.json` with the sha256 of the whole ISO
+and of every chunk, the measurement fields, producer run/attempt/SHA, and the
+measurement's own label (`not-assessed`, or `diagnostic-unqualified` for a
+build made with the test-only override). It never writes `qualified`.
+Chunks upload uncompressed as `iso-<slug>-run<id>-a<attempt>`; the manifest is
+also uploaded alone as `...-manifest` so the hash can be read without the ISO.
+The local chunks are then deleted, the artifact is downloaded again and
+`verify` re-checks every chunk and the reassembled ISO against the hash taken
+from the browser measurement (not from the manifest under test).
+
+Fetch and verify yourself, using a hash you saved independently:
+
+```sh
+gh run download RUN -R tuna-os/iso-builder -n iso-skipjack-gnome-runRUN-aATTEMPT -D dl
+python3 scripts/retain-iso-artifact.py verify --dir dl \
+  --expected-sha256 sha256:INDEPENDENT_ISO_HASH --output skipjack-gnome.iso
+```
+
+### Limits (sources, not measurements of this repo)
+
+- `actions/upload-artifact` documents no per-artifact size cap; documented limits are
+  500 artifacts per job and the account's artifact storage quota
+  ([README, Limitations](https://github.com/actions/upload-artifact#limitations)).
+  tuna-os/iso-builder is public (storage quota billing applies to private repos only),
+  and the repository retention setting reads `days: 90, maximum_allowed_days: 90`
+  (`gh api repos/tuna-os/iso-builder/actions/permissions/artifact-and-log-retention`).
+- `retention-days` must be 1-90 and cannot exceed the repository setting. Expired
+  artifacts are deleted by GitHub; nothing here has to clean up.
+- A 6.16 GB artifact transfer with SHA verification was measured in tunaOS #3662; a
+  run of this exact workflow at 5-7 GB has not been measured yet. Chunking keeps
+  every file at 2 GiB, caps a bad-transfer blast radius to the hash that names the
+  chunk, and stays far below 64 chunks (the script's ceiling; ISO ceiling 16 GiB).
+
 ## Provenance limits and tests
 
 The local collector binds the measured bytes to the committed served tree and observed WASM/ISO.
