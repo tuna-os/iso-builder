@@ -15,6 +15,7 @@ const path = require("path");
 const fs = require("fs");
 const { qualifiedCatalogFixture } = require("./qualified-catalog-fixture");
 const { observeLoadedWasm, loadedWasmMeasurement, hashSavedIso, buildOperationIdentity, completedBuildResult, diagnosticRecord } = require("./build-measurements");
+const { removeSavePicker, buildFailedSignature } = require("./full-harness");
 const { diagnosticGrantFromEnv, installDiagnosticGrant, resolveLiveDigests, catalogEntryFor, refreshDiagnosticSnapshot, parseGateRefusal, gateRefusalMessage, gateRefusalSummary } = require("./diagnostic-gate");
 const CATALOG = require("../../app/public/catalog-snapshot.json");
 
@@ -35,6 +36,14 @@ const IMAGE = process.env.TBOX_E2E_IMAGE || "tuna-os/sailfin:base";
 // This is an upper bound for work that is slow, not a wait for work that is
 // dead. See the watchdogs below.
 const WAIT_MS = Number(process.env.TBOX_E2E_WAIT_MS || 1_200_000);
+// The build click budget is separate because a catalog-pinned target defers the
+// layer pull and unpack to the build click (the catalog inspect is instant).
+// Measured (run 40229060979, skipjack:gnome, 1.8 GB / 65 layers on a hosted
+// runner): unpack 10 min, overlay+EROFS 8 min, so "Streaming ISO" began 18.5
+// min after the click and the 20 min download wait ended 50 s later with the
+// ISO still being written. That was a spent budget, not a stalled engine.
+// inspect 20 + build 45 stays under the 75 min per-test cap in ci.yml.
+const BUILD_WAIT_MS = Number(process.env.TBOX_E2E_BUILD_WAIT_MS || 2_700_000);
 // The engine is a Go binary on wasm32, so the unpacked tree, the EROFS
 // image and the ISO all share one 4 GiB linear-memory address space. Every
 // red cell in the first full sweep was that one ceiling:
@@ -375,6 +384,7 @@ test.describe("iso builder", () => {
   test("full build streams a bootable ISO @full", async ({ page }) => {
     test.skip(!process.env.TBOX_E2E_FULL, "set TBOX_E2E_FULL=1 for the full build");
     await page.addInitScript(observeLoadedWasm);
+    await page.addInitScript(removeSavePicker);
     // Test-only, explicit, named-target override of the catalog gate. Null
     // (the default) leaves the production gate untouched.
     let diagnosticPins = null;
@@ -451,6 +461,16 @@ test.describe("iso builder", () => {
           const s = document.getElementById("stage");
           return `${s ? s.textContent : "?"}|${b ? `${b.value}/${b.max}` : "?"}`;
         })
+        .then(async (sig) => {
+          // Origin storage grows while layers, the EROFS image and the ISO are
+          // written, yet the bar holds still for minutes inside those stages
+          // (EROFS 7.6 min measured; the ISO stage never moves it). Count 64 MiB
+          // of growth as progress so a slow healthy write is not called wedged.
+          const grown = await page
+            .evaluate(async () => Math.floor(((await navigator.storage.estimate()).usage || 0) / (64 * 1024 * 1024)))
+            .catch(() => -1);
+          return `${sig}|opfs=${grown}`;
+        })
         .catch(() => "<unreadable>");
 
     // QualificationEvidence v1 (browser half): phase timings, resource
@@ -495,6 +515,7 @@ test.describe("iso builder", () => {
             console.log(`[stage] ${await stageText()}  wasm=${Math.round(await wasmMB())} MB`);
           }
           if (death) return stop(new Error(`engine died during ${what}: ${death}`));
+          if (what === "build" && buildFailedSignature(sig)) return stop(new Error(`build failed: stage is "${sig.split("|")[0]}"`));
           if (sig !== last) {
             last = sig;
             moved = Date.now();
@@ -570,7 +591,7 @@ test.describe("iso builder", () => {
     let dl;
     let buildIdentity;
     try {
-      const download = page.waitForEvent("download", { timeout: WAIT_MS });
+      const download = page.waitForEvent("download", { timeout: BUILD_WAIT_MS });
       const buildClickedAt = performance.now();
       await page.locator("#build").click();
       buildIdentity = await buildOperationIdentity(page);
