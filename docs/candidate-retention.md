@@ -94,6 +94,61 @@ It verifies each chunk and the whole ISO, and exclusively creates the local outp
 It refuses an existing output. A failed reconstruction leaves a partial local
 file and returns failure; do not boot that file or treat it as verified.
 
+## Retain as a GitHub Actions artifact instead (no R2, no secrets)
+
+This path does not depend on the R2 path above. Prefer it while the org removes
+its use of R2 (tuna-os/tunaOS#3470). Dispatch it like this:
+
+```json
+{"run_full":true,"only":"skipjack-gnome","benchmark":false,"keep_iso":false,"retain_iso_artifact":true,"retain_iso_artifact_days":"7"}
+```
+
+The input is off by default. The plan rejects an empty `only`, more than one slug,
+benchmark mode, `keep_iso`, and retention days outside 1 to 90. You can name any
+one cell. The R2 path stays limited to Yellowfin GNOME. The workflow reads no `R2_*`
+secret, and its permission stays `contents: read`.
+
+The steps run after the browser build, and also after a failed guest check:
+
+1. `scripts/retain-iso-artifact.py split` checks that the ISO on disk has the
+   SHA-256 and size from the browser measurement. It stops if they differ.
+2. It cuts the ISO into chunks of 2 GiB, named `<slug>.iso.partNNNN`.
+3. It writes `manifest.json`. The manifest holds the SHA-256 of the whole ISO and
+   of each chunk and the measurement fields. It also holds the run, the run
+   number and the commit. The label of the measurement is in it too. The label is `not-assessed`, or
+   `diagnostic-unqualified` for a build that used the test-only override. The
+   script never writes `qualified`.
+4. The workflow uploads the chunks without compression as
+   `iso-<slug>-run<id>-a<attempt>`. It also uploads the manifest alone as
+   `...-manifest`, so you can read the hash without the ISO.
+5. The workflow deletes the local chunks and downloads the artifact again. Then
+   `verify` checks each chunk and the joined ISO against the hash from the browser
+   measurement. It does not use the hash in the manifest under test.
+
+To fetch and check the ISO yourself, use a hash that you saved independently:
+
+```sh
+gh run download RUN -R tuna-os/iso-builder -n iso-skipjack-gnome-runRUN-aATTEMPT -D dl
+python3 scripts/retain-iso-artifact.py verify --dir dl \
+  --expected-sha256 sha256:INDEPENDENT_ISO_HASH --output skipjack-gnome.iso
+```
+
+### Limits
+
+These limits come from documents, not from a run of this workflow:
+
+- The `upload-artifact` README names no size limit for one artifact. It names 500
+  artifacts for each job and the storage quota of the account.
+- The repository is public. Its retention setting is 90 days at most.
+  `gh api repos/tuna-os/iso-builder/actions/permissions/artifact-and-log-retention`
+  shows it.
+- `retention-days` must be from 1 to 90. GitHub deletes an artifact when it
+  expires. Nothing here needs cleanup.
+- The tunaOS#3662 run moved an artifact of 6.16 GB and checked its SHA. A run of
+  this workflow at 5 to 7 GB has not happened yet.
+- Chunks of 2 GiB keep each file small. A bad transfer names the chunk by its hash.
+  The script allows 64 chunks and an ISO of 16 GiB at most.
+
 ## Provenance limits and tests
 
 The local collector binds the measured bytes to the committed served tree and observed WASM/ISO.

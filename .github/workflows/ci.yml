@@ -67,6 +67,14 @@ on:
         description: "Retain ONE Yellowfin GNOME candidate (max 10 GiB) in existing R2; NO automatic expiry or cleanup"
         type: boolean
         default: false
+      retain_iso_artifact:
+        description: "Upload the built ISO of the ONE only= cell as a chunked GitHub Actions artifact (no R2, no secrets; sha256 of ISO and each chunk in manifest.json). Needs run_full, exactly one only= slug, benchmark=false, keep_iso=false."
+        type: boolean
+        default: false
+      retain_iso_artifact_days:
+        description: "Retention days for the ISO artifact (1-90; repository maximum is 90)"
+        type: string
+        default: "7"
       benchmark:
         description: "Run each @full build three times and attach median/range evidence"
         type: boolean
@@ -417,7 +425,7 @@ jobs:
   # pulls to iterate on one edition is indefensible — the first sweep did
   # exactly that and spent eight cells learning one thing.
   full-plan:
-    if: github.event_name == 'workflow_dispatch' && (github.event.inputs.run_full == 'true' || github.event.inputs.retain_candidate == 'true')
+    if: github.event_name == 'workflow_dispatch' && (github.event.inputs.run_full == 'true' || github.event.inputs.retain_candidate == 'true' || github.event.inputs.retain_iso_artifact == 'true')
     runs-on: ubuntu-latest
     timeout-minutes: 5
     outputs:
@@ -433,6 +441,8 @@ jobs:
           BENCHMARK: ${{ github.event.inputs.benchmark }}
           KEEP_ISO: ${{ github.event.inputs.keep_iso }}
           DIAGNOSTIC_UNQUALIFIED: ${{ github.event.inputs.diagnostic_unqualified }}
+          RETAIN_ISO_ARTIFACT: ${{ github.event.inputs.retain_iso_artifact }}
+          RETAIN_ISO_ARTIFACT_DAYS: ${{ github.event.inputs.retain_iso_artifact_days }}
         run: |
           python3 - <<'PY' >> "$GITHUB_OUTPUT"
           import json, os
@@ -441,6 +451,13 @@ jobs:
                   raise SystemExit("diagnostic_unqualified=true requires only=<slug>: the override is granted per named cell, never to the whole matrix")
               if os.environ.get("RUN_FULL") != "true" or os.environ.get("KEEP_ISO") == "true":
                   raise SystemExit("diagnostic_unqualified=true requires run_full=true and keep_iso=false: a diagnostic build is never published")
+          if os.environ.get("RETAIN_ISO_ARTIFACT") == "true":
+              only_list = [s.strip() for s in os.environ.get("ONLY", "").split(",") if s.strip()]
+              if len(only_list) != 1 or os.environ.get("RUN_FULL") != "true" or os.environ.get("BENCHMARK") != "false" or os.environ.get("KEEP_ISO") != "false":
+                  raise SystemExit("ISO artifact retention requires run_full=true, exactly one only=<slug>, benchmark=false, keep_iso=false")
+              days = os.environ.get("RETAIN_ISO_ARTIFACT_DAYS", "")
+              if not days.isdigit() or not 1 <= int(days) <= 90:
+                  raise SystemExit("ISO artifact retention requires retain_iso_artifact_days between 1 and 90")
           if os.environ.get("RETAIN_CANDIDATE") == "true":
               expected = {"ONLY": "yellowfin-gnome", "RUN_FULL": "true", "BENCHMARK": "false", "KEEP_ISO": "false"}
               if any(os.environ.get(k) != v for k, v in expected.items()):
@@ -500,7 +517,7 @@ jobs:
     # failures. 105 = 75 (build test) + 25 (LUKS verify step's own cap)
     # + install/checkout slack, so neither inner cap can be pre-empted.
     # Retention adds a 5-minute preflight and 20-minute I/O cap, not browser/guest time.
-    timeout-minutes: ${{ github.event.inputs.retain_candidate == 'true' && 130 || 105 }}
+    timeout-minutes: ${{ (github.event.inputs.retain_candidate == 'true' || github.event.inputs.retain_iso_artifact == 'true') && 130 || 105 }}
     strategy:
       # A coverage sweep is worthless if the first red cell cancels the
       # rest — the whole point is learning which bases are broken.
@@ -751,13 +768,96 @@ jobs:
             echo '```'
           } >> "$GITHUB_STEP_SUMMARY"
 
+      # Exact-bytes retention in GitHub, no R2 and no secrets: the ISO is split
+      # into hash-pinned 2 GiB chunks, uploaded uncompressed, then downloaded
+      # again and re-verified against the manifest AND the browser-measured ISO
+      # hash. Runs after the guest step even when it failed, so a built ISO that
+      # the guest rejects is still retained for diagnosis. Never a qualification.
+      - name: retain ISO as GitHub artifact (chunked, sha256-verified)
+        id: iso-artifact
+        if: ${{ always() && !cancelled() && github.event.inputs.retain_iso_artifact == 'true' && steps.browser-build.outcome == 'success' }}
+        timeout-minutes: 30
+        env:
+          SLUG: ${{ matrix.edition.slug }}
+        run: |
+          set -euo pipefail
+          python3 scripts/retain-iso-artifact.py split \
+            --iso "$RUNNER_TEMP/${SLUG}.iso" \
+            --measurements "e2e/test-results/build-measurements-qual-evidence-${SLUG}-s1.json" \
+            --out "$RUNNER_TEMP/iso-artifact" --slug "$SLUG" \
+            --repository "$GITHUB_REPOSITORY" --run-id "$GITHUB_RUN_ID" \
+            --run-attempt "$GITHUB_RUN_ATTEMPT" --sha "$GITHUB_SHA" \
+            > "$RUNNER_TEMP/iso-artifact-manifest.json"
+          mkdir -p e2e/test-results/iso-artifact-manifest
+          cp "$RUNNER_TEMP/iso-artifact/manifest.json" e2e/test-results/iso-artifact-manifest/manifest.json
+          # Expected hash comes from the browser measurement, not from the manifest under test.
+          iso_sha=$(python3 -c 'import json,sys;print(json.load(open(sys.argv[1]))["iso"]["sha256"])' "e2e/test-results/build-measurements-qual-evidence-${SLUG}-s1.json")
+          echo "iso_sha256=${iso_sha}" >> "$GITHUB_OUTPUT"
+
+      - name: upload ISO chunks
+        id: iso-artifact-upload
+        if: ${{ always() && !cancelled() && steps.iso-artifact.outcome == 'success' }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: iso-${{ matrix.edition.slug }}-run${{ github.run_id }}-a${{ github.run_attempt }}
+          path: ${{ runner.temp }}/iso-artifact/
+          # The chunks are an already-compressed ISO; deflate only costs CPU.
+          compression-level: 0
+          retention-days: ${{ github.event.inputs.retain_iso_artifact_days }}
+          if-no-files-found: error
+
+      - name: upload ISO manifest (small, fetch without the ISO)
+        if: ${{ always() && !cancelled() && steps.iso-artifact.outcome == 'success' }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: iso-${{ matrix.edition.slug }}-run${{ github.run_id }}-a${{ github.run_attempt }}-manifest
+          path: e2e/test-results/iso-artifact-manifest/manifest.json
+          retention-days: ${{ github.event.inputs.retain_iso_artifact_days }}
+          if-no-files-found: error
+
+      # Free the local copy first so the round trip reads GitHub's bytes, not ours.
+      - name: drop local chunks before round trip
+        if: ${{ always() && !cancelled() && steps.iso-artifact-upload.outcome == 'success' }}
+        run: rm -rf "$RUNNER_TEMP/iso-artifact" "$RUNNER_TEMP/iso-roundtrip"
+
+      - name: download ISO artifact again
+        if: ${{ always() && !cancelled() && steps.iso-artifact-upload.outcome == 'success' }}
+        uses: actions/download-artifact@v8
+        with:
+          name: iso-${{ matrix.edition.slug }}-run${{ github.run_id }}-a${{ github.run_attempt }}
+          path: ${{ runner.temp }}/iso-roundtrip
+
+      - name: verify ISO artifact round trip
+        if: ${{ always() && !cancelled() && steps.iso-artifact-upload.outcome == 'success' }}
+        timeout-minutes: 30
+        env:
+          SLUG: ${{ matrix.edition.slug }}
+          ARTIFACT: iso-${{ matrix.edition.slug }}-run${{ github.run_id }}-a${{ github.run_attempt }}
+          ISO_SHA256: ${{ steps.iso-artifact.outputs.iso_sha256 }}
+          ARTIFACT_ID: ${{ steps.iso-artifact-upload.outputs.artifact-id }}
+        run: |
+          set -euo pipefail
+          python3 scripts/retain-iso-artifact.py verify --dir "$RUNNER_TEMP/iso-roundtrip" \
+            --expected-sha256 "$ISO_SHA256" > "$RUNNER_TEMP/iso-roundtrip-result.json"
+          {
+            echo "### ISO retained as GitHub artifact (diagnostic, not qualified)"
+            echo ""
+            echo "- artifact: \`${ARTIFACT}\` (id ${ARTIFACT_ID}), retention ${{ github.event.inputs.retain_iso_artifact_days }} day(s)"
+            echo "- ISO sha256: \`${ISO_SHA256}\`"
+            echo "- downloaded again and re-verified chunk by chunk and as a whole against the browser measurement"
+            echo '```json'
+            cat "$RUNNER_TEMP/iso-roundtrip-result.json"
+            echo '```'
+            echo "Fetch: \`gh run download ${GITHUB_RUN_ID} -R ${GITHUB_REPOSITORY} -n ${ARTIFACT}\` then \`python3 scripts/retain-iso-artifact.py verify --dir <dir> --expected-sha256 <browser-measured hash> --output ${SLUG}.iso\`."
+          } >> "$GITHUB_STEP_SUMMARY"
+
       - name: disk after build
         if: always()
         run: df -h /
 
-      # R2, not an upload-artifact: these are 5-7 GB each, and the org
-      # already publishes ISOs this way (same R2_* org secrets as the
-      # desktop-image repos). Under browser-iso/ so they are obviously not
+      # R2 for *published* ISOs (retain_iso_artifact above is the diagnostic
+      # path): these are 5-7 GB each, and the org already publishes ISOs this
+      # way (same R2_* org secrets as the desktop-image repos). Under browser-iso/ so they are obviously not
       # release artifacts. This step only runs when every prior step passed,
       # so a published ISO has cleared the LUKS install + reboot check above.
       - name: publish ISO to R2
