@@ -15,6 +15,7 @@ const path = require("path");
 const fs = require("fs");
 const { qualifiedCatalogFixture } = require("./qualified-catalog-fixture");
 const { observeLoadedWasm, loadedWasmMeasurement, hashSavedIso, buildOperationIdentity, completedBuildResult, diagnosticRecord } = require("./build-measurements");
+const { diagnosticGrantFromEnv, installDiagnosticGrant, resolveLiveDigests, catalogEntryFor, refreshDiagnosticSnapshot, parseGateRefusal, gateRefusalMessage, gateRefusalSummary } = require("./diagnostic-gate");
 const CATALOG = require("../../app/public/catalog-snapshot.json");
 
 const SHOTS = process.env.TBOX_E2E_SHOTS
@@ -374,6 +375,21 @@ test.describe("iso builder", () => {
   test("full build streams a bootable ISO @full", async ({ page }) => {
     test.skip(!process.env.TBOX_E2E_FULL, "set TBOX_E2E_FULL=1 for the full build");
     await page.addInitScript(observeLoadedWasm);
+    // Test-only, explicit, named-target override of the catalog gate. Null
+    // (the default) leaves the production gate untouched.
+    let diagnosticPins = null;
+    const diagnosticGrant = diagnosticGrantFromEnv(process.env, { image: IMAGE, platform: process.env.TBOX_E2E_PLATFORM || undefined });
+    if (diagnosticGrant) {
+      console.log(`DIAGNOSTIC, UNQUALIFIED BUILD requested for ${IMAGE}: result is not a qualification`);
+      await page.addInitScript(installDiagnosticGrant, diagnosticGrant);
+      const entry = catalogEntryFor(CATALOG, IMAGE, process.env.TBOX_E2E_PLATFORM || undefined);
+      if (!entry) throw new Error(`diagnostic target ${IMAGE} is not in the catalog snapshot`);
+      const live = await resolveLiveDigests({ repository: entry.publication.repository, tag: entry.publication.tag, platform: entry.target.platform });
+      const refreshed = refreshDiagnosticSnapshot(CATALOG, entry.targetKey, live);
+      diagnosticPins = refreshed.record;
+      console.log(`diagnostic pin refresh for ${entry.targetKey}: ${JSON.stringify(refreshed.record)}`);
+      await page.route("**/catalog-snapshot.json", (route) => route.fulfill({ json: refreshed.doc }));
+    }
     const initrd = process.env.TBOX_E2E_INITRD_URL || "";
 
     // Without these, a stalled inspect reports only `Received: disabled` —
@@ -519,13 +535,30 @@ test.describe("iso builder", () => {
       );
     };
 
+    // The catalog gate answers in seconds. Without this race a refused target
+    // burned the whole inspect stall watchdog (5.7 min measured) before the job
+    // reported anything.
+    class GateRefused extends Error {}
+    const gateRefusal = page
+      .waitForFunction(() => /^Browser build unavailable:/.test(document.getElementById("stage")?.textContent || ""), null, { timeout: WAIT_MS, polling: 500 })
+      .then(async () => {
+        const reason = parseGateRefusal(await stageText()) || "unparsed gate reason";
+        const info = { image: IMAGE, platform: process.env.TBOX_E2E_PLATFORM || null, reason, diagnosticRequested: Boolean(diagnosticGrant) };
+        await shot(page, `05-gated-${slug(IMAGE)}.png`);
+        console.log(`::error title=Browser build gated::${info.image}: ${reason}`);
+        if (process.env.GITHUB_STEP_SUMMARY) fs.appendFileSync(process.env.GITHUB_STEP_SUMMARY, `${gateRefusalSummary(info)}\n`);
+        throw new GateRefused(gateRefusalMessage(info));
+      });
+    gateRefusal.catch(() => {});
     const inspectWatch = watch("inspect", STALL_MS);
     try {
       await Promise.race([
         expect(page.locator("#build")).toBeEnabled({ timeout: WAIT_MS }),
         inspectWatch.promise,
+        gateRefusal,
       ]);
     } catch (e) {
+      if (e instanceof GateRefused) throw e;
       throw await describe("inspect", e);
     } finally {
       inspectWatch.cancel();
@@ -590,9 +623,20 @@ test.describe("iso builder", () => {
       CATALOG.targets.find((t) =>
         evPlatform ? t.targetKey === `${imgShort}:${evPlatform}` : t.targetKey && t.targetKey.startsWith(`${imgShort}:`),
       ) || null;
+    // Read what the app itself displayed, not what the spec requested.
+    let diagnostic = null;
+    if (diagnosticGrant) {
+      const badge = ((await page.locator(".badge.status").first().textContent().catch(() => "")) || "").trim();
+      expect(badge, "app must label the build as diagnostic-unqualified").toContain("diagnostic-unqualified");
+      expect(badge).not.toMatch(/(^|\s)qualified/);
+      const reason = /\(([^)]+)\)/.exec(badge)?.[1];
+      expect(reason, "gate reason shown by the app").toBeTruthy();
+      diagnostic = { image: IMAGE, platform: evPlatform, gateReason: reason, catalogPins: diagnosticPins };
+    }
     const evidence = {
       schemaVersion: 1,
       kind: "qualification-evidence",
+      ...(diagnostic ? { qualification: "diagnostic-unqualified", diagnosticUnqualified: { label: "diagnostic, unqualified build", ...diagnostic } } : {}),
       half: "browser",
       browser: { name: "chromium", userAgent },
       target: {
@@ -642,7 +686,7 @@ test.describe("iso builder", () => {
     finally { await session.detach(); }
     expect(await completedBuildResult(page, buildIdentity)).toEqual(buildResult);
     const measurements = diagnosticRecord({
-      iso, wasm, browser: browserVersion, buildResult,
+      iso, wasm, browser: browserVersion, buildResult, diagnostic,
       phasesMs: { inspect: phases.inspectMs, build: phases.buildMs, save: phases.saveMs },
     });
     const measurementPath = path.join(path.dirname(evPath), `build-measurements-${path.basename(evPath)}`);

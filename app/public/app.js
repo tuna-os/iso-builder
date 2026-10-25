@@ -132,6 +132,21 @@ function catalogQualification(entry) {
   return complete ? q : { ...q, status: "unqualified", reason: "incomplete-qualification-provenance" };
 }
 
+// TEST-ONLY seam for the @full CI spec. A target the catalog marks unqualified
+// may be built for diagnostics when the page was loaded with a grant installed
+// by Playwright `addInitScript` (a JS global; no URL parameter, storage key or
+// UI control can set it). The grant must name the exact image and, when given,
+// platform of the operation. The build is labelled "diagnostic-unqualified",
+// never becomes "qualified", and never receives a qualificationId.
+function diagnosticUnqualifiedGrant(op) {
+  const g = globalThis.__TBOX_DIAGNOSTIC_UNQUALIFIED__;
+  if (!g || g.kind !== "diagnostic-unqualified" || typeof g.image !== "string" || g.image === "") return null;
+  if (op?.request?.image !== g.image) return null;
+  if (g.platform !== undefined && op.request.target?.platform !== g.platform) return null;
+  if (op.catalogEntry?.availability?.available !== true) return null;
+  return g;
+}
+
 function loadCatalogSnapshot() {
   if (catalogSnapshotPromise) return catalogSnapshotPromise;
   catalogSnapshotPromise = fetch("catalog-snapshot.json", { tboxMetadataOnly: true })
@@ -1159,7 +1174,12 @@ async function inspect() {
     if (!hasTestStub && op.catalogEntry) {
       globalThis.tboxLayerCache?.setPrefetchEnabled?.(false);
       const entry = op.catalogEntry;
-      const qual = op.qualification || { status: "unqualified", reason: "untested-snapshot" };
+      let qual = op.qualification || { status: "unqualified", reason: "untested-snapshot" };
+      if (qual.status !== "qualified" && diagnosticUnqualifiedGrant(op)) {
+        qual = { status: "diagnostic-unqualified", reason: qual.reason || qual.status, gate: qual.status };
+        op.qualification = qual;
+        log(`DIAGNOSTIC, UNQUALIFIED BUILD for ${op.request.image} (${op.request.target.platform}): catalog gate said ${qual.gate} (${qual.reason}); this result is not a qualification`);
+      }
       log(`inspecting ${op.request.image} (${op.request.target.platform}) from catalog snapshot ${String(op.request.catalogVersion).slice(0, 19)}…`);
 
       if (entry.availability?.available && entry.facts) {
@@ -1182,11 +1202,13 @@ async function inspect() {
         syncOperationOptions();
       }
 
-      if (qual.status === "qualified" && !quotaStatus.blocked) {
+      if ((qual.status === "qualified" || qual.status === "diagnostic-unqualified") && !quotaStatus.blocked) {
         op.state = "ready";
         op.ready = true;
         op.inspectedVia = "catalog";
-        $("stage").textContent = "Image inspected — ready to build.";
+        $("stage").textContent = qual.status === "qualified"
+          ? "Image inspected — ready to build."
+          : "Image inspected — ready to build (diagnostic, unqualified build).";
         notify("Image inspected", `${raw}: ${facts.desktop} desktop, ready to build`);
         $("build").disabled = false;
         renderFallbackCard(op);
