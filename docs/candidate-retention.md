@@ -96,32 +96,36 @@ file and returns failure; do not boot that file or treat it as verified.
 
 ## Retain as a GitHub Actions artifact instead (no R2, no secrets)
 
-Independent of the R2 path above, and the preferred route while the org
-removes its dependency on R2 (tuna-os/tunaOS#3470):
+This path does not depend on the R2 path above. Prefer it while the org removes
+its use of R2 (tuna-os/tunaOS#3470). Dispatch it like this:
 
 ```json
 {"run_full":true,"only":"skipjack-gnome","benchmark":false,"keep_iso":false,"retain_iso_artifact":true,"retain_iso_artifact_days":"7"}
 ```
 
-Off by default. The plan rejects an empty or multi-slug `only`, benchmark mode,
-`keep_iso` and retention days outside 1-90. Any single named cell is allowed
-(the R2 path stays Yellowfin GNOME only). No `R2_*` secret is read, and the
-workflow permission stays `contents: read`.
+The input is off by default. The plan rejects an empty `only`, more than one slug,
+benchmark mode, `keep_iso`, and retention days outside 1 to 90. You can name any
+one cell. The R2 path stays limited to Yellowfin GNOME. The workflow reads no `R2_*`
+secret, and its permission stays `contents: read`.
 
-After the browser build (and after the guest check, even if it failed),
-`scripts/retain-iso-artifact.py split` verifies that the ISO on disk has the
-sha256 and size the browser measurement recorded, cuts it into 2 GiB chunks
-(`<slug>.iso.partNNNN`) and writes `manifest.json` with the sha256 of the whole ISO
-and of every chunk, the measurement fields, producer run/attempt/SHA, and the
-measurement's own label (`not-assessed`, or `diagnostic-unqualified` for a
-build made with the test-only override). It never writes `qualified`.
-Chunks upload uncompressed as `iso-<slug>-run<id>-a<attempt>`; the manifest is
-also uploaded alone as `...-manifest` so the hash can be read without the ISO.
-The local chunks are then deleted, the artifact is downloaded again and
-`verify` re-checks every chunk and the reassembled ISO against the hash taken
-from the browser measurement (not from the manifest under test).
+The steps run after the browser build, and also after a failed guest check:
 
-Fetch and verify yourself, using a hash you saved independently:
+1. `scripts/retain-iso-artifact.py split` checks that the ISO on disk has the
+   SHA-256 and size from the browser measurement. It stops if they differ.
+2. It cuts the ISO into chunks of 2 GiB, named `<slug>.iso.partNNNN`.
+3. It writes `manifest.json`. The manifest holds the SHA-256 of the whole ISO and
+   of each chunk and the measurement fields. It also holds the run, the run
+   number and the commit. The label of the measurement is in it too. The label is `not-assessed`, or
+   `diagnostic-unqualified` for a build that used the test-only override. The
+   script never writes `qualified`.
+4. The workflow uploads the chunks without compression as
+   `iso-<slug>-run<id>-a<attempt>`. It also uploads the manifest alone as
+   `...-manifest`, so you can read the hash without the ISO.
+5. The workflow deletes the local chunks and downloads the artifact again. Then
+   `verify` checks each chunk and the joined ISO against the hash from the browser
+   measurement. It does not use the hash in the manifest under test.
+
+To fetch and check the ISO yourself, use a hash that you saved independently:
 
 ```sh
 gh run download RUN -R tuna-os/iso-builder -n iso-skipjack-gnome-runRUN-aATTEMPT -D dl
@@ -129,20 +133,21 @@ python3 scripts/retain-iso-artifact.py verify --dir dl \
   --expected-sha256 sha256:INDEPENDENT_ISO_HASH --output skipjack-gnome.iso
 ```
 
-### Limits (sources, not measurements of this repo)
+### Limits
 
-- `actions/upload-artifact` documents no per-artifact size cap; documented limits are
-  500 artifacts per job and the account's artifact storage quota
-  ([README, Limitations](https://github.com/actions/upload-artifact#limitations)).
-  tuna-os/iso-builder is public (storage quota billing applies to private repos only),
-  and the repository retention setting reads `days: 90, maximum_allowed_days: 90`
-  (`gh api repos/tuna-os/iso-builder/actions/permissions/artifact-and-log-retention`).
-- `retention-days` must be 1-90 and cannot exceed the repository setting. Expired
-  artifacts are deleted by GitHub; nothing here has to clean up.
-- A 6.16 GB artifact transfer with SHA verification was measured in tunaOS #3662; a
-  run of this exact workflow at 5-7 GB has not been measured yet. Chunking keeps
-  every file at 2 GiB, caps a bad-transfer blast radius to the hash that names the
-  chunk, and stays far below 64 chunks (the script's ceiling; ISO ceiling 16 GiB).
+These limits come from documents, not from a run of this workflow:
+
+- The `upload-artifact` README names no size limit for one artifact. It names 500
+  artifacts for each job and the storage quota of the account.
+- The repository is public. Its retention setting is 90 days at most.
+  `gh api repos/tuna-os/iso-builder/actions/permissions/artifact-and-log-retention`
+  shows it.
+- `retention-days` must be from 1 to 90. GitHub deletes an artifact when it
+  expires. Nothing here needs cleanup.
+- The tunaOS#3662 run moved an artifact of 6.16 GB and checked its SHA. A run of
+  this workflow at 5 to 7 GB has not happened yet.
+- Chunks of 2 GiB keep each file small. A bad transfer names the chunk by its hash.
+  The script allows 64 chunks and an ISO of 16 GiB at most.
 
 ## Provenance limits and tests
 
