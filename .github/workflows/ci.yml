@@ -704,8 +704,14 @@ jobs:
 
           echo "Installing QEMU, OVMF, swtpm dependencies..."
           sudo apt-get update -qq
+          # imagemagick (magick/convert/compare), tesseract-ocr and sshpass are
+          # what the strict walkthrough measures with. Without them it reports
+          # stddev 0.0 for every frame and skips screen detection, so a guest that
+          # painted fine is reported blank (run 40235407606). jq is used by the
+          # harness's evidence printing.
           sudo apt-get install -y --no-install-recommends \
-            qemu-system-x86 qemu-utils ovmf swtpm swtpm-tools socat netpbm python3-pil
+            qemu-system-x86 qemu-utils ovmf swtpm swtpm-tools socat netpbm python3-pil \
+            imagemagick tesseract-ocr sshpass jq
 
           echo "Enabling KVM permissions..."
           echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | \
@@ -914,6 +920,33 @@ jobs:
             echo ""
             echo "This ISO passed the LUKS install + reboot verification under QEMU."
           } >> "$GITHUB_STEP_SUMMARY"
+
+      # The guest harness runs under sudo, so everything it writes under
+      # luks-verify-*/ is root-owned and upload-artifact dies on it with EACCES
+      # (run 40235407606 lost the serial log and the whole diagnostics upload).
+      # Hand the tree back to the runner user before any upload reads it.
+      - name: make guest harness output readable
+        if: ${{ always() && !cancelled() }}
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+          dirs=(luks-verify-*/)
+          if [ "${#dirs[@]}" -gt 0 ]; then
+            sudo chown -R "$(id -u):$(id -g)" "${dirs[@]}"
+          fi
+
+      # The browser-half evidence and the measurements of the exact ISO bytes
+      # exist as soon as the build step succeeds. They must not wait for the
+      # guest: a failed guest check otherwise discarded the only record of the
+      # ISO hash, Chromium version and stage timings. Files carry their own
+      # label (not-assessed or diagnostic-unqualified); nothing here qualifies.
+      - name: upload browser evidence (survives guest failure)
+        if: ${{ always() && !cancelled() && steps.browser-build.outcome == 'success' }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: browser-evidence-${{ matrix.edition.slug }}-run${{ github.run_id }}-a${{ github.run_attempt }}
+          path: e2e/test-results/*.json
+          if-no-files-found: error
 
       # test-results/ holds Playwright's only-on-failure screenshot and
       # error-context.md. The first sweep uploaded just screenshots/ and
