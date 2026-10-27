@@ -152,16 +152,16 @@ same-runner memory and free-disk measurements, through `sudo`. It removes
 `TBOX_E2E_IMAGE` and `FISHERMAN_OVERRIDE` from the environment. If an identity is
 missing or inconsistent, the workflow stops before guest execution.
 
-The sidecar and output directory use the diagnostic-unqualified label. This
-test does not authenticate the producer or frontend. It does not turn a failed
-browser identity into a pass, qualify the target, publish an ISO, or change
-catalog or download status. `baseAnnotationMatched` is recorded evidence; false
-does not establish why the annotation did not match.
+The sidecar and output directory carry the diagnostic-unqualified label. This
+test does not authenticate the producer or frontend. It does not qualify the
+target, change the catalog or download status, or publish an ISO.
 
-The hosted run [40538072100](https://github.com/actions/runs/40538072100)
-exercised the GitHub-artifact strict diagnostic path, not this R2 candidate
-uploader. It failed during receipt preparation before guest execution;
-`retain_candidate=false`, so no R2 object was written and no target was qualified.
+The workflow records `baseAnnotationMatched`. A value of `false` does not show
+why the base annotation differs.
+
+Run [40538072100](https://github.com/actions/runs/40538072100) used a GitHub
+artifact, not R2. Receipt preparation failed before a guest test. It set
+`retain_candidate=false`. It wrote no R2 object and qualified no target.
 
 Before upload, the finalizer renames each nested qualification receipt to a diagnostic name.
 It uses `diagnostic-unqualified-evidence.json`, with a number if that name exists.

@@ -1,6 +1,10 @@
 # Browser ISO qualification integration proposal
 
-This document reviews how browser evidence must connect to installation qualification. The optional `strict_roundtrip_test` path in `.github/workflows/ci.yml` was dispatched once on 2026-10-27 as run [40538072100](https://github.com/actions/runs/40538072100). It built and hash-verified a Skipjack/GNOME ISO, then failed receipt preparation before guest execution. This remains diagnostic only; it does not qualify the ISO, authorize publication, deploy the builder, or change download routing.
+We need to connect browser evidence to installation tests. The optional workflow path uses `strict_roundtrip_test`.
+
+The path ran once on 2026-10-27 (run [40538072100](https://github.com/actions/runs/40538072100)). It built a Skipjack GNOME ISO and checked its hash. Receipt preparation failed before any guest test ran.
+
+The run did not qualify the ISO. It did not publish an ISO, deploy the builder, or change the download URL.
 
 ## Reviewed sources
 
@@ -15,35 +19,50 @@ frontend revisions that you select for a run.
 
 ## Current blockers
 
-1. Run [40538072100](https://github.com/actions/runs/40538072100) built and hash-verified a Skipjack/GNOME ISO, then failed receipt preparation with `ISO has no embedded etc/tunaos/live-source.json receipt`. No guest step ran. Do not retry these unchanged bytes.
-2. The retained artifact lacks per-payload `unsquashfs` format, path, and stderr details. The current local helper change writes bounded details into the always-uploaded diagnostics artifact; it has not yet been run on a hosted builder.
-3. Browser measurements report an applied overlay with `baseAnnotationMatched=false`, and the observed source manifest differs from the pre-build catalog digest. This is not a root-cause finding. Require a same-base overlay with a valid media receipt and matching current source identity before another build.
-4. Producer/frontend authentication and a genuine media-bound installer frontend identity remain missing. The diagnostic artifact cannot create a trusted browser receipt.
-5. No browser-built bytes have passed strict plain/LUKS installation and media-detached cold/warm boots. Three paired cold/warm builds and zero-warm-layer-transfer evidence are also absent; qualification and performance claims remain blocked.
+1. Run [40538072100](https://github.com/actions/runs/40538072100) built the ISO and checked its hash. The helper stopped before guest tests because it did not find `etc/tunaos/live-source.json`. Do not retry these bytes.
+2. The artifact does not show the format of each payload. It also lacks the path and error from each `unsquashfs` call. This branch adds a short record for each payload to the diagnostics artifact. No hosted run has tested this code.
+3. The browser report shows that the overlay applied. It also reports `baseAnnotationMatched=false`. The source digest from the build differs from the catalog digest from before the build. This does not show the cause. A new overlay must use the same base as the ISO. Its receipt must list the current source digest.
+4. The run did not authenticate the producer or frontend. The media also lacks a verified identity for the installer frontend. Hashes of the WASM or backend, operator values, and catalog tags cannot replace these identities.
+5. No browser ISO has passed plain or encrypted install checks. No target-only cold boot or warm reboot has passed. We have no three pairs of cold and warm builds. We have not proved that a warm build transfers no complete layers. Do not claim qualification or performance.
 
 ## Observed diagnostic dispatch
 
 Workflow: `tuna-os/iso-builder/.github/workflows/ci.yml`, main `4a0e1c34be84e87ce400414ed9f0bc2f1c309ce1`.
 
-Run [40538072100](https://github.com/actions/runs/40538072100) selected one x86 target with these inputs:
+Run [40538072100](https://github.com/actions/runs/40538072100) used these inputs for one x86 image:
 
 ```json
 {"run_full":true,"only":"skipjack-gnome","retain_iso_artifact":true,"strict_roundtrip_test":true,"diagnostic_unqualified":true,"benchmark":false,"keep_iso":false,"retain_candidate":false,"retain_iso_artifact_days":"7"}
 ```
 
-It built a 9,446,709,248-byte ISO (`sha256:e03ad6c8be6431ae35517c2cb6ee010d725fcfec25ad32e8b06f0d82971e8891`) and verified the GitHub artifact round-trip. ISO artifact ID `12751782226` expired 2026-11-03. Receipt preparation failed before guest execution; no install, reboot, R2 write, or qualification resulted.
+The run built an ISO of 9,446,709,248 bytes. Its SHA-256 was `sha256:e03ad6c8be6431ae35517c2cb6ee010d725fcfec25ad32e8b06f0d82971e8891`.
+
+It uploaded the ISO as GitHub artifact `12751782226`. GitHub kept it for seven days; it expired on 2026-11-03.
+Receipt preparation failed before any guest test ran.
+The run did not install or reboot a guest. It did not write to R2 or qualify a target.
 
 ## Integration stages
 
-[Candidate retention](candidate-retention.md) documents the implemented GitHub-artifact path and the separate R2 candidate path. Producer/frontend authentication and strict qualification remain unverified.
+[Candidate retention](candidate-retention.md) describes the GitHub artifact and R2 methods. This run used the GitHub artifact method. It did not use R2.
 
-### A. Retain and bind one diagnostic candidate
+The producer and frontend remain unauthenticated. Strict install tests did not run.
 
-The current `retain_iso_artifact=true` path uses run- and attempt-bound GitHub artifacts, splits the ISO into 2 GiB chunks, verifies each chunk and the whole file against the browser measurement, downloads the artifact again, and verifies the reconstructed bytes. Run 40538072100 used seven-day retention and did not set `retain_candidate` or `keep_iso`.
+### A. Keep one diagnostic ISO
 
-The retained manifest binds the browser measurement, source SHA, run ID and attempt. It does not authenticate the producer or frontend, so it remains `diagnostic-unqualified`. Receipt extraction now writes bounded per-payload format/path/error diagnostics into the always-uploaded diagnostics artifact. Missing or inconsistent receipts remain a hard failure before the strict guest starts.
+The workflow stores each ISO in a GitHub Actions artifact.
+It names the artifact with the run ID and try number.
+It splits the ISO into 2 GiB chunks.
+It checks each chunk and the full ISO hash against the browser measurement.
+It downloads the artifact again and checks the restored bytes.
 
-Never retain private keys for SSH, swtpm state, or installed qcow2 disks. Preserve the original failure status and keep diagnostic output separate from qualification evidence.
+Run 40538072100 kept the artifact for seven days.
+The run set `retain_candidate=false` and `keep_iso=false`.
+
+The manifest stores the browser measurement, source SHA, run ID, and try number. It does not prove who built the ISO or which frontend bytes the browser loaded. The result stays `diagnostic-unqualified`.
+
+The helper writes a short log for each payload. It records the file format and receipt path. It also records exit status and bounded error text. A missing or invalid receipt stops the guest test.
+
+Never keep SSH keys, swtpm state, or qcow2 disks. Keep the failure status and diagnostic files separate from qualification evidence.
 
 ### B. Authenticate the producer and frontend
 
@@ -127,9 +146,11 @@ Three fresh profiles or warm boots of the installed system do not prove this.
 
 ## R2 candidate retention remains separate
 
-Run 40538072100 set `retain_candidate=false` and `keep_iso=false`; it wrote no R2 object. It used the distinct `retain_iso_artifact=true` path and a seven-day GitHub Actions artifact (ID `12751782226`, 9,446,709,248 bytes, expiry 2026-11-03). The run failed before guest execution and does not qualify the ISO.
+Run 40538072100 set `retain_candidate=false` and `keep_iso=false`. It wrote no R2 object. It used `retain_iso_artifact=true`.
 
-The legacy R2 candidate path still needs its own review of access, quota, overwrite protection, and lifecycle policy. See [candidate-retention.md](candidate-retention.md). This run changed no R2 policy or object and authorized no cleanup.
+Artifact `12751782226` contains a 9,446,709,248-byte ISO. Its expiry date is 2026-11-03. Receipt preparation failed before guest execution, so the run did not qualify the ISO.
+
+The separate R2 option needs its own review. Check access, quota, overwrite guards, and expiry. See [candidate-retention.md](candidate-retention.md). This run changed no R2 rule or object. It did not approve cleanup.
 
 ## Local producer-observation regression proposal
 

@@ -2,25 +2,33 @@
 
 ## Current observed boundary
 
-Run [40538072100](https://github.com/actions/runs/40538072100) on iso-builder main `4a0e1c34be84e87ce400414ed9f0bc2f1c309ce1` built the Skipjack/GNOME ISO, round-tripped its GitHub artifact, and verified the ISO hash. Preparation stopped before any guest boot with `ISO has no embedded etc/tunaos/live-source.json receipt`.
+Run [40538072100](https://github.com/actions/runs/40538072100) on iso-builder main `4a0e1c34be84e87ce400414ed9f0bc2f1c309ce1` built the Skipjack GNOME ISO and verified the artifact hash. The helper stopped before guest boot because it found no `etc/tunaos/live-source.json` receipt.
 
-The retained diagnostic artifact (ID `12750324651`) contains browser measurements and the artifact manifest; its guest output contains only the `DIAGNOSTIC-UNQUALIFIED.txt` marker. It does not preserve per-payload `unsquashfs` status, filesystem-format output, or stderr. The measurement records an applied overlay with `baseAnnotationMatched=false`, and the observed source manifest differs from the pre-build catalog digest. These facts do not distinguish absent metadata from an extraction/path/format error and do not establish the root cause.
+The retained artifact (ID `12750324651`) has browser measurements and the ISO manifest. Its guest folder has only the `DIAGNOSTIC-UNQUALIFIED.txt` marker. It has no `unsquashfs` results for each payload. The report says the overlay applied, but `baseAnnotationMatched=false`. The source digest from the build differs from the earlier catalog digest. These facts do not show the cause.
 
-No unchanged ISO was retried; the retained run remains diagnostic-unqualified.
+We did not retry these bytes. The run stays diagnostic-unqualified.
 
 ## Changed behavior
 
-- `.github/workflows/ci.yml` passes a diagnostic-log path to the receipt helper; the always-run diagnostics artifact includes that file.
-- `scripts/prepare-browser-selftest.py` records bounded per-payload `unsquashfs -s` format summaries and receipt-member path, status, exit code, and error text. Missing or unreadable receipts still fail before guest execution and produce no environment binding or qualification sidecar.
-- `tests/test_prepare_browser_selftest.py` covers a valid SquashFS with absent receipt paths, an invalid SquashFS superblock, error text truncation/control-character removal, and diagnostic retention on helper failure.
-- The integration plan and candidate-retention guide distinguish the exercised GitHub artifact path from the unused R2 path and record run 40538072100's failure.
+- `.github/workflows/ci.yml` passes a path for the receipt log. The upload step keeps this log when the helper fails.
+- The helper saves a short report for each payload. It includes `unsquashfs -s` output. It records each receipt path, status, exit code, and error. The helper stops before guest tests if a receipt is missing, invalid, or inconsistent. It writes no environment file or binding if validation fails.
+- The regression tests use temporary payloads. They test valid SquashFS with missing receipts and an invalid superblock. They also check text limits and the failure log.
+- The integration plan and retention guide show the GitHub artifact route and the separate R2 route. They record run 40538072100.
 
 ## Verification and limits
 
-`python3 -m pytest -q tests/test_prepare_browser_selftest.py tests/test_iso_artifact_retention.py tests/test_ci_evidence_upload.py` — 44 passed, 14 cleanup warnings from existing root-owned test fixtures. `actionlint .github/workflows/ci.yml` passed.
+`pytest` checked the helper and two related files. It passed 44 tests. It reported 14 cleanup warnings. The warnings came from test files owned by root. `actionlint .github/workflows/ci.yml` passed.
 
-The test uses temporary payloads and a controlled `unsquashfs` executable; it does not inspect the 9.4 GB retained ISO. No hosted browser workflow, actual ISO extraction, guest boot, or qualification was run for this diagnostic patch. The existing run [40538072100](https://github.com/actions/runs/40538072100) still stopped before guest execution.
+The test uses temporary payload files and a test `unsquashfs` executable. It does not read the 9.4 GB artifact. No hosted run has used this patch. Run [40538072100](https://github.com/actions/runs/40538072100) stopped before any guest test.
 
 ## Remaining acceptance
 
-Do not retry the same ISO bytes. First establish a same-base overlay carrying a valid `live-source.json` receipt whose source identity matches the browser build; inspect the retained per-payload diagnostics on that run. Producer/frontend authentication, a real media-bound installer frontend identity, strict plain/LUKS installation on browser-produced bytes, detached cold/warm boots, and three paired cold/warm measurements remain outstanding. Diagnostic evidence never qualifies a target or authorizes R2/cutover.
+Do not retry the same bytes. Build a new overlay from the same base. Add a valid `live-source.json` receipt. The receipt must name the source digest from the browser measurements. Inspect the new log before guest tests.
+
+The producer and browser frontend remain unauthenticated. The media has no verified digest for its installer app.
+
+Run strict plain install tests on browser-built bytes. Run encrypted install tests too. Then test cold boot and reboot with the ISO removed.
+
+Measure three cold builds and three warm builds under the same inputs. Show that warm builds transfer no complete image layers.
+
+Do not claim qualification or performance. Do not change R2 or cutover.
