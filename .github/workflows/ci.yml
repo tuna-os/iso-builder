@@ -75,6 +75,10 @@ on:
         description: "Retention days for the ISO artifact (1-90; repository maximum is 90)"
         type: string
         default: "7"
+      strict_roundtrip_test:
+        description: "Test exact retained Skipjack GNOME ISO bytes with current TunaOS strict harness; diagnostic only. Requires run_full, only=skipjack-gnome, retain_iso_artifact, diagnostic_unqualified; no benchmark or R2."
+        type: boolean
+        default: false
       benchmark:
         description: "Run each @full build three times and attach median/range evidence"
         type: boolean
@@ -425,7 +429,7 @@ jobs:
   # pulls to iterate on one edition is indefensible — the first sweep did
   # exactly that and spent eight cells learning one thing.
   full-plan:
-    if: github.event_name == 'workflow_dispatch' && (github.event.inputs.run_full == 'true' || github.event.inputs.retain_candidate == 'true' || github.event.inputs.retain_iso_artifact == 'true')
+    if: github.event_name == 'workflow_dispatch' && (github.event.inputs.run_full == 'true' || github.event.inputs.retain_candidate == 'true' || github.event.inputs.retain_iso_artifact == 'true' || github.event.inputs.strict_roundtrip_test == 'true')
     runs-on: ubuntu-latest
     timeout-minutes: 5
     outputs:
@@ -442,6 +446,7 @@ jobs:
           KEEP_ISO: ${{ github.event.inputs.keep_iso }}
           DIAGNOSTIC_UNQUALIFIED: ${{ github.event.inputs.diagnostic_unqualified }}
           RETAIN_ISO_ARTIFACT: ${{ github.event.inputs.retain_iso_artifact }}
+          STRICT_ROUNDTRIP_TEST: ${{ github.event.inputs.strict_roundtrip_test }}
           RETAIN_ISO_ARTIFACT_DAYS: ${{ github.event.inputs.retain_iso_artifact_days }}
         run: |
           python3 - <<'PY' >> "$GITHUB_OUTPUT"
@@ -458,6 +463,12 @@ jobs:
               days = os.environ.get("RETAIN_ISO_ARTIFACT_DAYS", "")
               if not days.isdigit() or not 1 <= int(days) <= 90:
                   raise SystemExit("ISO artifact retention requires retain_iso_artifact_days between 1 and 90")
+          if os.environ.get("STRICT_ROUNDTRIP_TEST") == "true":
+              expected = {"ONLY": "skipjack-gnome", "RUN_FULL": "true", "BENCHMARK": "false",
+                          "KEEP_ISO": "false", "DIAGNOSTIC_UNQUALIFIED": "true",
+                          "RETAIN_ISO_ARTIFACT": "true", "RETAIN_CANDIDATE": "false"}
+              if any(os.environ.get(k) != v for k, v in expected.items()):
+                  raise SystemExit("strict_roundtrip_test requires run_full=true, only=skipjack-gnome, retain_iso_artifact=true, diagnostic_unqualified=true, benchmark=false, keep_iso=false, retain_candidate=false")
           if os.environ.get("RETAIN_CANDIDATE") == "true":
               expected = {"ONLY": "yellowfin-gnome", "RUN_FULL": "true", "BENCHMARK": "false", "KEEP_ISO": "false"}
               if any(os.environ.get(k) != v for k, v in expected.items()):
@@ -677,13 +688,22 @@ jobs:
       # still being the branch tip at clone time — same convention the wasm
       # job above uses to pin tacklebox. Bump deliberately through review.
       - name: checkout tunaOS test scripts (pinned)
+        if: github.event.inputs.strict_roundtrip_test != 'true'
         uses: actions/checkout@v7
         with:
           repository: tuna-os/tunaOS
           ref: e89bf562d7488242295bf02c228bbba4c509b388
           path: tunaos-e2e
+      - name: checkout current tunaOS strict harness (pinned)
+        if: github.event.inputs.strict_roundtrip_test == 'true'
+        uses: actions/checkout@v7
+        with:
+          repository: tuna-os/tunaOS
+          ref: 64da1ea1af6b19487ad9cea85213c41646e3ff7f
+          path: tunaos-e2e-current
 
       - name: verify guest under QEMU (${{ matrix.edition.slug }})
+        if: github.event.inputs.strict_roundtrip_test != 'true'
         timeout-minutes: 25
         env:
           QUALIFY: ${{ matrix.edition.qualify }}
@@ -824,7 +844,15 @@ jobs:
       # Free the local copy first so the round trip reads GitHub's bytes, not ours.
       - name: drop local chunks before round trip
         if: ${{ always() && !cancelled() && steps.iso-artifact-upload.outcome == 'success' }}
-        run: rm -rf "$RUNNER_TEMP/iso-artifact" "$RUNNER_TEMP/iso-roundtrip"
+        env:
+          SLUG: ${{ matrix.edition.slug }}
+          STRICT_ROUNDTRIP_TEST: ${{ github.event.inputs.strict_roundtrip_test }}
+        run: |
+          set -euo pipefail
+          rm -rf "$RUNNER_TEMP/iso-artifact" "$RUNNER_TEMP/iso-roundtrip"
+          if [ "$STRICT_ROUNDTRIP_TEST" = "true" ]; then
+            rm -f "$RUNNER_TEMP/${SLUG}.iso"
+          fi
 
       - name: download ISO artifact again
         if: ${{ always() && !cancelled() && steps.iso-artifact-upload.outcome == 'success' }}
@@ -834,6 +862,7 @@ jobs:
           path: ${{ runner.temp }}/iso-roundtrip
 
       - name: verify ISO artifact round trip
+        id: iso-roundtrip
         if: ${{ always() && !cancelled() && steps.iso-artifact-upload.outcome == 'success' }}
         timeout-minutes: 30
         env:
@@ -841,10 +870,15 @@ jobs:
           ARTIFACT: iso-${{ matrix.edition.slug }}-run${{ github.run_id }}-a${{ github.run_attempt }}
           ISO_SHA256: ${{ steps.iso-artifact.outputs.iso_sha256 }}
           ARTIFACT_ID: ${{ steps.iso-artifact-upload.outputs.artifact-id }}
+          STRICT_ROUNDTRIP_TEST: ${{ github.event.inputs.strict_roundtrip_test }}
         run: |
           set -euo pipefail
+          output_args=()
+          if [ "$STRICT_ROUNDTRIP_TEST" = "true" ]; then
+            output_args=(--output "$RUNNER_TEMP/${SLUG}-roundtrip.iso")
+          fi
           python3 scripts/retain-iso-artifact.py verify --dir "$RUNNER_TEMP/iso-roundtrip" \
-            --expected-sha256 "$ISO_SHA256" > "$RUNNER_TEMP/iso-roundtrip-result.json"
+            --expected-sha256 "$ISO_SHA256" "${output_args[@]}" > "$RUNNER_TEMP/iso-roundtrip-result.json"
           {
             echo "### ISO retained as GitHub artifact (diagnostic, not qualified)"
             echo ""
@@ -855,6 +889,86 @@ jobs:
             cat "$RUNNER_TEMP/iso-roundtrip-result.json"
             echo '```'
             echo "Fetch: \`gh run download ${GITHUB_RUN_ID} -R ${GITHUB_REPOSITORY} -n ${ARTIFACT}\` then \`python3 scripts/retain-iso-artifact.py verify --dir <dir> --expected-sha256 <browser-measured hash> --output ${SLUG}.iso\`."
+          } >> "$GITHUB_STEP_SUMMARY"
+      - name: prepare strict inputs from round-tripped media receipts
+        id: same-byte-inputs
+        if: ${{ always() && !cancelled() && github.event.inputs.strict_roundtrip_test == 'true' && steps.iso-roundtrip.outcome == 'success' }}
+        timeout-minutes: 10
+        env:
+          SLUG: ${{ matrix.edition.slug }}
+          EDITION_REF: ${{ matrix.edition.ref }}
+          PLATFORM: ${{ matrix.edition.platform }}
+          ARTIFACT_NAME: iso-${{ matrix.edition.slug }}-run${{ github.run_id }}-a${{ github.run_attempt }}
+          ARTIFACT_ID: ${{ steps.iso-artifact-upload.outputs.artifact-id }}
+          REPOSITORY: ${{ github.repository }}
+          RUN_ID: ${{ github.run_id }}
+          RUN_ATTEMPT: ${{ github.run_attempt }}
+          SOURCE_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends \
+            xorriso squashfs-tools qemu-system-x86 qemu-utils ovmf swtpm swtpm-tools socat \
+            netpbm python3-pil imagemagick tesseract-ocr sshpass jq
+          IFS=: read -r variant flavor <<< "$EDITION_REF"
+          iso="$RUNNER_TEMP/${SLUG}-roundtrip.iso"
+          python3 scripts/prepare-browser-selftest.py \
+            --iso "$iso" \
+            --measurements "e2e/test-results/build-measurements-qual-evidence-${SLUG}-s1.json" \
+            --browser-evidence "e2e/test-results/qual-evidence-${SLUG}-s1.json" \
+            --manifest "$RUNNER_TEMP/iso-roundtrip/manifest.json" \
+            --payload-extractor "$GITHUB_WORKSPACE/tunaos-e2e-current/scripts/extract-iso-payloads.py" \
+            --repository "$REPOSITORY" --run-id "$RUN_ID" --run-attempt "$RUN_ATTEMPT" \
+            --source-sha "$SOURCE_SHA" --artifact-id "$ARTIFACT_ID" --artifact-name "$ARTIFACT_NAME" \
+            --variant "$variant" --flavor "$flavor" --slug "$SLUG" --platform "$PLATFORM" \
+            --out-env "$RUNNER_TEMP/same-byte-inputs.env" \
+            --out-binding "e2e/test-results/same-byte-guest-test-binding-${SLUG}.json"
+          cat "$RUNNER_TEMP/same-byte-inputs.env" >> "$GITHUB_ENV"
+          {
+            echo "### Same-byte strict guest test inputs (diagnostic only)"
+            echo "Media receipts, browser measurements, run/attempt and artifact id matched. This does not qualify the target."
+            cat "e2e/test-results/same-byte-guest-test-binding-${SLUG}.json"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: verify exact retained ISO under current strict harness
+        if: ${{ always() && !cancelled() && github.event.inputs.strict_roundtrip_test == 'true' && steps.iso-roundtrip.outcome == 'success' && steps.same-byte-inputs.outcome == 'success' }}
+        timeout-minutes: 60
+        env:
+          SLUG: ${{ matrix.edition.slug }}
+        run: |
+          set -euo pipefail
+          ISO="$RUNNER_TEMP/${SLUG}-roundtrip.iso"
+          if [ ! -f "$ISO" ]; then
+            echo "::error::Verified round-trip ISO is missing: $ISO"
+            exit 1
+          fi
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | \
+            sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm || true
+          sudo env -u TBOX_E2E_IMAGE -u FISHERMAN_OVERRIDE \
+            VARIANT="$VARIANT" FLAVOR="$FLAVOR" \
+            TUNAOS_QUAL_EXECUTION_KIND="$TUNAOS_QUAL_EXECUTION_KIND" \
+            STRICT_PUBLISHED_MEDIA="$STRICT_PUBLISHED_MEDIA" \
+            TUNAOS_QUAL_SOURCE_DIGEST="$TUNAOS_QUAL_SOURCE_DIGEST" \
+            TUNAOS_QUAL_SOURCE_REF="$TUNAOS_QUAL_SOURCE_REF" \
+            TUNAOS_QUAL_OVERLAY_DIGEST="$TUNAOS_QUAL_OVERLAY_DIGEST" \
+            TUNAOS_QUAL_INSTALLER_DIGEST="$TUNAOS_QUAL_INSTALLER_DIGEST" \
+            TUNAOS_QUAL_ENGINE_DIGEST="$TUNAOS_QUAL_ENGINE_DIGEST" \
+            TUNAOS_QUAL_MEDIA_DIGEST="$TUNAOS_QUAL_MEDIA_DIGEST" \
+            TUNAOS_QUAL_PLATFORM="$TUNAOS_QUAL_PLATFORM" \
+            TUNAOS_QUAL_CPU_BASELINE="$TUNAOS_QUAL_CPU_BASELINE" \
+            TUNAOS_QUAL_HARDWARE_SCOPE="$TUNAOS_QUAL_HARDWARE_SCOPE" \
+            TUNAOS_QUAL_BROWSER_NAME="$TUNAOS_QUAL_BROWSER_NAME" \
+            TUNAOS_QUAL_BROWSER_VERSION="$TUNAOS_QUAL_BROWSER_VERSION" \
+            TUNAOS_QUAL_BROWSER_MEMORY_GIB="$TUNAOS_QUAL_BROWSER_MEMORY_GIB" \
+            TUNAOS_QUAL_BROWSER_FREE_DISK_GIB="$TUNAOS_QUAL_BROWSER_FREE_DISK_GIB" \
+            "$GITHUB_WORKSPACE/tunaos-e2e-current/scripts/iso-e2e.sh" "$ISO" --strict-offline-gui \
+            --output "luks-verify-${SLUG}-same-byte-diagnostic-unqualified" --timeout 900
+          {
+            echo "### Same-byte strict guest test completed (diagnostic, not qualified)"
+            echo "- ISO: \`${TUNAOS_QUAL_MEDIA_DIGEST}\`"
+            echo "- Browser test diagnostics and media-bound identities are attached; producer/frontend authentication remains absent."
           } >> "$GITHUB_STEP_SUMMARY"
 
       - name: disk after build

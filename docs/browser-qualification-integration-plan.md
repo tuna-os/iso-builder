@@ -1,7 +1,9 @@
 # Browser ISO qualification integration proposal
 
-This is a review proposal. It provides no qualification evidence or authorization
-to run, publish, deploy, or change download routes.
+This document reviews the full browser-to-install qualification contract. The
+opt-in same-run diagnostic path is now implemented in `.github/workflows/ci.yml`
+on the `strict_roundtrip_test` input; it has not been dispatched. It authorizes
+no qualification, publication, deployment, or download-route change.
 
 ## Reviewed sources
 
@@ -19,12 +21,15 @@ frontend revisions that you select for a run.
 1. The GitHub connector supports reads and failed-job reruns, but no workflow dispatch.
    A rerun cannot supply new dispatch inputs. Do not substitute a push, rerun,
    or production deployment for dispatch.
-2. `keep_iso=true` publishes to R2 only after guest verification succeeds.
-   Failure discards the runner-local candidate. For parity, named artifacts in GitHub must contain ISO files and experience manifests.
-   The full workflow creates neither artifact.
-3. The full workflow does not supply immutable identities for the overlay and engine.
-   It also lacks the target variant/flavor and measured browser version that the strict harness needs.
-   A new pin for checkout cannot qualify it alone.
+2. `keep_iso=true` still publishes to R2 only after guest verification succeeds.
+   `retain_iso_artifact=true` now preserves a bounded, hash-verified artifact
+   after the browser build, including guest failure. The opt-in
+   `strict_roundtrip_test=true` path reconstructs those same-run bytes and runs
+   the current strict harness without R2 or a cross-repository artifact credential.
+3. The default full workflow does not supply strict media identities. The
+   bounded same-byte path derives source, overlay, engine and installer inputs
+   from embedded media receipts, joins source/overlay to browser observations,
+   and passes measured browser inputs through sudo. It has not had a hosted run.
 4. The diagnostic record does not identify the producer or frontend.
    An ISO hash, a hash of loaded WASM and engine observations do not fill those gaps.
    The legacy `qual-evidence` file uses catalog facts. It is not an authenticated browser receipt.

@@ -185,6 +185,26 @@ def test_plan_rejects_unbounded_scope(key, value):
     r = plan(env)
     assert r.returncode != 0 and 'ISO artifact retention requires' in r.stderr
 
+def test_strict_roundtrip_plan_accepts_only_the_bounded_diagnostic_cell():
+    env = valid()
+    env.update(STRICT_ROUNDTRIP_TEST='true', DIAGNOSTIC_UNQUALIFIED='true')
+    r = plan(env)
+    assert r.returncode == 0, r.stderr
+    assert 'count=1' in r.stdout and '"slug": "skipjack-gnome"' in r.stdout
+
+
+@pytest.mark.parametrize('key,value', [
+    ('ONLY', 'bonito-kde'), ('RUN_FULL', 'false'), ('BENCHMARK', 'true'),
+    ('KEEP_ISO', 'true'), ('DIAGNOSTIC_UNQUALIFIED', 'false'),
+    ('RETAIN_ISO_ARTIFACT', 'false'), ('RETAIN_CANDIDATE', 'true'),
+])
+def test_strict_roundtrip_plan_rejects_unbounded_or_published_modes(key, value):
+    env = valid()
+    env.update(STRICT_ROUNDTRIP_TEST='true', DIAGNOSTIC_UNQUALIFIED='true')
+    env[key] = value
+    r = plan(env)
+    assert r.returncode != 0
+
 
 def test_workflow_artifact_path_needs_no_secrets_and_defaults_off():
     inputs = WORKFLOW[True]['workflow_dispatch']['inputs'] if True in WORKFLOW else WORKFLOW['on']['workflow_dispatch']['inputs']
