@@ -1,9 +1,10 @@
 # Browser ISO qualification integration proposal
 
-This document reviews the full browser-to-install qualification contract. The
-opt-in same-run diagnostic path is now implemented in `.github/workflows/ci.yml`
-on the `strict_roundtrip_test` input; it has not been dispatched. It authorizes
-no qualification, publication, deployment, or download-route change.
+This document reviews how browser evidence must connect to installation
+qualification. The workflow now has an optional diagnostic path in
+`.github/workflows/ci.yml`, controlled by `strict_roundtrip_test`. No one has
+dispatched it. The path does not authorize qualification, publication,
+deployment, or a download-route change.
 
 ## Reviewed sources
 
@@ -26,10 +27,10 @@ frontend revisions that you select for a run.
    after the browser build, including guest failure. The opt-in
    `strict_roundtrip_test=true` path reconstructs those same-run bytes and runs
    the current strict harness without R2 or a cross-repository artifact credential.
-3. The default full workflow does not supply strict media identities. The
-   bounded same-byte path derives source, overlay, engine and installer inputs
-   from embedded media receipts, joins source/overlay to browser observations,
-   and passes measured browser inputs through sudo. It has not had a hosted run.
+3. The default workflow does not set strict identities for the media. This path
+   reads source, overlay, engine, and installer IDs from receipts in the media.
+   It compares source and overlay IDs with browser observations. It passes
+   browser measurements through `sudo`. No one has run it on a hosted runner.
 4. The diagnostic record does not identify the producer or frontend.
    An ISO hash, a hash of loaded WASM and engine observations do not fill those gaps.
    The legacy `qual-evidence` file uses catalog facts. It is not an authenticated browser receipt.

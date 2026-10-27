@@ -133,28 +133,25 @@ The bounded same-byte path is off by default and accepts only this dispatch:
 {"run_full":true,"only":"skipjack-gnome","benchmark":false,"keep_iso":false,"retain_iso_artifact":true,"diagnostic_unqualified":true,"strict_roundtrip_test":true,"retain_iso_artifact_days":"7"}
 ```
 
-It adds no cross-repository artifact credential or R2 write. The workflow removes
-the local ISO, downloads its own run's retained artifact, verifies the chunks and
-whole-file hash against the browser measurement, and restores those bytes to a
-separate ISO file. It checks the manifest repository, source SHA, run ID, attempt,
-target and measurements against this job; the upload action's artifact ID is
-recorded in the binding sidecar before boot.
+The workflow adds no cross-repository artifact credential and writes nothing to R2. It deletes the local ISO, downloads the artifact from this run, and checks each chunk and the full-file hash against the browser measurement. It restores the same bytes to a separate ISO file. It compares the manifest's repository, source SHA, run ID, try number, target, and measurements with this job. The upload action returns an artifact ID. The workflow records that ID in the binding sidecar before guest boot.
 
-Before invoking the current tunaOS strict harness pinned at
-`64da1ea1af6b19487ad9cea85213c41646e3ff7f`, the workflow reads
+Before the workflow starts the strict harness at
+`64da1ea1af6b19487ad9cea85213c41646e3ff7f`, it reads
 `live-source.json` and `live-installer-info` from the ISO's live filesystem
-payloads. It joins source and overlay digests to the browser `engineBuildResult`,
-uses the media receipt's tacklebox executable digest separately from the measured
-browser WASM digest, and requires the media-bound installer identity. Browser
-name/version and same-runner memory/free-disk measurements are passed explicitly
-through `sudo`; `TBOX_E2E_IMAGE` and `FISHERMAN_OVERRIDE` are unset. Missing or
-inconsistent identity stops before guest execution.
+payloads. It compares source and overlay digests with the browser's
+`engineBuildResult`. The media receipt gives the tacklebox executable digest.
 
-The sidecar and output directory remain labelled diagnostic-unqualified. This
-test does not authenticate the producer/frontend, turn a failed browser identity
-into a pass, qualify the target, publish an ISO, or change catalog/download
-status. `baseAnnotationMatched` is retained as observed evidence, not interpreted
-as proof of a match. No hosted run has been dispatched for this change.
+The browser reports its WASM digest separately. The workflow uses the installer
+identity from the media receipt. It passes the browser name and version, plus
+same-runner memory and free-disk measurements, through `sudo`. It removes
+`TBOX_E2E_IMAGE` and `FISHERMAN_OVERRIDE` from the environment. If an identity is
+missing or inconsistent, the workflow stops before guest execution.
+
+The sidecar and output directory use the diagnostic-unqualified label. This
+test does not authenticate the producer or frontend. It does not turn a failed
+browser identity into a pass, qualify the target, publish an ISO, or change
+catalog or download status. The sidecar records `baseAnnotationMatched` as
+evidence; that value does not prove a match. This change has no hosted run.
 
 To fetch and check the ISO yourself, use a hash that you saved independently:
 
