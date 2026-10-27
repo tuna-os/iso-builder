@@ -14,22 +14,24 @@ The strict path checks out TunaOS harness commit `64da1ea1af6b19487ad9cea85213c4
 
 ## Files changed
 
-- `.github/workflows/ci.yml`: opt-in dispatch validation, exact round-trip output, current harness checkout, receipt preparation and strict guest path.
-- `scripts/prepare-browser-selftest.py`: receipt extraction and identity checks for the same ISO bytes.
+- `.github/workflows/ci.yml`: dispatch rules, round-trip budget, receipt prep, guest test, and diagnostic evidence finalization.
+- `scripts/finalize-diagnostic-output.py`: changes nested receipts from qualification to diagnostic names and writes a marker.
+- `scripts/prepare-browser-selftest.py`: extracts media receipts and checks identity for the same ISO bytes.
+- `tests/test_finalize_diagnostic_output.py`: tests nested receipts and checks the diagnostic marker.
 - `tests/test_prepare_browser_selftest.py`: exact-byte, identity, run/try, and installer-receipt behavior.
-- `tests/test_iso_artifact_retention.py`: strict-dispatch policy checks.
-- `docs/candidate-retention.md` and `docs/browser-qualification-integration-plan.md`: route and limits.
-- `docs/iso-builder-3797-same-byte-handoff.md`: branch state, verification and remaining limits.
+- `tests/test_iso_artifact_retention.py`: strict-dispatch policy and timeout totals.
+- `docs/candidate-retention.md` and `docs/browser-qualification-integration-plan.md`: route, evidence labels, and limits.
+- `docs/iso-builder-3797-same-byte-handoff.md`: branch state, verification, and remaining limits.
 
 ## Verification and limits
 
-All Python tests passed: 205 passed and 1 skipped. The focused suite passed 35 tests. `actionlint .github/workflows/ci.yml` and `python3 -m py_compile scripts/prepare-browser-selftest.py` passed. Pytest warned that it could not remove root-owned files from its temporary garbage directory. I left those files unchanged.
+All Python tests passed: 209 passed and 1 skipped. `actionlint .github/workflows/ci.yml` passed. `python3 -m py_compile` passed for both preparation scripts. Pytest warned that it could not remove root-owned files from its temporary garbage directory. I left those files untouched.
 
 A local smoke test built a small ISO. Its SquashFS payload held both TunaOS receipts. The test split the ISO and checked the exact bytes again.
 
 It ran the real payload extractor and input-preparation CLI. The CLI found the installer digest. It kept the engine digest from the media separate from the browser's WASM digest. It wrote the expected artifact ID.
 
-I did not dispatch a workflow or boot a real ISO. AWS credits have run out. Do not dispatch or publish. This does not prove a real desktop or GDM result.
+I did not dispatch a workflow or boot a real ISO. AWS credits have run out, but this workflow uses GitHub-hosted runners. No diagnostic run on a hosted runner has checked GitHub quota, KVM access, or runner capacity. Check those limits before dispatch. Do not publish. This does not prove a real desktop or GDM result.
 
 PR #285 remains separate and unmerged. This branch uses its diagnostic fields; it does not repeat browser observation. Both branches change `ci.yml`; combine those edits before you open or stack a PR. If PR #3431 changes before a hosted run, recheck the TunaOS harness pin and receipt extractor.
 

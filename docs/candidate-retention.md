@@ -133,6 +133,11 @@ The bounded same-byte path is off by default and accepts only this dispatch:
 {"run_full":true,"only":"skipjack-gnome","benchmark":false,"keep_iso":false,"retain_iso_artifact":true,"diagnostic_unqualified":true,"strict_roundtrip_test":true,"retain_iso_artifact_days":"7"}
 ```
 
+The job timeout is 360 minutes for this path. The capped build, artifact
+transfer, input preparation, and guest test total 275 minutes. Setup and the
+pinned harness checkout have 45 minutes of caps. Finalization has 35 minutes;
+the job keeps 5 minutes for margin.
+
 The workflow adds no cross-repository artifact credential and writes nothing to R2. It deletes the local ISO, downloads the artifact from this run, and checks each chunk and the full-file hash against the browser measurement. It restores the same bytes to a separate ISO file. It compares the manifest's repository, source SHA, run ID, try number, target, and measurements with this job. The upload action returns an artifact ID. The workflow records that ID in the binding sidecar before guest boot.
 
 Before the workflow starts the strict harness at
@@ -152,6 +157,12 @@ test does not authenticate the producer or frontend. It does not turn a failed
 browser identity into a pass, qualify the target, publish an ISO, or change
 catalog or download status. The sidecar records `baseAnnotationMatched` as
 evidence; that value does not prove a match. This change has no hosted run.
+
+Before upload, the finalizer renames each nested qualification receipt to a diagnostic name.
+It uses `diagnostic-unqualified-evidence.json`, with a number if that name exists.
+The finalizer writes `DIAGNOSTIC-UNQUALIFIED.txt` in the guest output directory.
+The diagnostics artifact includes the renamed receipt and marker.
+The strict path skips the separate `qual-*` evidence upload.
 
 To fetch and check the ISO yourself, use a hash that you saved independently:
 

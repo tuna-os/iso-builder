@@ -225,3 +225,70 @@ def test_workflow_artifact_path_needs_no_secrets_and_defaults_off():
     assert WORKFLOW['permissions'] == {'contents': 'read'}
     # The R2 path is untouched and still gated on its own input.
     assert "retain_candidate == 'true'" in next(s for s in job['steps'] if s.get('name', '').startswith('retain opt-in'))['if']
+
+
+def test_strict_roundtrip_budget_covers_work_and_keeps_finalization_time():
+    job = WORKFLOW['jobs']['full-matrix']
+    steps = job['steps']
+
+    def named(prefix):
+        return next(s for s in steps if s.get('name', '').startswith(prefix))
+
+    expression = job['timeout-minutes']
+    assert "strict_roundtrip_test == 'true' && 360" in expression
+    assert "retain_iso_artifact == 'true' && 330" in expression
+
+    work = [
+        named('build '),
+        named('retain ISO as GitHub artifact'),
+        named('upload ISO chunks'),
+        named('upload ISO manifest'),
+        named('drop local chunks'),
+        named('download ISO artifact again'),
+        named('verify ISO artifact round trip'),
+        named('prepare strict inputs'),
+        named('verify exact retained ISO'),
+    ]
+    assert [s['timeout-minutes'] for s in work] == [75, 30, 30, 5, 5, 30, 30, 10, 60]
+    assert sum(s['timeout-minutes'] for s in work) == 275
+
+    setup = [
+        steps[0],
+        next(s for s in steps if s.get('with', {}).get('name') == 'engine'),
+        next(s for s in steps if s.get('uses', '').startswith('actions/setup-node@')),
+        named('Cache Playwright browsers'),
+        named('install deps + chromium'),
+        named('checkout current tunaOS strict harness'),
+    ]
+    assert [s['timeout-minutes'] for s in setup] == [5, 5, 5, 5, 20, 5]
+    assert sum(s['timeout-minutes'] for s in setup) == 45
+
+    finalization = [
+        named('disk after build'),
+        named('label diagnostic output and make guest harness output readable'),
+        named('upload browser evidence'),
+        named('upload diagnostics'),
+    ]
+    assert [s['timeout-minutes'] for s in finalization] == [5, 10, 10, 10]
+    assert sum(s['timeout-minutes'] for s in finalization) == 35
+    assert 360 - 275 - 45 - 35 == 5
+
+
+def test_diagnostic_receipt_finalizer_runs_before_upload_and_skips_qualification_upload():
+    steps = WORKFLOW['jobs']['full-matrix']['steps']
+    names = [s.get('name', '') for s in steps]
+    finalizer = next(s for s in steps if s.get('name') == 'label diagnostic output and make guest harness output readable')
+    diagnostics = next(s for s in steps if s.get('name') == 'upload diagnostics')
+    browser_evidence = next(s for s in steps if s.get('name') == 'upload browser evidence (survives guest failure)')
+    validate = next(s for s in steps if s.get('name') == 'validate + merge qualification evidence')
+    upload_qualification = next(s for s in steps if s.get('name') == 'upload qualification evidence')
+
+    assert finalizer['if'] == 'always()'
+    assert finalizer['env']['STRICT_ROUNDTRIP_TEST'] == "${{ github.event.inputs.strict_roundtrip_test }}"
+    assert 'finalize-diagnostic-output.py' in finalizer['run']
+    assert finalizer['run'].index('finalize-diagnostic-output.py') < finalizer['run'].index('sudo chown -R')
+    assert names.index(finalizer['name']) < names.index(diagnostics['name'])
+    assert 'luks-verify-*/' in diagnostics['with']['path']
+    assert names.index(finalizer['name']) < names.index(browser_evidence['name'])
+    assert "strict_roundtrip_test != 'true'" in validate['if']
+    assert "strict_roundtrip_test != 'true'" in upload_qualification['if']
