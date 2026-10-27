@@ -155,8 +155,13 @@ missing or inconsistent, the workflow stops before guest execution.
 The sidecar and output directory use the diagnostic-unqualified label. This
 test does not authenticate the producer or frontend. It does not turn a failed
 browser identity into a pass, qualify the target, publish an ISO, or change
-catalog or download status. The sidecar records `baseAnnotationMatched` as
-evidence; that value does not prove a match. This change has no hosted run.
+catalog or download status. `baseAnnotationMatched` is recorded evidence; false
+does not establish why the annotation did not match.
+
+The hosted run [40538072100](https://github.com/actions/runs/40538072100)
+exercised the GitHub-artifact strict diagnostic path, not this R2 candidate
+uploader. It failed during receipt preparation before guest execution;
+`retain_candidate=false`, so no R2 object was written and no target was qualified.
 
 Before upload, the finalizer renames each nested qualification receipt to a diagnostic name.
 It uses `diagnostic-unqualified-evidence.json`, with a number if that name exists.

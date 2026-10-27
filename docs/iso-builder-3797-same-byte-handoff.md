@@ -1,42 +1,26 @@
 # iso-builder #3797 same-byte diagnostic handoff
 
-## Current work
+## Current observed boundary
 
-Implementation is in the isolated worktree `/tmp/iso-builder-3797-same-byte`, branch `codex/3797-same-byte-selftest-20261027`, based on `origin/main` at `d14a830`. The user's main worktree and its untracked `.spektacular/` and `e2e/screenshots/` files were left untouched.
+Run [40538072100](https://github.com/actions/runs/40538072100) on iso-builder main `4a0e1c34be84e87ce400414ed9f0bc2f1c309ce1` built the Skipjack/GNOME ISO, round-tripped its GitHub artifact, and verified the ISO hash. Preparation stopped before any guest boot with `ISO has no embedded etc/tunaos/live-source.json receipt`.
 
-The workflow accepts this path only with these inputs: `run_full=true`, `only=skipjack-gnome`, `retain_iso_artifact=true`, `diagnostic_unqualified=true`, `benchmark=false`, `keep_iso=false`, and `retain_candidate=false`. It uses an artifact from the same GitHub run. It needs no cross-repository artifact credential or R2. Before the workflow downloads the artifact, it deletes the local ISO. The strict harness uses the ISO that the workflow rebuilds and checks by hash.
+The retained diagnostic artifact (ID `12750324651`) contains browser measurements and the artifact manifest; its guest output contains only the `DIAGNOSTIC-UNQUALIFIED.txt` marker. It does not preserve per-payload `unsquashfs` status, filesystem-format output, or stderr. The measurement records an applied overlay with `baseAnnotationMatched=false`, and the observed source manifest differs from the pre-build catalog digest. These facts do not distinguish absent metadata from an extraction/path/format error and do not establish the root cause.
 
-Before the guest starts, `scripts/prepare-browser-selftest.py` checks the downloaded manifest against this run: repository, source SHA, run ID, try number, target, and measurements. It records the upload action's artifact ID and hashes the restored file. It compares that hash with the browser measurement. The script extracts `live-source.json` and `live-installer-info` from the ISO payloads.
+No unchanged ISO was retried; the retained run remains diagnostic-unqualified.
 
-The source and overlay IDs must match the browser's `engineBuildResult`. The media receipt supplies the installer digest. The harness uses the digest of the live-media tacklebox executable as its engine ID. The browser WASM digest remains a separate observation. The script records `baseAnnotationMatched`; a false value does not mean that the digest check failed.
+## Changed behavior
 
-The strict path checks out TunaOS harness commit `64da1ea1af6b19487ad9cea85213c41646e3ff7f`. It passes source, overlay, installer, engine, media, target, browser name and version, and same-runner memory and free-disk measurements through `sudo`. It removes `TBOX_E2E_IMAGE` and `FISHERMAN_OVERRIDE` from the environment before the guest starts. If an identity is missing, the script stops before guest execution. The sidecar and output path stay marked diagnostic-unqualified. This path does not claim producer or frontend authentication, catalog qualification, publication, or a download-route change.
-
-## Files changed
-
-- `.github/workflows/ci.yml`: dispatch rules, round-trip budget, receipt prep, guest test, and diagnostic evidence finalization.
-- `scripts/finalize-diagnostic-output.py`: changes nested receipts from qualification to diagnostic names and writes a marker.
-- `scripts/prepare-browser-selftest.py`: extracts media receipts and checks identity for the same ISO bytes.
-- `tests/test_finalize_diagnostic_output.py`: tests nested receipts and checks the diagnostic marker.
-- `tests/test_prepare_browser_selftest.py`: exact-byte, identity, run/try, and installer-receipt behavior.
-- `tests/test_iso_artifact_retention.py`: strict-dispatch policy and timeout totals.
-- `docs/candidate-retention.md` and `docs/browser-qualification-integration-plan.md`: route, evidence labels, and limits.
-- `docs/iso-builder-3797-same-byte-handoff.md`: branch state, verification, and remaining limits.
+- `.github/workflows/ci.yml` passes a diagnostic-log path to the receipt helper; the always-run diagnostics artifact includes that file.
+- `scripts/prepare-browser-selftest.py` records bounded per-payload `unsquashfs -s` format summaries and receipt-member path, status, exit code, and error text. Missing or unreadable receipts still fail before guest execution and produce no environment binding or qualification sidecar.
+- `tests/test_prepare_browser_selftest.py` covers a valid SquashFS with absent receipt paths, an invalid SquashFS superblock, error text truncation/control-character removal, and diagnostic retention on helper failure.
+- The integration plan and candidate-retention guide distinguish the exercised GitHub artifact path from the unused R2 path and record run 40538072100's failure.
 
 ## Verification and limits
 
-All Python tests passed: 209 passed and 1 skipped. `actionlint .github/workflows/ci.yml` passed. `python3 -m py_compile` passed for both preparation scripts. Pytest warned that it could not remove root-owned files from its temporary garbage directory. I left those files untouched.
+`python3 -m pytest -q tests/test_prepare_browser_selftest.py tests/test_iso_artifact_retention.py tests/test_ci_evidence_upload.py` — 44 passed, 14 cleanup warnings from existing root-owned test fixtures. `actionlint .github/workflows/ci.yml` passed.
 
-A local smoke test built a small ISO. Its SquashFS payload held both TunaOS receipts. The test split the ISO and checked the exact bytes again.
+The test uses temporary payloads and a controlled `unsquashfs` executable; it does not inspect the 9.4 GB retained ISO. No hosted browser workflow, actual ISO extraction, guest boot, or qualification was run for this diagnostic patch. The existing run [40538072100](https://github.com/actions/runs/40538072100) still stopped before guest execution.
 
-It ran the real payload extractor and input-preparation CLI. The CLI found the installer digest. It kept the engine digest from the media separate from the browser's WASM digest. It wrote the expected artifact ID.
+## Remaining acceptance
 
-I did not dispatch a workflow or boot a real ISO. AWS credits have run out, but this workflow uses GitHub-hosted runners. No diagnostic run on a hosted runner has checked GitHub quota, KVM access, or runner capacity. Check those limits before dispatch. Do not publish. This does not prove a real desktop or GDM result.
-
-PR #285 remains separate and unmerged. This branch uses its diagnostic fields; it does not repeat browser observation. Both branches change `ci.yml`; combine those edits before you open or stack a PR. If PR #3431 changes before a hosted run, recheck the TunaOS harness pin and receipt extractor.
-
-## Safe dispatch inputs after resources are available
-
-```json
-{"run_full":true,"only":"skipjack-gnome","benchmark":false,"keep_iso":false,"retain_iso_artifact":true,"diagnostic_unqualified":true,"strict_roundtrip_test":true,"retain_iso_artifact_days":"7"}
-```
+Do not retry the same ISO bytes. First establish a same-base overlay carrying a valid `live-source.json` receipt whose source identity matches the browser build; inspect the retained per-payload diagnostics on that run. Producer/frontend authentication, a real media-bound installer frontend identity, strict plain/LUKS installation on browser-produced bytes, detached cold/warm boots, and three paired cold/warm measurements remain outstanding. Diagnostic evidence never qualifies a target or authorizes R2/cutover.

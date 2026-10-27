@@ -1,5 +1,7 @@
 import hashlib
 import importlib.util
+import json
+import os
 from pathlib import Path
 
 import pytest
@@ -156,3 +158,79 @@ def test_installer_identity_must_come_from_valid_media_receipt():
         helper.parse_installer_receipt("INSTALLER_REVISION=not-a-digest\n")
     with pytest.raises(helper.InputError, match="repeats"):
         helper.parse_installer_receipt("INSTALLER_BUNDLE_SHA256=" + "a" * 64 + "\nINSTALLER_BUNDLE_SHA256=" + "b" * 64)
+
+
+def test_main_retains_bounded_payload_format_and_receipt_errors(tmp_path, monkeypatch, capsys):
+    iso = tmp_path / "fixture.iso"
+    iso.write_bytes(b"not a real ISO; extraction is isolated below")
+    extractor = tmp_path / "payload-extractor.py"
+    extractor.write_text(
+        "from pathlib import Path\n"
+        "import sys\n"
+        "destination = Path(sys.argv[2])\n"
+        "for name in ('missing.squashfs', 'invalid.squashfs'):\n"
+        "    payload = destination / name\n"
+        "    payload.write_bytes(b'fixture')\n"
+        "    print(payload)\n",
+        encoding="utf-8",
+    )
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    (bin_dir / "unsquashfs").write_text(
+        "#!/usr/bin/env python3\n"
+        "from pathlib import Path\n"
+        "import sys\n"
+        "args = sys.argv[1:]\n"
+        "if args[0] == '-s':\n"
+        "    if Path(args[1]).name == 'invalid.squashfs':\n"
+        "        print(\"Can't find a valid SQUASHFS superblock \" + 'x' * 1000 + '\\x1b[31m', file=sys.stderr)\n"
+        "        raise SystemExit(1)\n"
+        "    print('Found a valid SQUASHFS 4:0 superblock, compression lz4')\n"
+        "    raise SystemExit(0)\n"
+        "if args[0] == '-cat':\n"
+        "    if Path(args[1]).name == 'missing.squashfs':\n"
+        "        print('file not found: ' + args[2] + ' ' + 'y' * 1000, file=sys.stderr)\n"
+        "    else:\n"
+        "        print('not a squashfs ' + 'z' * 1000, file=sys.stderr)\n"
+        "    raise SystemExit(1)\n"
+        "raise SystemExit(2)\n",
+        encoding="utf-8",
+    )
+    (bin_dir / "unsquashfs").chmod(0o755)
+    monkeypatch.setenv("PATH", os.pathsep.join([str(bin_dir), os.environ.get("PATH", "")]))
+
+    diagnostics = tmp_path / "out" / "receipt-probes.log"
+    out_env = tmp_path / "out" / "same-byte.env"
+    out_binding = tmp_path / "out" / "binding.json"
+    assert helper.main([
+        "--iso", str(iso),
+        "--measurements", str(tmp_path / "not-read-measurements.json"),
+        "--browser-evidence", str(tmp_path / "not-read-browser.json"),
+        "--manifest", str(tmp_path / "not-read-manifest.json"),
+        "--payload-extractor", str(extractor),
+        "--repository", "tuna-os/iso-builder", "--run-id", "1", "--run-attempt", "1",
+        "--source-sha", "a" * 40, "--artifact-id", "2",
+        "--artifact-name", "iso-skipjack-gnome-run1-a1",
+        "--variant", "skipjack", "--flavor", "gnome", "--slug", "skipjack-gnome",
+        "--platform", "linux/amd64", "--out-env", str(out_env),
+        "--out-binding", str(out_binding), "--out-diagnostics", str(diagnostics),
+    ]) == 1
+
+    assert "bounded receipt diagnostics" in capsys.readouterr().err
+    assert not out_env.exists() and not out_binding.exists()
+    report = json.loads(diagnostics.read_text(encoding="utf-8"))
+    assert report["status"] == "failed"
+    assert report["qualification"] == "diagnostic-unqualified"
+    assert report["extractor"]["payloadCount"] == 2
+    missing, invalid = report["payloads"]
+    assert missing["path"] == "missing.squashfs"
+    assert missing["filesystem"]["status"] == "ok"
+    assert "SQUASHFS 4:0" in missing["filesystem"]["summary"]
+    source_probe = missing["members"]["etc/tunaos/live-source.json"]
+    assert source_probe["status"] == "error" and "file not found" in source_probe["stderr"]
+    assert invalid["path"] == "invalid.squashfs"
+    assert invalid["filesystem"]["status"] == "error"
+    format_error = invalid["filesystem"]["stderr"]
+    assert "Can't find a valid SQUASHFS superblock" in format_error
+    assert "...[truncated]" in format_error and "\x1b" not in format_error
+    assert len(format_error) <= helper.MAX_DIAGNOSTIC_CHARS + len("...[truncated]")

@@ -1,10 +1,6 @@
 # Browser ISO qualification integration proposal
 
-This document reviews how browser evidence must connect to installation
-qualification. The workflow now has an optional diagnostic path in
-`.github/workflows/ci.yml`, controlled by `strict_roundtrip_test`. No one has
-dispatched it. The path does not authorize qualification, publication,
-deployment, or a download-route change.
+This document reviews how browser evidence must connect to installation qualification. The optional `strict_roundtrip_test` path in `.github/workflows/ci.yml` was dispatched once on 2026-10-27 as run [40538072100](https://github.com/actions/runs/40538072100). It built and hash-verified a Skipjack/GNOME ISO, then failed receipt preparation before guest execution. This remains diagnostic only; it does not qualify the ISO, authorize publication, deploy the builder, or change download routing.
 
 ## Reviewed sources
 
@@ -19,65 +15,35 @@ frontend revisions that you select for a run.
 
 ## Current blockers
 
-1. The GitHub connector supports reads and failed-job reruns, but no workflow dispatch.
-   A rerun cannot supply new dispatch inputs. Do not substitute a push, rerun,
-   or production deployment for dispatch.
-2. `keep_iso=true` still publishes to R2 only after guest verification succeeds.
-   `retain_iso_artifact=true` now preserves a bounded, hash-verified artifact
-   after the browser build, including guest failure. The opt-in
-   `strict_roundtrip_test=true` path reconstructs those same-run bytes and runs
-   the current strict harness without R2 or a cross-repository artifact credential.
-3. The default workflow does not set strict identities for the media. This path
-   reads source, overlay, engine, and installer IDs from receipts in the media.
-   It compares source and overlay IDs with browser observations. It passes
-   browser measurements through `sudo`. No one has run it on a hosted runner.
-4. The diagnostic record does not identify the producer or frontend.
-   An ISO hash, a hash of loaded WASM and engine observations do not fill those gaps.
-   The legacy `qual-evidence` file uses catalog facts. It is not an authenticated browser receipt.
+1. Run [40538072100](https://github.com/actions/runs/40538072100) built and hash-verified a Skipjack/GNOME ISO, then failed receipt preparation with `ISO has no embedded etc/tunaos/live-source.json receipt`. No guest step ran. Do not retry these unchanged bytes.
+2. The retained artifact lacks per-payload `unsquashfs` format, path, and stderr details. The current local helper change writes bounded details into the always-uploaded diagnostics artifact; it has not yet been run on a hosted builder.
+3. Browser measurements report an applied overlay with `baseAnnotationMatched=false`, and the observed source manifest differs from the pre-build catalog digest. This is not a root-cause finding. Require a same-base overlay with a valid media receipt and matching current source identity before another build.
+4. Producer/frontend authentication and a genuine media-bound installer frontend identity remain missing. The diagnostic artifact cannot create a trusted browser receipt.
+5. No browser-built bytes have passed strict plain/LUKS installation and media-detached cold/warm boots. Three paired cold/warm builds and zero-warm-layer-transfer evidence are also absent; qualification and performance claims remain blocked.
 
-## Exact existing dispatch shape
+## Observed diagnostic dispatch
 
-Workflow: `tuna-os/iso-builder/.github/workflows/ci.yml`.
-These inputs select one flagship target on x86:
+Workflow: `tuna-os/iso-builder/.github/workflows/ci.yml`, main `4a0e1c34be84e87ce400414ed9f0bc2f1c309ce1`.
+
+Run [40538072100](https://github.com/actions/runs/40538072100) selected one x86 target with these inputs:
 
 ```json
-{"run_full":true,"only":"yellowfin-gnome","benchmark":false,"keep_iso":false}
+{"run_full":true,"only":"skipjack-gnome","retain_iso_artifact":true,"strict_roundtrip_test":true,"diagnostic_unqualified":true,"benchmark":false,"keep_iso":false,"retain_candidate":false,"retain_iso_artifact_days":"7"}
 ```
 
-This selects `tuna-os/yellowfin:gnome`, `linux/amd64/v2`.
-It does not pin the mutable image tags or preserve a failed candidate.
-The valid input `keep_iso=true` publishes to R2 after successful guest verification.
-It does not provide failure-safe retention. Do not describe it as a retention-only switch.
-
-Do not leave `only` blank: that selects all eleven editions.
-Upstream reference cells use `qualify=false`. They prove no offline GUI parity for
-TunaOS and qualify no TunaOS target. The input `benchmark=true` creates three cold
-profiles, not a cold/warm pair. This review dispatched no workflow.
+It built a 9,446,709,248-byte ISO (`sha256:e03ad6c8be6431ae35517c2cb6ee010d725fcfec25ad32e8b06f0d82971e8891`) and verified the GitHub artifact round-trip. ISO artifact ID `12751782226` expired 2026-11-03. Receipt preparation failed before guest execution; no install, reboot, R2 write, or qualification resulted.
 
 ## Integration stages
 
-[Candidate retention](candidate-retention.md) describes the opt-in draft for bounded retention.
-The producer and strict qualification stages below remain proposals.
+[Candidate retention](candidate-retention.md) documents the implemented GitHub-artifact path and the separate R2 candidate path. Producer/frontend authentication and strict qualification remain unverified.
 
-### A. Preserve and bind a single candidate
+### A. Retain and bind one diagnostic candidate
 
-Keep candidate retention opt-in, false by default and independent of `keep_iso`.
-Review the storage destination, access, quota and expiry before use.
-This repository does not store multi-GB ISOs in Actions artifacts.
-Do not silently switch to artifacts or move the R2 publisher before the gate.
-Do not write release paths, latest pointers, or existing object keys.
+The current `retain_iso_artifact=true` path uses run- and attempt-bound GitHub artifacts, splits the ISO into 2 GiB chunks, verifies each chunk and the whole file against the browser measurement, downloads the artifact again, and verifies the reconstructed bytes. Run 40538072100 used seven-day retention and did not set `retain_candidate` or `keep_iso`.
 
-Use an approved destination and a unique key for the run ID, `run-attempt`, edition and sample.
-Refuse overwrite. Preserve the exact bytes exported from the browser even after a failure in strict qualification.
-Hash before and after retention. Independently verify the remote artifact identity and bind it to the receipt.
-Equal R2 sizes do not verify checksums.
+The retained manifest binds the browser measurement, source SHA, run ID and attempt. It does not authenticate the producer or frontend, so it remains `diagnostic-unqualified`. Receipt extraction now writes bounded per-payload format/path/error diagnostics into the always-uploaded diagnostics artifact. Missing or inconsistent receipts remain a hard failure before the strict guest starts.
 
-Never retain private keys for SSH, swtpm state, or installed qcow2 disks.
-
-Preserve diagnostics outside `e2e/test-results/` before another Playwright invocation clears it.
-Finalize retention and diagnostics on failure and success; preserve the original failure status.
-A format failure may retain a candidate with an explicit failure label.
-It must not create a build receipt.
+Never retain private keys for SSH, swtpm state, or installed qcow2 disks. Preserve the original failure status and keep diagnostic output separate from qualification evidence.
 
 ### B. Authenticate the producer and frontend
 
@@ -159,28 +125,11 @@ Three fresh profiles or warm boots of the installed system do not prove this.
 - Unit tests must not write to storage, dispatch workflows, publish claims, or change routes.
   Use tiny synthetic files; these provide no boot evidence.
 
-## Bounded retention consent proposal
+## R2 candidate retention remains separate
 
-Source inspection found only references to the secret-backed bucket and endpoint.
-It did not verify the bucket name, public access, quota, or account-level lifecycle policy.
-The existing writer uses `browser-iso/<run-id>/<slug>.iso`.
-The reviewed tunaOS `prune-r2.yml` expires `live-isos/` after 14 days and
-`screenshots/` after 60 days, but does not expire `browser-iso/`.
-Verify access before you describe it as private or public.
+Run 40538072100 set `retain_candidate=false` and `keep_iso=false`; it wrote no R2 object. It used the distinct `retain_iso_artifact=true` path and a seven-day GitHub Actions artifact (ID `12751782226`, 9,446,709,248 bytes, expiry 2026-11-03). The run failed before guest execution and does not qualify the ISO.
 
-The proposed consent is for one candidate for Yellowfin GNOME in the existing R2 bucket.
-The caps are 10 GiB for the ISO and 1 MiB for provenance.
-Use `browser-iso/candidates/<run-id>/<run-attempt>/yellowfin-gnome/s1/`.
-Use bounded chunks with conditional writes and a final manifest that combines provenance.
-No overwrites, latest pointers, release links, or access changes.
-
-This proposed cap is not a measured ISO size. Fail without upload if the candidate exceeds it.
-The scope excludes other candidates and repeated uploads.
-
-Seven days is a proposed retention period; the existing code/tools cannot enforce or promise expiry.
-Without separately approved and reviewed cleanup, objects may remain stored and incur charges until removal.
-Do not add an account lifecycle rule or delete objects under this proposal.
-[Candidate retention](candidate-retention.md) describes the opt-in implementation; no storage writes have occurred.
+The legacy R2 candidate path still needs its own review of access, quota, overwrite protection, and lifecycle policy. See [candidate-retention.md](candidate-retention.md). This run changed no R2 policy or object and authorized no cleanup.
 
 ## Local producer-observation regression proposal
 

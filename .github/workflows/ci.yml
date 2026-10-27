@@ -927,6 +927,7 @@ jobs:
             --source-sha "$SOURCE_SHA" --artifact-id "$ARTIFACT_ID" --artifact-name "$ARTIFACT_NAME" \
             --variant "$variant" --flavor "$flavor" --slug "$SLUG" --platform "$PLATFORM" \
             --out-env "$RUNNER_TEMP/same-byte-inputs.env" \
+            --out-diagnostics "e2e/test-results/same-byte-receipt-diagnostics-${SLUG}.log" \
             --out-binding "e2e/test-results/same-byte-guest-test-binding-${SLUG}.json"
           cat "$RUNNER_TEMP/same-byte-inputs.env" >> "$GITHUB_ENV"
           {

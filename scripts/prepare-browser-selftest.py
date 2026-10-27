@@ -21,6 +21,9 @@ SHA40 = re.compile(r"^[0-9a-f]{40}$")
 PLATFORM = re.compile(r"^linux/(amd64(?:/v2)?|arm64)$")
 BROWSER = re.compile(r"^(HeadlessChrome|Chrome)/([1-9][0-9]*(?:\.[0-9]+)+)$")
 GIB = 1024 ** 3
+MAX_DIAGNOSTIC_CHARS = 512
+MAX_DIAGNOSTIC_PAYLOADS = 32
+SQUASHFS_PROBE_TIMEOUT_SECONDS = 30
 
 
 class InputError(ValueError):
@@ -45,6 +48,40 @@ def json_file(path: str | Path, label: str) -> dict:
         raise InputError(f"cannot read {label}: {exc}") from exc
     require(isinstance(value, dict), f"{label} must be a JSON object")
     return value
+
+
+def bounded_diagnostic_text(value: str | bytes | None) -> str:
+    if value is None:
+        return ""
+    text = value.decode("utf-8", "replace") if isinstance(value, bytes) else str(value)
+    text = " ".join("".join(char if char.isprintable() else " " for char in text).split())
+    if len(text) > MAX_DIAGNOSTIC_CHARS:
+        return text[:MAX_DIAGNOSTIC_CHARS] + "...[truncated]"
+    return text
+
+
+def write_extraction_diagnostics(path: str | Path, report: dict) -> None:
+    destination = Path(path)
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    temporary = destination.with_name(f".{destination.name}.tmp")
+    temporary.write_text(json.dumps(report, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    temporary.replace(destination)
+
+
+def run_squashfs_probe(arguments: list[str]):
+    try:
+        result = subprocess.run(
+            ["unsquashfs", *arguments], capture_output=True, text=True,
+            encoding="utf-8", errors="replace", timeout=SQUASHFS_PROBE_TIMEOUT_SECONDS,
+        )
+    except subprocess.TimeoutExpired as exc:
+        return None, {"status": "timeout", "detail": bounded_diagnostic_text(exc.stderr or exc.stdout)}
+    except OSError as exc:
+        return None, {"status": "unavailable", "detail": bounded_diagnostic_text(str(exc))}
+    probe = {"status": "ok" if result.returncode == 0 else "error", "exitCode": result.returncode}
+    if result.returncode != 0 and result.stderr:
+        probe["stderr"] = bounded_diagnostic_text(result.stderr)
+    return result, probe
 
 
 def parse_source_receipt(value: dict) -> dict:
@@ -79,28 +116,84 @@ def parse_installer_receipt(text: str) -> str:
     return "sha256:" + candidate.lower()
 
 
-def extract_media_receipts(iso: str | Path, extractor: str | Path, destination: str | Path) -> tuple[dict, str]:
-    result = subprocess.run([sys.executable, str(extractor), str(iso), str(destination)],
-                            check=True, capture_output=True, text=True)
-    root = Path(destination).resolve()
-    payloads = []
-    for line in result.stdout.splitlines():
-        raw_path = Path(line)
-        require(raw_path.parent.resolve() == root and not raw_path.is_symlink(),
-                "ISO extractor returned a payload outside its private directory")
-        path = raw_path.resolve()
-        require(path.parent == root and path.is_file(), "ISO extractor returned a non-regular payload")
-        payloads.append(path)
-    require(payloads, "ISO contains no live filesystem payloads")
+def extract_media_receipts(
+    iso: str | Path, extractor: str | Path, destination: str | Path,
+    diagnostics: dict | None = None,
+) -> tuple[dict, str]:
+    report = diagnostics if diagnostics is not None else {}
+    report["payloads"] = []
+    try:
+        result = subprocess.run(
+            [sys.executable, str(extractor), str(iso), str(destination)],
+            check=False, capture_output=True, text=True,
+            encoding="utf-8", errors="replace", timeout=60,
+        )
+    except (OSError, subprocess.TimeoutExpired) as exc:
+        report["extractor"] = {"status": "error", "detail": bounded_diagnostic_text(str(exc))}
+        raise InputError("ISO payload extractor could not run") from exc
+    if result.returncode != 0:
+        report["extractor"] = {
+            "status": "error", "exitCode": result.returncode,
+            "stderr": bounded_diagnostic_text(result.stderr),
+        }
+        raise InputError(f"ISO payload extractor failed with exit {result.returncode}")
 
+    root = Path(destination).resolve()
+    payload_lines = result.stdout.splitlines()
+    report["extractor"] = {"status": "ok", "payloadCount": len(payload_lines)}
+    report["payloadsTruncated"] = len(payload_lines) > MAX_DIAGNOSTIC_PAYLOADS
+    if not payload_lines:
+        raise InputError("ISO contains no live filesystem payloads")
+
+    payloads = []
     sources, installers = [], []
-    for payload in payloads:
-        for member, destination_list in (("etc/tunaos/live-source.json", sources),
-                                         ("etc/tunaos/live-installer-info", installers)):
-            result = subprocess.run(["unsquashfs", "-cat", str(payload), member],
-                                    capture_output=True, text=True)
-            if result.returncode == 0 and result.stdout:
+    for index, line in enumerate(payload_lines):
+        raw_path = Path(line)
+        record = {
+            "path": bounded_diagnostic_text(raw_path.name),
+            "sizeBytes": None,
+            "filesystem": {"status": "not-probed"},
+            "members": {},
+        }
+        if index < MAX_DIAGNOSTIC_PAYLOADS:
+            report["payloads"].append(record)
+        if raw_path.parent.resolve() != root or raw_path.is_symlink():
+            record["status"] = "rejected"
+            record["error"] = "payload path is outside the private extraction directory or is a symlink"
+            raise InputError("ISO extractor returned an unsafe payload path")
+        path = raw_path.resolve()
+        if path.parent != root or not path.is_file():
+            record["status"] = "rejected"
+            record["error"] = "payload is not a regular file in the private extraction directory"
+            raise InputError("ISO extractor returned a non-regular payload")
+        record["sizeBytes"] = path.stat().st_size
+        format_result, format_probe = run_squashfs_probe(["-s", str(path)])
+        if format_result is not None:
+            format_probe["summary"] = bounded_diagnostic_text(format_result.stdout or format_result.stderr)
+        record["filesystem"] = format_probe
+
+        payloads.append(path)
+        for member, destination_list in (
+            ("etc/tunaos/live-source.json", sources),
+            ("etc/tunaos/live-installer-info", installers),
+        ):
+            result, member_probe = run_squashfs_probe(["-cat", str(path), member])
+            if result is None:
+                record["members"][member] = member_probe
+            elif result.returncode != 0:
+                record["members"][member] = {
+                    "status": "error", "exitCode": result.returncode,
+                    "stderr": bounded_diagnostic_text(result.stderr),
+                }
+            elif not result.stdout:
+                record["members"][member] = {"status": "empty", "exitCode": 0, "bytes": 0}
+            else:
+                record["members"][member] = {
+                    "status": "present", "exitCode": 0, "bytes": len(result.stdout.encode("utf-8")),
+                }
                 destination_list.append(result.stdout)
+
+    require(payloads, "ISO contains no live filesystem payloads")
     require(sources, "ISO has no embedded etc/tunaos/live-source.json receipt")
     raw_sources, sources_normalized = [], []
     for text in sources:
@@ -291,10 +384,20 @@ def main(argv=None) -> int:
     parser.add_argument("--platform", required=True)
     parser.add_argument("--out-env", required=True)
     parser.add_argument("--out-binding", required=True)
+    parser.add_argument("--out-diagnostics", required=True)
     args = parser.parse_args(argv)
+    diagnostics = {
+        "schemaVersion": 1,
+        "kind": "browser-selftest-receipt-extraction-diagnostics",
+        "qualification": "diagnostic-unqualified",
+        "status": "started",
+        "payloads": [],
+    }
     try:
         with tempfile.TemporaryDirectory(prefix="browser-iso-receipts-") as payload_dir:
-            source, installer = extract_media_receipts(args.iso, args.payload_extractor, payload_dir)
+            source, installer = extract_media_receipts(
+                args.iso, args.payload_extractor, payload_dir, diagnostics,
+            )
         env, binding = validate_inputs(
             iso=args.iso, measurements=json_file(args.measurements, "browser measurements"),
             browser_evidence=json_file(args.browser_evidence, "browser evidence"),
@@ -305,8 +408,16 @@ def main(argv=None) -> int:
             variant=args.variant, flavor=args.flavor, slug=args.slug, platform=args.platform,
         )
     except (InputError, OSError, subprocess.CalledProcessError) as exc:
-        print(f"same-byte guest input validation failed: {exc}", file=sys.stderr)
+        diagnostics["status"] = "failed"
+        diagnostics["failure"] = bounded_diagnostic_text(str(exc))
+        write_extraction_diagnostics(args.out_diagnostics, diagnostics)
+        print(
+            f"same-byte guest input validation failed: {exc}; "
+            f"bounded receipt diagnostics: {args.out_diagnostics}", file=sys.stderr,
+        )
         return 1
+    diagnostics["status"] = "validated"
+    write_extraction_diagnostics(args.out_diagnostics, diagnostics)
     env_path = Path(args.out_env)
     env_path.parent.mkdir(parents=True, exist_ok=True)
     env_path.write_text("".join(f"{key}={value}\n" for key, value in env.items()), encoding="utf-8")
