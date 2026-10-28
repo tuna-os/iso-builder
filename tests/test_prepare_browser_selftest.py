@@ -2,6 +2,8 @@ import hashlib
 import importlib.util
 import json
 import os
+import subprocess
+import time
 from pathlib import Path
 
 import pytest
@@ -234,3 +236,166 @@ def test_main_retains_bounded_payload_format_and_receipt_errors(tmp_path, monkey
     assert "Can't find a valid SQUASHFS superblock" in format_error
     assert "...[truncated]" in format_error and "\x1b" not in format_error
     assert len(format_error) <= helper.MAX_DIAGNOSTIC_CHARS + len("...[truncated]")
+
+
+def install_fake_unsquashfs(tmp_path, monkeypatch, script):
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    executable = bin_dir / "unsquashfs"
+    executable.write_text("#!/usr/bin/env python3\n" + script, encoding="utf-8")
+    executable.chmod(0o755)
+    monkeypatch.setenv("PATH", os.pathsep.join([str(bin_dir), os.environ.get("PATH", "")]))
+
+
+def test_squashfs_timeout_diagnostic_excludes_partial_member_stdout(tmp_path, monkeypatch):
+    install_fake_unsquashfs(
+        tmp_path, monkeypatch,
+        "import sys, time\n"
+        "sys.stdout.write('PRIVATE_RECEIPT_CONTENT')\n"
+        "sys.stdout.flush()\n"
+        "time.sleep(2)\n",
+    )
+    monkeypatch.setattr(helper, "SQUASHFS_PROBE_TIMEOUT_SECONDS", 0.05)
+
+    result, diagnostic = helper.run_squashfs_probe(["-cat", "payload.squashfs", "etc/tunaos/live-source.json"])
+
+    assert result is None
+    assert diagnostic == {"status": "timeout", "detail": ""}
+
+
+def test_squashfs_probe_bounds_captured_output(tmp_path, monkeypatch):
+    install_fake_unsquashfs(
+        tmp_path, monkeypatch,
+        "import sys, time\n"
+        f"sys.stdout.buffer.write(b'x' * ({helper.MAX_SQUASHFS_PROBE_OUTPUT_BYTES} + 8192))\n"
+        "sys.stdout.flush()\n"
+        "time.sleep(2)\n",
+    )
+
+    result, diagnostic = helper.run_squashfs_probe(["-cat", "payload.squashfs", "etc/tunaos/live-source.json"])
+
+    assert result is None
+    assert diagnostic["status"] == "output-limit"
+    assert len(diagnostic["detail"]) <= helper.MAX_DIAGNOSTIC_CHARS
+
+
+def test_member_probe_timeout_fails_even_when_another_payload_has_valid_receipts(tmp_path, monkeypatch):
+    iso = tmp_path / "fixture.iso"
+    iso.write_bytes(b"fixture")
+    extractor = tmp_path / "payload-extractor.py"
+    extractor.write_text(
+        "from pathlib import Path\n"
+        "import sys\n"
+        "destination = Path(sys.argv[2])\n"
+        "destination.mkdir(parents=True, exist_ok=True)\n"
+        "for name in ('first.squashfs', 'second.squashfs'):\n"
+        "    payload = destination / name\n"
+        "    payload.write_bytes(b'fixture')\n"
+        "    print(payload)\n",
+        encoding="utf-8",
+    )
+    source = {
+        "base_image": "ghcr.io/tuna-os/skipjack:diagnostic",
+        "base_digest": digest(b"base"),
+        "overlay_digest": digest(b"overlay"),
+        "engine_digest": digest(b"engine"),
+        "platform": "linux/amd64",
+    }
+    source_text = json.dumps(source)
+    installer_text = "INSTALLER_BUNDLE_SHA256=" + digest(b"installer").removeprefix("sha256:") + "\n"
+
+    def probe(arguments):
+        if arguments[0] == "-s":
+            result = subprocess.CompletedProcess(arguments, 0, "Found SQUASHFS 4:0 superblock", "")
+            return result, {"status": "ok", "exitCode": 0}
+        if Path(arguments[1]).name == "first.squashfs":
+            text = source_text if arguments[2] == "etc/tunaos/live-source.json" else installer_text
+            result = subprocess.CompletedProcess(arguments, 0, text, "")
+            return result, {"status": "ok", "exitCode": 0}
+        return None, {"status": "timeout", "detail": ""}
+
+    monkeypatch.setattr(helper, "run_squashfs_probe", probe)
+    diagnostics = {}
+    with pytest.raises(helper.InputError, match="receipt member probe did not complete"):
+        helper.extract_media_receipts(iso, extractor, tmp_path / "payloads", diagnostics)
+
+    assert diagnostics["payloads"][0]["members"]["etc/tunaos/live-source.json"]["status"] == "present"
+    assert diagnostics["payloads"][1]["members"]["etc/tunaos/live-source.json"]["status"] == "timeout"
+
+
+def test_too_many_payloads_fail_before_any_member_probes(tmp_path, monkeypatch):
+    iso = tmp_path / "fixture.iso"
+    iso.write_bytes(b"fixture")
+    extractor = tmp_path / "payload-extractor.py"
+    extractor.write_text(
+        "from pathlib import Path\n"
+        "import sys\n"
+        "destination = Path(sys.argv[2])\n"
+        f"for index in range({helper.MAX_DIAGNOSTIC_PAYLOADS + 1}):\n"
+        "    print(destination / f'payload-{index}.squashfs')\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(helper, "run_squashfs_probe",
+                        lambda *_: pytest.fail("must reject payload count before probing"))
+    diagnostics = {}
+
+    with pytest.raises(helper.InputError, match="too many live filesystem payloads"):
+        helper.extract_media_receipts(iso, extractor, tmp_path / "payloads", diagnostics)
+
+    assert diagnostics["payloadsTruncated"] is True
+    assert diagnostics["payloads"] == []
+
+
+def test_extractor_output_limit_fails_before_payload_processing(tmp_path, monkeypatch):
+    iso = tmp_path / "fixture.iso"
+    iso.write_bytes(b"fixture")
+    extractor = tmp_path / "payload-extractor.py"
+    extractor.write_text(
+        "import sys, time\n"
+        f"sys.stdout.write('x' * ({helper.MAX_EXTRACTOR_OUTPUT_BYTES} + 8192))\n"
+        "sys.stdout.flush()\n"
+        "time.sleep(2)\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(helper, "run_squashfs_probe",
+                        lambda *_: pytest.fail("must reject extractor output before probing"))
+    diagnostics = {}
+
+    with pytest.raises(helper.InputError, match="ISO payload extractor did not complete"):
+        helper.extract_media_receipts(iso, extractor, tmp_path / "payloads", diagnostics)
+
+    assert diagnostics["extractor"]["status"] == "output-limit"
+    assert len(diagnostics["extractor"]["detail"]) <= helper.MAX_DIAGNOSTIC_CHARS
+
+
+@pytest.mark.skipif(os.name != "posix" or not Path("/proc").exists(),
+                    reason="process group cleanup is verified on Linux runners")
+def test_bounded_extractor_timeout_kills_descendant_processes(tmp_path):
+    pid_file = tmp_path / "child.pid"
+    script = (
+        "import pathlib, subprocess, sys, time\n"
+        f"pid_file = pathlib.Path({str(pid_file)!r})\n"
+        "child = subprocess.Popen([sys.executable, '-c', 'import time; time.sleep(60)'])\n"
+        "pid_file.write_text(str(child.pid))\n"
+        "time.sleep(60)\n"
+    )
+
+    result, diagnostic = helper.run_bounded_command(
+        [helper.sys.executable, "-c", script], timeout=1, output_limit=1024,
+    )
+
+    assert result is None
+    assert diagnostic["status"] == "timeout"
+    child_pid = int(pid_file.read_text(encoding="utf-8"))
+    stat_path = Path(f"/proc/{child_pid}/stat")
+    deadline = time.monotonic() + 2
+    while True:
+        try:
+            state = stat_path.read_text(encoding="utf-8").split(") ", 1)[1].split(" ", 1)[0]
+        except FileNotFoundError:
+            break
+        if state == "Z":
+            break
+        if time.monotonic() >= deadline:
+            pytest.fail("descendant process survived bounded command timeout")
+        time.sleep(0.01)

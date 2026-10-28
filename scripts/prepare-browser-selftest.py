@@ -12,10 +12,13 @@ import json
 import os
 from pathlib import Path
 import re
+import selectors
+import signal
 import shutil
 import subprocess
 import sys
 import tempfile
+import time
 
 SHA40 = re.compile(r"^[0-9a-f]{40}$")
 PLATFORM = re.compile(r"^linux/(amd64(?:/v2)?|arm64)$")
@@ -23,6 +26,9 @@ BROWSER = re.compile(r"^(HeadlessChrome|Chrome)/([1-9][0-9]*(?:\.[0-9]+)+)$")
 GIB = 1024 ** 3
 MAX_DIAGNOSTIC_CHARS = 512
 MAX_DIAGNOSTIC_PAYLOADS = 32
+MAX_SQUASHFS_PROBE_OUTPUT_BYTES = 64 * 1024
+MAX_EXTRACTOR_OUTPUT_BYTES = 256 * 1024
+ISO_EXTRACTOR_TIMEOUT_SECONDS = 60
 SQUASHFS_PROBE_TIMEOUT_SECONDS = 30
 
 
@@ -68,21 +74,105 @@ def write_extraction_diagnostics(path: str | Path, report: dict) -> None:
     temporary.replace(destination)
 
 
-def run_squashfs_probe(arguments: list[str]):
+def terminate_process_group(process: subprocess.Popen) -> None:
     try:
-        result = subprocess.run(
-            ["unsquashfs", *arguments], capture_output=True, text=True,
-            encoding="utf-8", errors="replace", timeout=SQUASHFS_PROBE_TIMEOUT_SECONDS,
-        )
-    except subprocess.TimeoutExpired as exc:
-        return None, {"status": "timeout", "detail": bounded_diagnostic_text(exc.stderr or exc.stdout)}
+        if os.name == "posix":
+            os.killpg(process.pid, signal.SIGKILL)
+        elif process.poll() is None:
+            process.kill()
+    except ProcessLookupError:
+        pass
+
+
+def run_bounded_command(command: list[str], timeout: float, output_limit: int):
+    process = None
+    completed = False
+    selector = selectors.DefaultSelector()
+    captured = {"stdout": bytearray(), "stderr": bytearray()}
+    failure = None
+    try:
+        options = {"stdout": subprocess.PIPE, "stderr": subprocess.PIPE}
+        if os.name == "posix":
+            options["start_new_session"] = True
+        process = subprocess.Popen(command, **options)
+        for name, stream in (("stdout", process.stdout), ("stderr", process.stderr)):
+            os.set_blocking(stream.fileno(), False)
+            selector.register(stream, selectors.EVENT_READ, name)
+
+        deadline = time.monotonic() + timeout
+        while selector.get_map():
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                failure = "timeout"
+                break
+            ready = selector.select(remaining)
+            if not ready:
+                failure = "timeout"
+                break
+            for key, _ in ready:
+                try:
+                    chunk = os.read(key.fd, 8192)
+                except BlockingIOError:
+                    continue
+                if not chunk:
+                    selector.unregister(key.fileobj)
+                    key.fileobj.close()
+                    continue
+                output = captured[key.data]
+                room = output_limit - len(output)
+                if len(chunk) > room:
+                    if room > 0:
+                        output.extend(chunk[:room])
+                    failure = "output-limit"
+                    break
+                output.extend(chunk)
+            if failure is not None:
+                break
+
+        if failure is None:
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                failure = "timeout"
+            else:
+                try:
+                    returncode = process.wait(timeout=remaining)
+                except subprocess.TimeoutExpired:
+                    failure = "timeout"
+        if failure is not None:
+            terminate_process_group(process)
+            process.wait()
+            return None, {"status": failure,
+                          "detail": bounded_diagnostic_text(bytes(captured["stderr"]))}
+
+        stdout = bytes(captured["stdout"]).decode("utf-8", "replace")
+        stderr = bytes(captured["stderr"]).decode("utf-8", "replace")
+        result = subprocess.CompletedProcess(command, returncode, stdout, stderr)
+        completed = True
+        return result, None
     except OSError as exc:
         return None, {"status": "unavailable", "detail": bounded_diagnostic_text(str(exc))}
+    finally:
+        selector.close()
+        if process is not None:
+            if not completed:
+                terminate_process_group(process)
+            if process.poll() is None:
+                process.wait()
+            for stream in (process.stdout, process.stderr):
+                if stream is not None and not stream.closed:
+                    stream.close()
+
+def run_squashfs_probe(arguments: list[str]):
+    result, diagnostic = run_bounded_command(
+        ["unsquashfs", *arguments], SQUASHFS_PROBE_TIMEOUT_SECONDS,
+        MAX_SQUASHFS_PROBE_OUTPUT_BYTES,
+    )
+    if result is None:
+        return None, diagnostic
     probe = {"status": "ok" if result.returncode == 0 else "error", "exitCode": result.returncode}
     if result.returncode != 0 and result.stderr:
         probe["stderr"] = bounded_diagnostic_text(result.stderr)
     return result, probe
-
 
 def parse_source_receipt(value: dict) -> dict:
     fields = ("base_image", "base_digest", "overlay_digest", "engine_digest", "platform")
@@ -122,15 +212,13 @@ def extract_media_receipts(
 ) -> tuple[dict, str]:
     report = diagnostics if diagnostics is not None else {}
     report["payloads"] = []
-    try:
-        result = subprocess.run(
-            [sys.executable, str(extractor), str(iso), str(destination)],
-            check=False, capture_output=True, text=True,
-            encoding="utf-8", errors="replace", timeout=60,
-        )
-    except (OSError, subprocess.TimeoutExpired) as exc:
-        report["extractor"] = {"status": "error", "detail": bounded_diagnostic_text(str(exc))}
-        raise InputError("ISO payload extractor could not run") from exc
+    result, extractor_diagnostic = run_bounded_command(
+        [sys.executable, str(extractor), str(iso), str(destination)],
+        ISO_EXTRACTOR_TIMEOUT_SECONDS, MAX_EXTRACTOR_OUTPUT_BYTES,
+    )
+    if result is None:
+        report["extractor"] = extractor_diagnostic
+        raise InputError("ISO payload extractor did not complete")
     if result.returncode != 0:
         report["extractor"] = {
             "status": "error", "exitCode": result.returncode,
@@ -144,6 +232,8 @@ def extract_media_receipts(
     report["payloadsTruncated"] = len(payload_lines) > MAX_DIAGNOSTIC_PAYLOADS
     if not payload_lines:
         raise InputError("ISO contains no live filesystem payloads")
+    require(len(payload_lines) <= MAX_DIAGNOSTIC_PAYLOADS,
+            "ISO has too many live filesystem payloads to inspect safely")
 
     payloads = []
     sources, installers = [], []
@@ -171,6 +261,8 @@ def extract_media_receipts(
         if format_result is not None:
             format_probe["summary"] = bounded_diagnostic_text(format_result.stdout or format_result.stderr)
         record["filesystem"] = format_probe
+        if format_result is None:
+            raise InputError(f"SquashFS format probe did not complete for {path.name}")
 
         payloads.append(path)
         for member, destination_list in (
@@ -180,6 +272,7 @@ def extract_media_receipts(
             result, member_probe = run_squashfs_probe(["-cat", str(path), member])
             if result is None:
                 record["members"][member] = member_probe
+                raise InputError(f"receipt member probe did not complete for {member} in {path.name}")
             elif result.returncode != 0:
                 record["members"][member] = {
                     "status": "error", "exitCode": result.returncode,
