@@ -11,13 +11,13 @@ We did not retry these bytes. The run stays diagnostic-unqualified.
 ## Changed behavior
 
 - `.github/workflows/ci.yml` passes a path for the receipt log. The upload step keeps this log when the helper fails.
-- The helper saves a short report for each payload. It checks the format, then lists each receipt path before reading it. A successful listing can prove a member absent; a format, listing or read error cannot. Any unreadable payload blocks guest tests, even when another payload supplies valid receipts. No environment file or binding is written on failure.
-- Tests use real tiny SquashFS images to check valid receipts beside absent members, a corrupt superblock, and truncated metadata. A separate read-failure case proves that another valid payload cannot hide an unread receipt.
+- The helper checks the format. It lists each receipt path. It reads a member only after that list confirms the path. A list can confirm that a member is absent. Any error stops the helper before guest tests. A receipt from another payload does not override an error. On failure, the helper writes no environment file or binding.
+- Tests use small SquashFS files. They check absent members, a corrupt superblock, and truncated metadata. They also check that a read error stops the helper when another payload has valid receipts.
 - The integration plan and retention guide show the GitHub artifact route and the separate R2 route. They record run 40538072100.
 
 ## Verification and limits
 
-The focused helper, artifact-retention and upload tests cover diagnostic failure handling. They do not read the 9.4 GB artifact or boot a guest. Run [40538072100](https://github.com/tuna-os/iso-builder/actions/runs/40538072100) stopped before any guest test; no hosted full-media run has used this patch.
+The focused tests check how the helper fails. They also check the artifact upload. They do not read the 9.4 GB artifact or boot a guest. Run [40538072100](https://github.com/tuna-os/iso-builder/actions/runs/40538072100) stopped before any guest test. No hosted full-media run has used this patch.
 
 ## Remaining acceptance
 
