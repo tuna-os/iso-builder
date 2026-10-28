@@ -152,11 +152,16 @@ same-runner memory and free-disk measurements, through `sudo`. It removes
 `TBOX_E2E_IMAGE` and `FISHERMAN_OVERRIDE` from the environment. If an identity is
 missing or inconsistent, the workflow stops before guest execution.
 
-The sidecar and output directory use the diagnostic-unqualified label. This
-test does not authenticate the producer or frontend. It does not turn a failed
-browser identity into a pass, qualify the target, publish an ISO, or change
-catalog or download status. The sidecar records `baseAnnotationMatched` as
-evidence; that value does not prove a match. This change has no hosted run.
+The sidecar and output directory carry the diagnostic-unqualified label. This
+test does not authenticate the producer or frontend. It does not qualify the
+target, change the catalog or download status, or publish an ISO.
+
+The workflow records `baseAnnotationMatched`. A value of `false` does not show
+why the base annotation differs.
+
+Run [40538072100](https://github.com/tuna-os/iso-builder/actions/runs/40538072100) used a GitHub
+artifact, not R2. Receipt preparation failed before a guest test. It set
+`retain_candidate=false`. It wrote no R2 object and qualified no target.
 
 Before upload, the finalizer renames each nested qualification receipt to a diagnostic name.
 It uses `diagnostic-unqualified-evidence.json`, with a number if that name exists.
