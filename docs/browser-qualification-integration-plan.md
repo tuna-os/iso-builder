@@ -2,7 +2,7 @@
 
 We need to connect browser evidence to installation tests. The optional workflow path uses `strict_roundtrip_test`.
 
-The path ran once on 2026-10-27 (run [40538072100](https://github.com/actions/runs/40538072100)). It built a Skipjack GNOME ISO and checked its hash. Receipt preparation failed before any guest test ran.
+The path ran once on 2026-10-27 (run [40538072100](https://github.com/tuna-os/iso-builder/actions/runs/40538072100)). It built a Skipjack GNOME ISO and checked its hash. Receipt preparation failed before any guest test ran.
 
 The run did not qualify the ISO. It did not publish an ISO, deploy the builder, or change the download URL.
 
@@ -19,7 +19,7 @@ frontend revisions that you select for a run.
 
 ## Current blockers
 
-1. Run [40538072100](https://github.com/actions/runs/40538072100) built the ISO and checked its hash. The helper stopped before guest tests because it did not find `etc/tunaos/live-source.json`. Do not retry these bytes.
+1. Run [40538072100](https://github.com/tuna-os/iso-builder/actions/runs/40538072100) built the ISO and checked its hash. The helper stopped before guest tests because it did not find `etc/tunaos/live-source.json`. Do not retry these bytes.
 2. The artifact does not show the format of each payload. It also lacks the path and error from each `unsquashfs` call. This branch adds a short record for each payload to the diagnostics artifact. No hosted run has tested this code.
 3. The browser report shows that the overlay applied. It also reports `baseAnnotationMatched=false`. The source digest from the build differs from the catalog digest from before the build. This does not show the cause. A new overlay must use the same base as the ISO. Its receipt must list the current source digest.
 4. The run did not authenticate the producer or frontend. The media also lacks a verified identity for the installer frontend. Hashes of the WASM or backend, operator values, and catalog tags cannot replace these identities.
@@ -29,7 +29,7 @@ frontend revisions that you select for a run.
 
 Workflow: `tuna-os/iso-builder/.github/workflows/ci.yml`, main `4a0e1c34be84e87ce400414ed9f0bc2f1c309ce1`.
 
-Run [40538072100](https://github.com/actions/runs/40538072100) used these inputs for one x86 image:
+Run [40538072100](https://github.com/tuna-os/iso-builder/actions/runs/40538072100) used these inputs for one x86 image:
 
 ```json
 {"run_full":true,"only":"skipjack-gnome","retain_iso_artifact":true,"strict_roundtrip_test":true,"diagnostic_unqualified":true,"benchmark":false,"keep_iso":false,"retain_candidate":false,"retain_iso_artifact_days":"7"}
@@ -37,7 +37,7 @@ Run [40538072100](https://github.com/actions/runs/40538072100) used these inputs
 
 The run built an ISO of 9,446,709,248 bytes. Its SHA-256 was `sha256:e03ad6c8be6431ae35517c2cb6ee010d725fcfec25ad32e8b06f0d82971e8891`.
 
-It uploaded the ISO as GitHub artifact `12751782226`. GitHub kept it for seven days; it expired on 2026-11-03.
+It uploaded the ISO as GitHub artifact `12751951673`, with expiry set to 2026-11-03 at 16:43:58 UTC. Artifact `12751782226` contains the small manifest ZIP, not the ISO.
 Receipt preparation failed before any guest test ran.
 The run did not install or reboot a guest. It did not write to R2 or qualify a target.
 
@@ -148,7 +148,7 @@ Three fresh profiles or warm boots of the installed system do not prove this.
 
 Run 40538072100 set `retain_candidate=false` and `keep_iso=false`. It wrote no R2 object. It used `retain_iso_artifact=true`.
 
-Artifact `12751782226` contains a 9,446,709,248-byte ISO. Its expiry date is 2026-11-03. Receipt preparation failed before guest execution, so the run did not qualify the ISO.
+Artifact `12751951673` contains the 9,446,709,248-byte ISO. Its expiry is set to 2026-11-03 at 16:43:58 UTC, in the future as of 2026-10-28. Receipt preparation failed before guest execution, so the run did not qualify the ISO.
 
 The separate R2 option needs its own review. Check access, quota, overwrite guards, and expiry. See [candidate-retention.md](candidate-retention.md). This run changed no R2 rule or object. It did not approve cleanup.
 

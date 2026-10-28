@@ -237,6 +237,7 @@ def extract_media_receipts(
 
     payloads = []
     sources, installers = [], []
+    unreadable = []
     for index, line in enumerate(payload_lines):
         raw_path = Path(line)
         record = {
@@ -263,29 +264,45 @@ def extract_media_receipts(
         record["filesystem"] = format_probe
         if format_result is None:
             raise InputError(f"SquashFS format probe did not complete for {path.name}")
+        if format_result.returncode != 0:
+            unreadable.append(path.name)
+            continue
 
         payloads.append(path)
         for member, destination_list in (
             ("etc/tunaos/live-source.json", sources),
             ("etc/tunaos/live-installer-info", installers),
         ):
+            listing, member_probe = run_squashfs_probe(
+                ["-ls", "-no-progress", "-no-wildcards", "-strict-errors", str(path), member],
+            )
+            if listing is None:
+                record["members"][member] = member_probe
+                raise InputError(f"receipt member probe did not complete for {member} in {path.name}")
+            if listing.returncode != 0:
+                record["members"][member] = member_probe
+                unreadable.append(path.name)
+                continue
+            if f"squashfs-root/{member}" not in listing.stdout.splitlines():
+                record["members"][member] = {"status": "absent", "exitCode": 0}
+                continue
             result, member_probe = run_squashfs_probe(["-cat", str(path), member])
             if result is None:
                 record["members"][member] = member_probe
                 raise InputError(f"receipt member probe did not complete for {member} in {path.name}")
-            elif result.returncode != 0:
-                record["members"][member] = {
-                    "status": "error", "exitCode": result.returncode,
-                    "stderr": bounded_diagnostic_text(result.stderr),
-                }
+            if result.returncode != 0:
+                record["members"][member] = member_probe
+                unreadable.append(path.name)
             elif not result.stdout:
                 record["members"][member] = {"status": "empty", "exitCode": 0, "bytes": 0}
+                unreadable.append(path.name)
             else:
                 record["members"][member] = {
                     "status": "present", "exitCode": 0, "bytes": len(result.stdout.encode("utf-8")),
                 }
                 destination_list.append(result.stdout)
 
+    require(not unreadable, "ISO contains unreadable filesystem or receipt payloads")
     require(payloads, "ISO contains no live filesystem payloads")
     require(sources, "ISO has no embedded etc/tunaos/live-source.json receipt")
     raw_sources, sources_normalized = [], []

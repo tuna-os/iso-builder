@@ -159,7 +159,7 @@ target, change the catalog or download status, or publish an ISO.
 The workflow records `baseAnnotationMatched`. A value of `false` does not show
 why the base annotation differs.
 
-Run [40538072100](https://github.com/actions/runs/40538072100) used a GitHub
+Run [40538072100](https://github.com/tuna-os/iso-builder/actions/runs/40538072100) used a GitHub
 artifact, not R2. Receipt preparation failed before a guest test. It set
 `retain_candidate=false`. It wrote no R2 object and qualified no target.
 

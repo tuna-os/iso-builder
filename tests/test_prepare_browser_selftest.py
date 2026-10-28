@@ -2,6 +2,7 @@ import hashlib
 import importlib.util
 import json
 import os
+import shutil
 import subprocess
 import time
 from pathlib import Path
@@ -189,12 +190,9 @@ def test_main_retains_bounded_payload_format_and_receipt_errors(tmp_path, monkey
         "        raise SystemExit(1)\n"
         "    print('Found a valid SQUASHFS 4:0 superblock, compression lz4')\n"
         "    raise SystemExit(0)\n"
-        "if args[0] == '-cat':\n"
-        "    if Path(args[1]).name == 'missing.squashfs':\n"
-        "        print('file not found: ' + args[2] + ' ' + 'y' * 1000, file=sys.stderr)\n"
-        "    else:\n"
-        "        print('not a squashfs ' + 'z' * 1000, file=sys.stderr)\n"
-        "    raise SystemExit(1)\n"
+        "if args[0] == '-ls':\n"
+        "    print('squashfs-root')\n"
+        "    raise SystemExit(0)\n"
         "raise SystemExit(2)\n",
         encoding="utf-8",
     )
@@ -229,7 +227,7 @@ def test_main_retains_bounded_payload_format_and_receipt_errors(tmp_path, monkey
     assert missing["filesystem"]["status"] == "ok"
     assert "SQUASHFS 4:0" in missing["filesystem"]["summary"]
     source_probe = missing["members"]["etc/tunaos/live-source.json"]
-    assert source_probe["status"] == "error" and "file not found" in source_probe["stderr"]
+    assert source_probe["status"] == "absent"
     assert invalid["path"] == "invalid.squashfs"
     assert invalid["filesystem"]["status"] == "error"
     format_error = invalid["filesystem"]["stderr"]
@@ -308,11 +306,14 @@ def test_member_probe_timeout_fails_even_when_another_payload_has_valid_receipts
         if arguments[0] == "-s":
             result = subprocess.CompletedProcess(arguments, 0, "Found SQUASHFS 4:0 superblock", "")
             return result, {"status": "ok", "exitCode": 0}
-        if Path(arguments[1]).name == "first.squashfs":
-            text = source_text if arguments[2] == "etc/tunaos/live-source.json" else installer_text
-            result = subprocess.CompletedProcess(arguments, 0, text, "")
-            return result, {"status": "ok", "exitCode": 0}
-        return None, {"status": "timeout", "detail": ""}
+        if arguments[0] == "-ls":
+            if Path(arguments[-2]).name != "first.squashfs":
+                return None, {"status": "timeout", "detail": ""}
+            text = "squashfs-root/" + arguments[-1] + "\n"
+        else:
+            text = source_text if arguments[-1] == "etc/tunaos/live-source.json" else installer_text
+        result = subprocess.CompletedProcess(arguments, 0, text, "")
+        return result, {"status": "ok", "exitCode": 0}
 
     monkeypatch.setattr(helper, "run_squashfs_probe", probe)
     diagnostics = {}
@@ -399,3 +400,74 @@ def test_bounded_extractor_timeout_kills_descendant_processes(tmp_path):
         if time.monotonic() >= deadline:
             pytest.fail("descendant process survived bounded command timeout")
         time.sleep(0.01)
+
+
+@pytest.fixture
+def real_receipt_payloads(tmp_path):
+    if not shutil.which("mksquashfs") or not shutil.which("unsquashfs"):
+        pytest.skip("SquashFS tools required for actual receipt payload verification")
+    args, *_ = fixture(tmp_path)
+    root = tmp_path / "tree"
+    receipt_dir = root / "etc/tunaos"
+    receipt_dir.mkdir(parents=True)
+    (receipt_dir / "live-source.json").write_text(json.dumps(args["source_receipt"]), encoding="utf-8")
+    (receipt_dir / "live-installer-info").write_text(
+        "INSTALLER_BUNDLE_SHA256=" + args["installer_digest"].removeprefix("sha256:") + "\n",
+        encoding="utf-8",
+    )
+    good = tmp_path / "good.squashfs"
+    subprocess.run(["mksquashfs", str(root), str(good), "-noappend", "-processors", "1", "-no-progress"],
+                   check=True, capture_output=True)
+    extra_root = tmp_path / "extra-tree"
+    extra_root.mkdir()
+    (extra_root / "unrelated").write_text("no receipts here\n", encoding="utf-8")
+    extra = tmp_path / "extra.squashfs"
+    subprocess.run(["mksquashfs", str(extra_root), str(extra), "-noappend", "-processors", "1", "-no-progress"],
+                   check=True, capture_output=True)
+    extractor = tmp_path / "extractor.py"
+    extractor.write_text(
+        "from pathlib import Path\nimport shutil, sys\n"
+        "out = Path(sys.argv[2]); out.mkdir(parents=True, exist_ok=True)\n"
+        f"for source in {list(map(str, (good, extra)))!r}:\n"
+        "    target = out / Path(source).name; shutil.copyfile(source, target); print(target)\n",
+        encoding="utf-8",
+    )
+    return args, good, extra, extractor
+
+
+def test_real_payload_with_confirmed_absent_receipts_does_not_override_valid_identity(tmp_path, real_receipt_payloads):
+    args, _good, _extra, extractor = real_receipt_payloads
+    diagnostics = {}
+    source, installer = helper.extract_media_receipts(args["iso"], extractor, tmp_path / "out", diagnostics)
+    assert source == args["source_receipt"]
+    assert installer == args["installer_digest"]
+    assert all(probe["status"] == "absent" for probe in diagnostics["payloads"][1]["members"].values())
+
+
+@pytest.mark.parametrize("failure", ["format", "listing", "member-read"])
+def test_real_valid_payload_cannot_hide_unreadable_payload(tmp_path, monkeypatch, real_receipt_payloads, failure):
+    args, good, extra, extractor = real_receipt_payloads
+    if failure == "format":
+        extra.write_bytes(b"not a SquashFS filesystem")
+    elif failure == "listing":
+        extra.write_bytes(good.read_bytes()[:128])
+    else:
+        extra.write_bytes(good.read_bytes())
+        real_probe = helper.run_squashfs_probe
+
+        def unreadable_member(arguments):
+            if arguments[0] == "-cat" and Path(arguments[1]).name == extra.name:
+                result = subprocess.CompletedProcess(arguments, 2, "", "read failure")
+                return result, {"status": "error", "exitCode": 2, "stderr": "read failure"}
+            return real_probe(arguments)
+
+        monkeypatch.setattr(helper, "run_squashfs_probe", unreadable_member)
+    diagnostics = {}
+    with pytest.raises(helper.InputError, match="unreadable filesystem or receipt payloads"):
+        helper.extract_media_receipts(args["iso"], extractor, tmp_path / "out", diagnostics)
+    assert diagnostics["payloads"][0]["members"]["etc/tunaos/live-source.json"]["status"] == "present"
+    second = diagnostics["payloads"][1]
+    if failure == "format":
+        assert second["filesystem"]["status"] == "error"
+    else:
+        assert second["members"]["etc/tunaos/live-source.json"]["status"] == "error"
