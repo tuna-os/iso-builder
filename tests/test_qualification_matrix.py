@@ -101,7 +101,7 @@ def test_ci_tunaos_pin_is_full_sha():
 
 
 def test_ci_guest_verify_branches_on_qualify_flag():
-    text = CI_YML.read_text()
+    text = CI_YML.read_text() + "\n" + (ROOT / "justfile").read_text()  # guest verify lives in a recipe
     assert "--strict-offline-gui" in text, "qualify targets must use --strict-offline-gui"
     assert re.search(r'\[\s*"\$\{QUALIFY\}"\s*=\s*"true"\s*\]', text), \
         "guest-verify must branch on the edition qualify flag"

@@ -1,0 +1,48 @@
+# Daily stale-run reaper. Cancels runs stuck queued/in progress, deletes old
+# completed runs and expired artifacts, and leaves the newest run of every
+# workflow + branch alone. All logic lives in `just ci-reap-stale`
+# (scripts/ci-reap-stale.py); this file only schedules it.
+#
+# Scheduled runs act for real. A manual dispatch defaults to a dry run that
+# prints the plan and changes nothing; untick `dry_run` to apply it.
+name: CI reaper
+
+on:
+  schedule:
+    - cron: "17 4 * * *"
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: "Print what would be cancelled/deleted and change nothing"
+        type: boolean
+        default: true
+
+# Least privilege: nothing is writable except on the one job that needs it.
+permissions:
+  contents: read
+
+# Two reapers racing would just double the API calls; never cancel one that is
+# half way through a listing.
+concurrency:
+  group: ci-reaper
+  cancel-in-progress: false
+
+jobs:
+  reap:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      actions: write
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: install just
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq --no-install-recommends just
+
+      - name: reap stale runs and artifacts
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          DRY_RUN: ${{ github.event_name == 'workflow_dispatch' && inputs.dry_run && '1' || '0' }}
+        run: just ci-reap-stale

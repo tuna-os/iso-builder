@@ -15,7 +15,7 @@ def candidate(tmp_path):
     def git(*args):
         return subprocess.check_output(['git', '-C', str(tmp_path), *args], text=True).strip()
     git('init', '-q')
-    for name in ('app/public/index.html', 'app/public/app.js', '.github/workflows/ci.yml'):
+    for name in ('app/public/index.html', 'app/public/app.js', '.github/workflows/ci.yml', 'justfile'):
         p = tmp_path / name
         p.parent.mkdir(parents=True, exist_ok=True)
         p.write_text('synthetic fixture only\n')
@@ -43,7 +43,7 @@ def test_context_is_never_authenticated_or_qualified(candidate):
     assert result['artifactBinding'] == 'not-verified'
     assert len(result['missingIdentity']) == 3
     assert 'receiptDigest' not in result
-    assert len(result['servedTree']['files']) == 5
+    assert len(result['servedTree']['files']) == 6
 
 
 @pytest.mark.parametrize('key,value', [('GITHUB_ACTIONS', 'false'), ('GITHUB_EVENT_NAME', 'pull_request'),
@@ -64,7 +64,7 @@ def test_wasm_mismatch(candidate):
         m.collect(root, ev, env, iso)
 
 
-@pytest.mark.parametrize('which', ['app/public/app.js', '.github/workflows/ci.yml'])
+@pytest.mark.parametrize('which', ['app/public/app.js', '.github/workflows/ci.yml', 'justfile'])
 def test_dirty_served_checkout_rejected(candidate, which):
     root, ev, env, iso = candidate
     (root / which).write_text('different')
