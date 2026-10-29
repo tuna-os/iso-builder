@@ -1,9 +1,12 @@
 """ci.yml contract: browser evidence and harness output survive a guest failure."""
+import sys
 from pathlib import Path
 
 import yaml
 
 ROOT = Path(__file__).parents[1]
+sys.path.insert(0, str(ROOT / 'tests'))
+from ci_sources import recipe  # noqa: E402
 WORKFLOW = yaml.safe_load((ROOT / '.github/workflows/ci.yml').read_text())
 STEPS = WORKFLOW['jobs']['full-matrix']['steps']
 
@@ -34,7 +37,8 @@ def test_cleanup_and_uploads_run_after_guest_failure():
 
 def test_cleanup_labels_strict_receipt_before_it_changes_ownership():
     step_config = step('label diagnostic output')
-    run = step_config['run']
+    assert step_config['run'].strip() == 'just full-label-output'
+    run = recipe('full-label-output')
     assert 'finalize-diagnostic-output.py' in run
     assert run.index('finalize-diagnostic-output.py') < run.index('sudo chown -R')
     assert step_config['env']['STRICT_ROUNDTRIP_TEST'] == "${{ github.event.inputs.strict_roundtrip_test }}"
@@ -58,7 +62,8 @@ def test_qualification_evidence_upload_stays_success_only():
 
 
 def test_guest_step_installs_what_the_strict_walkthrough_measures_with():
-    run = step('verify guest under QEMU')['run']
+    assert step('verify guest under QEMU')['run'].strip() == 'just full-guest-verify'
+    run = recipe('full-guest-verify')
     install = run[run.index('apt-get install'):]
     install = install[:install.index('\n\n')]
     packages = set(install.replace('\\', ' ').split())
@@ -66,3 +71,16 @@ def test_guest_step_installs_what_the_strict_walkthrough_measures_with():
     assert {'imagemagick', 'tesseract-ocr', 'sshpass', 'jq'} <= packages
     # Still present: what the harness needs to boot the guest with a TPM.
     assert {'qemu-system-x86', 'qemu-utils', 'ovmf', 'swtpm', 'socat', 'netpbm', 'python3-pil'} <= packages
+
+
+def test_job_scoped_cleanup_is_the_last_step_and_always_runs():
+    last = STEPS[-1]
+    assert last['name'].startswith('cleanup (')
+    assert str(last['if']) == 'always()'
+    assert 'just ci-cleanup' in last['run']
+    # SLUG scopes the removal to this cell's own ISOs and harness output.
+    assert last['env']['SLUG'] == '${{ matrix.edition.slug }}'
+    # Every step that reads test-results/ or luks-verify-*/ runs before it.
+    for prefix in ('upload browser evidence', 'upload diagnostics', 'upload qualification evidence',
+                   'validate + merge qualification evidence', 'label diagnostic output'):
+        assert index(prefix) < len(STEPS) - 1

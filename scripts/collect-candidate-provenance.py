@@ -15,6 +15,9 @@ import subprocess
 
 REPOSITORY = 'tuna-os/iso-builder'
 GENERATED = {'app/public/tbox.wasm', 'app/public/wasm_exec.js'}
+# The workflow and the justfile whose recipes its steps run are one producer:
+# the build, guest-verify and retention logic lives in the recipes.
+WORKFLOW_FILES = ('.github/workflows/ci.yml', 'justfile')
 
 
 def git(root, *args):
@@ -87,12 +90,12 @@ def collect(root, measurement, env, candidate_iso):
     observed_iso = digest_file(Path(candidate_iso))
     if observed_iso != measurement['iso']:
         raise ValueError('candidate ISO does not match browser observation')
-    tracked = git(root, 'ls-tree', '-r', '--name-only', '-z', head, '--', 'app/public', '.github/workflows/ci.yml').split('\0')
+    tracked = git(root, 'ls-tree', '-r', '--name-only', '-z', head, '--', 'app/public', *WORKFLOW_FILES).split('\0')
     paths = sorted(p for p in tracked if p)
-    required = {'app/public/index.html', 'app/public/app.js', '.github/workflows/ci.yml'}
+    required = {'app/public/index.html', 'app/public/app.js', *WORKFLOW_FILES}
     if not required.issubset(paths):
         raise ValueError('missing tracked frontend/workflow files')
-    if git(root, 'diff', '--no-ext-diff', '--no-textconv', 'HEAD', '--', 'app/public', '.github/workflows/ci.yml'):
+    if git(root, 'diff', '--no-ext-diff', '--no-textconv', 'HEAD', '--', 'app/public', *WORKFLOW_FILES):
         raise ValueError('served frontend or workflow differs from checkout')
     unknown = set(filter(None, git(root, 'ls-files', '--others', '-z', '--', 'app/public').split('\0'))) - GENERATED
     if unknown:
@@ -107,7 +110,7 @@ def collect(root, measurement, env, candidate_iso):
             raise ValueError('served bytes do not match committed frontend/workflow blob')
     if observations['app/public/tbox.wasm'] != measurement['loadedWasm']:
         raise ValueError('served WASM does not match browser observation')
-    if git(root, 'rev-parse', 'HEAD') != head or git(root, 'diff', '--no-ext-diff', '--no-textconv', 'HEAD', '--', 'app/public', '.github/workflows/ci.yml'):
+    if git(root, 'rev-parse', 'HEAD') != head or git(root, 'diff', '--no-ext-diff', '--no-textconv', 'HEAD', '--', 'app/public', *WORKFLOW_FILES):
         raise ValueError('checkout changed during collection')
     return {
         'schemaVersion': 1,

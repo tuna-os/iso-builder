@@ -7,7 +7,9 @@ const fs = require("fs");
 const path = require("path");
 
 const spec = fs.readFileSync(path.join(__dirname, "builder.spec.js"), "utf8");
-const workflow = fs.readFileSync(path.join(__dirname, "../../.github/workflows/ci.yml"), "utf8");
+// The @full command line (and its per-test cap) lives in the justfile's full-build recipe.
+const workflow = ["../../.github/workflows/ci.yml", "../../justfile"]
+  .map((f) => fs.readFileSync(path.join(__dirname, f), "utf8")).join("\n");
 const num = (src, name) => Number(new RegExp(`const ${name} = Number\\(process\\.env\\.[A-Z0-9_]+ \\|\\| ([0-9_]+)\\)`).exec(src)[1].replaceAll("_", ""));
 
 test.describe("full-build budgets", () => {

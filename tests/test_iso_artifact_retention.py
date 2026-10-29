@@ -14,6 +14,8 @@ import pytest
 import yaml
 
 ROOT = Path(__file__).parents[1]
+sys.path.insert(0, str(ROOT / 'tests'))
+from ci_sources import recipe  # noqa: E402
 SCRIPT = ROOT / 'scripts/retain-iso-artifact.py'
 spec = importlib.util.spec_from_file_location('iso_artifact', SCRIPT)
 m = importlib.util.module_from_spec(spec)
@@ -161,8 +163,9 @@ def test_verify_refuses_a_tampered_manifest_label(tmp_path, iso):
 
 def plan(env):
     pick = next(s for s in WORKFLOW['jobs']['full-plan']['steps'] if s.get('id') == 'pick')
-    script = pick['run'].split("<<'PY'", 1)[1].split('\n', 1)[1].rsplit('\nPY', 1)[0]
-    return subprocess.run([sys.executable, '-c', script], cwd=ROOT, env={**os.environ, **env}, text=True, capture_output=True)
+    assert pick['run'].strip() == 'just --quiet full-plan >> "$GITHUB_OUTPUT"'
+    assert 'plan-full-matrix.py' in recipe('full-plan')
+    return subprocess.run([sys.executable, 'scripts/plan-full-matrix.py'], cwd=ROOT, env={**os.environ, **env}, text=True, capture_output=True)
 
 
 def valid():
@@ -271,7 +274,12 @@ def test_strict_roundtrip_budget_covers_work_and_keeps_finalization_time():
     ]
     assert [s['timeout-minutes'] for s in finalization] == [5, 10, 10, 10]
     assert sum(s['timeout-minutes'] for s in finalization) == 35
-    assert 360 - 275 - 45 - 35 == 5
+    # The always-run ci-cleanup step is the last step of the job and takes 3 of the
+    # 5 minutes that used to be unallocated margin.
+    cleanup = steps[-1]
+    assert cleanup['name'].startswith('cleanup (') and cleanup['if'] == 'always()'
+    assert cleanup['timeout-minutes'] == 3
+    assert 360 - 275 - 45 - 35 - cleanup['timeout-minutes'] == 2
 
 
 def test_diagnostic_receipt_finalizer_runs_before_upload_and_skips_qualification_upload():
@@ -285,8 +293,10 @@ def test_diagnostic_receipt_finalizer_runs_before_upload_and_skips_qualification
 
     assert finalizer['if'] == 'always()'
     assert finalizer['env']['STRICT_ROUNDTRIP_TEST'] == "${{ github.event.inputs.strict_roundtrip_test }}"
-    assert 'finalize-diagnostic-output.py' in finalizer['run']
-    assert finalizer['run'].index('finalize-diagnostic-output.py') < finalizer['run'].index('sudo chown -R')
+    assert finalizer['run'].strip() == 'just full-label-output'
+    label = recipe('full-label-output')
+    assert 'finalize-diagnostic-output.py' in label
+    assert label.index('finalize-diagnostic-output.py') < label.index('sudo chown -R')
     assert names.index(finalizer['name']) < names.index(diagnostics['name'])
     assert 'luks-verify-*/' in diagnostics['with']['path']
     assert names.index(finalizer['name']) < names.index(browser_evidence['name'])

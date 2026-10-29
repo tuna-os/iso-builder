@@ -488,7 +488,9 @@ test.describe("diagnostic wiring boundaries", () => {
     expect(path.dirname(diagnosticPath)).toBe(path.dirname(evPath));
     expect(path.basename(diagnosticPath)).toBe("build-measurements-qual-evidence-synthetic-s1.json");
 
-    const validationGlobs = [...workflow.matchAll(/glob\.glob\(f"([^"]+)"\)/g)]
+    // The validator's glob moved out of the workflow into the script its recipe runs.
+    const validator = await fs.readFile(path.join(root, "scripts/validate-qualification-evidence.py"), "utf8");
+    const validationGlobs = [...validator.matchAll(/glob\.glob\(f"([^"]+)"\)/g)]
       .map(match => match[1].replaceAll("{slug}", "synthetic"));
     const uploadGlobs = [...workflow.matchAll(/^\s+path: (e2e\/test-results\/qual-evidence-.+\.json)\s*$/gm)]
       .map(match => match[1].replaceAll("${{ matrix.edition.slug }}", "synthetic").replace(/^e2e\//, ""));

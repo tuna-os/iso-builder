@@ -4,10 +4,13 @@ import importlib.util
 import json
 from pathlib import Path
 import subprocess
+import sys
 
 import pytest
 
 ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT / 'tests'))
+from ci_sources import workflow_text  # noqa: E402
 spec = importlib.util.spec_from_file_location('catalog', ROOT / 'scripts/verify-catalog.py')
 vc = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(vc)
@@ -66,7 +69,7 @@ def test_shipped_catalogs_and_embedded_fallback_share_truthful_status():
 
 
 def test_strict_path_cannot_receive_generic_image_injection():
-    workflow = (ROOT / '.github/workflows/ci.yml').read_text()
+    workflow = workflow_text()  # ci.yml plus the justfile recipes its steps run
     strict = next(line for line in workflow.splitlines() if 'sudo ' in line and '--strict-offline-gui' in line)
     assert 'env -u TBOX_E2E_IMAGE' in strict
     assert 'TBOX_E2E_IMAGE="$TBOX_E2E_IMAGE"' not in strict
