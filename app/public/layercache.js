@@ -241,8 +241,7 @@
     return (x >>> n) | (x << (32 - n));
   }
 
-  function sha256Block(H, b, o) {
-    const w = new Int32Array(64);
+  function sha256Block(H, b, o, w) {
     for (let i = 0; i < 16; i++) {
       w[i] = (b[o + i * 4] << 24) | (b[o + i * 4 + 1] << 16) | (b[o + i * 4 + 2] << 8) | b[o + i * 4 + 3];
     }
@@ -270,6 +269,7 @@
   class Sha256 {
     constructor() {
       this.H = new Int32Array([0x6a09e667, 0xbb67ae85, 0x3c6ef372, 0xa54ff53a, 0x510e527f, 0x9b05688c, 0x1f83d9ab, 0x5be0cd19]);
+      this.w = new Int32Array(64);
       this.b = new Uint8Array(64);
       this.nb = 0;
       this.count = 0;
@@ -287,11 +287,11 @@
         this.nb += take;
         off = take;
         if (this.nb === 64) {
-          sha256Block(this.H, this.b, 0);
+          sha256Block(this.H, this.b, 0, this.w);
           this.nb = 0;
         }
       }
-      for (; off + 64 <= d.length; off += 64) sha256Block(this.H, d, off);
+      for (; off + 64 <= d.length; off += 64) sha256Block(this.H, d, off, this.w);
       if (off < d.length) {
         this.b.set(d.subarray(off));
         this.nb = d.length - off;
