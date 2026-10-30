@@ -451,7 +451,8 @@ jobs:
           RETAIN_ISO_ARTIFACT: ${{ github.event.inputs.retain_iso_artifact }}
           STRICT_ROUNDTRIP_TEST: ${{ github.event.inputs.strict_roundtrip_test }}
           RETAIN_ISO_ARTIFACT_DAYS: ${{ github.event.inputs.retain_iso_artifact_days }}
-        run: just --quiet full-plan >> "$GITHUB_OUTPUT"
+        # No --quiet: just's --quiet also discards the recipe's stdout.
+        run: just full-plan >> "$GITHUB_OUTPUT"
       - run: echo "Building ${{ steps.pick.outputs.count }} edition(s)"
 
   # One cell per base variant — the editions the picker actually offers.
