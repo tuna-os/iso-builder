@@ -252,8 +252,13 @@ def test_strict_roundtrip_budget_covers_work_and_keeps_finalization_time():
         named('prepare strict inputs'),
         named('verify exact retained ISO'),
     ]
-    assert [s['timeout-minutes'] for s in work] == [75, 30, 30, 5, 5, 30, 30, 10, 60]
-    assert sum(s['timeout-minutes'] for s in work) == 275
+    # The plan refuses pair=true with retention, so the build step's budget is
+    # its non-pair branch here.
+    build = work[0]['timeout-minutes']
+    assert build == "${{ github.event.inputs.pair == 'true' && 300 || 75 }}"
+    minutes = [75] + [s['timeout-minutes'] for s in work[1:]]
+    assert minutes == [75, 30, 30, 5, 5, 30, 30, 10, 60]
+    assert sum(minutes) == 275
 
     setup = [
         steps[0],

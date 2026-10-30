@@ -15,6 +15,12 @@
 // HOME: Playwright resolves its browser download to ~/.cache/ms-playwright,
 // so moving HOME would strand the cached chromium and silently reinstall
 // it on every run.
+//
+// The profile is fresh for every test unless the cold/warm pair protocol
+// (`just full-build` with PAIR=true) asks otherwise: TBOX_E2E_PROFILE_KEEP=1
+// leaves the cold sample's profile (and its OPFS layer cache) on disk, and
+// TBOX_E2E_CACHE_MODE=warm reopens it instead of wiping it. A warm run with
+// no profile to reopen fails rather than silently measuring a cold build.
 const base = require("@playwright/test");
 const path = require("path");
 const fs = require("fs");
@@ -23,7 +29,11 @@ exports.test = base.test.extend({
   context: async ({ browserName }, use, testInfo) => {
     const root = process.env.TBOX_E2E_PROFILE_ROOT || process.env.HOME;
     const dir = path.join(root, "tmp", `pw-prof-${testInfo.workerIndex}`);
-    fs.rmSync(dir, { recursive: true, force: true });
+    if (process.env.TBOX_E2E_CACHE_MODE === "warm") {
+      if (!fs.existsSync(dir)) throw new Error(`warm run needs the cold run's profile at ${dir}`);
+    } else {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
     const ctx = await base[browserName].launchPersistentContext(dir, {
       viewport: { width: 1180, height: 820 },
       baseURL: "http://127.0.0.1:8931",
@@ -31,7 +41,7 @@ exports.test = base.test.extend({
     });
     await use(ctx);
     await ctx.close();
-    fs.rmSync(dir, { recursive: true, force: true });
+    if (process.env.TBOX_E2E_PROFILE_KEEP !== "1") fs.rmSync(dir, { recursive: true, force: true });
   },
   page: async ({ context }, use) => {
     await use(context.pages()[0] || (await context.newPage()));

@@ -7,6 +7,11 @@ message on stderr) any input combination the workflow does not allow, before
 any build starts.
 """
 import json, os
+if os.environ.get("PAIR") == "true":
+    expected = {"RUN_FULL": "true", "BENCHMARK": "false", "KEEP_ISO": "false", "RETAIN_CANDIDATE": "false",
+                "RETAIN_ISO_ARTIFACT": "false", "STRICT_ROUNDTRIP_TEST": "false"}
+    if any(os.environ.get(k) != v for k, v in expected.items()):
+        raise SystemExit("pair=true requires run_full=true, benchmark=false, keep_iso=false, retain_candidate=false, retain_iso_artifact=false, strict_roundtrip_test=false")
 if os.environ.get("DIAGNOSTIC_UNQUALIFIED") == "true":
     if not os.environ.get("ONLY", "").strip():
         raise SystemExit("diagnostic_unqualified=true requires only=<slug>: the override is granted per named cell, never to the whole matrix")

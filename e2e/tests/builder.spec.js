@@ -14,7 +14,7 @@ require('./legacy-deployment').useLegacyDeployment(test);
 const path = require("path");
 const fs = require("fs");
 const { qualifiedCatalogFixture } = require("./qualified-catalog-fixture");
-const { observeLoadedWasm, loadedWasmMeasurement, hashSavedIso, buildOperationIdentity, completedBuildResult, diagnosticRecord } = require("./build-measurements");
+const { observeLoadedWasm, loadedWasmMeasurement, hashSavedIso, buildOperationIdentity, completedBuildResult, diagnosticRecord, observeRegistryTransfers } = require("./build-measurements");
 const { removeSavePicker, buildFailedSignature } = require("./full-harness");
 const { diagnosticGrantFromEnv, installDiagnosticGrant, resolveLiveDigests, catalogEntryFor, refreshDiagnosticSnapshot, parseGateRefusal, gateRefusalMessage, gateRefusalSummary } = require("./diagnostic-gate");
 const CATALOG = require("../../app/public/catalog-snapshot.json");
@@ -442,6 +442,10 @@ test.describe("iso builder", () => {
       watchLine(line);
     });
 
+    // Registry blob transfers the browser makes for this build (page and
+    // layer-download worker), from navigation on. Wall time starts here too.
+    const registry = observeRegistryTransfers(page.context());
+    const wallStartedAt = performance.now();
     await page.goto(`/?image=${encodeURIComponent(IMAGE)}&autodl=1&autorun=1${initrd ? `&initrd=${encodeURIComponent(initrd)}` : ""}`);
 
     const stageText = () => page.locator("#stage").textContent().catch(() => "<unreadable>");
@@ -628,6 +632,11 @@ test.describe("iso builder", () => {
     expect(buf.toString("latin1", 1, 6)).toBe("CD001");
     await expect(page.locator("#stage")).toContainText(/Done/, { timeout: 120_000 });
     const buildResult = await completedBuildResult(page, buildIdentity);
+    const wallMs = performance.now() - wallStartedAt;
+    const transfers = await registry.summary();
+    registry.stop();
+    console.log(`registry transfers: ${transfers.completeLayerBlobs} complete layer blob(s), ${transfers.completeLayerBytes} bytes; ` +
+      `${transfers.blobRequests} blob request(s), ${transfers.blobBytes} bytes total; wall ${Math.round(wallMs)} ms`);
     await shot(page, "06-done.png");
     // Browser half of QualificationEvidence v1. The guest half (LUKS
     // install + reboot) is appended by the CI step running iso-e2e.sh;
@@ -671,9 +680,11 @@ test.describe("iso builder", () => {
       run: {
         cacheMode: process.env.TBOX_E2E_CACHE_MODE || "unknown",
         sample: Number(process.env.TBOX_E2E_SAMPLE || 1),
+        pair: process.env.TBOX_E2E_PAIR ? Number(process.env.TBOX_E2E_PAIR) : null,
         startedAt: new Date(T0).toISOString(),
       },
-      phasesMs: { inspect: phases.inspectMs, build: phases.buildMs, save: phases.saveMs },
+      phasesMs: { inspect: phases.inspectMs, build: phases.buildMs, save: phases.saveMs, wall: wallMs },
+      registryTransfers: transfers,
       resources: {
         peakTboxWasmMB: peaks.tboxWasmMB,
         peakTboxJsHeapMB: peaks.tboxJsHeapMB,
@@ -714,5 +725,18 @@ test.describe("iso builder", () => {
     fs.writeFileSync(measurementPath, `${JSON.stringify(measurements, null, 2)}\n`);
     console.log("wrote diagnostic measurements:", measurementPath);
     fs.unlinkSync(out);
+    // Pair protocol (PAIR=true): the cold build must show the observer sees
+    // layer downloads at all, and the warm build, same profile and inputs,
+    // must fetch none. Evidence is written first so a failure keeps it.
+    if (process.env.TBOX_E2E_PAIR) {
+      const mode = evidence.run.cacheMode;
+      const observed = JSON.stringify(transfers.completeLayers, null, 2);
+      if (mode === "cold") {
+        expect(transfers.completeLayerBlobs, "cold pair sample must observe complete layer downloads").toBeGreaterThan(0);
+      } else {
+        expect(mode, "pair samples are cold or warm").toBe("warm");
+        expect(transfers.completeLayerBlobs, `warm pair sample fetched complete layer blobs:\n${observed}`).toBe(0);
+      }
+    }
   });
 });
