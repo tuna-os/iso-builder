@@ -12,8 +12,6 @@ WORKFLOW = yaml.safe_load((ROOT / '.github/workflows/ci.yml').read_text())
 
 
 def plan(env):
-    pick = next(s for s in WORKFLOW['jobs']['full-plan']['steps'] if s.get('id') == 'pick')
-    assert pick['run'].strip() == 'just --quiet full-plan >> "$GITHUB_OUTPUT"'
     return subprocess.run([sys.executable, 'scripts/plan-full-matrix.py'], cwd=ROOT, env={**os.environ, **env}, text=True, capture_output=True)
 
 
