@@ -561,11 +561,27 @@ globalThis.tboxJsHeapMB = () => {
   return -1;
 };
 
+// sha256 over the exact tbox.wasm bytes instantiated (a tee of the same
+// response body). The engine cannot hash its own code, so this host
+// measurement is what it records as engine_digest in live-source.json.
+let wasmEngineDigest = null;
+
+async function sha256Response(response) {
+  const digest = await crypto.subtle.digest("SHA-256", await response.arrayBuffer());
+  return "sha256:" + [...new Uint8Array(digest)].map((b) => b.toString(16).padStart(2, "0")).join("");
+}
+
 function defaultLoadWasm() {
   if (wasmReady) return wasmReady;
   const go = new Go();
-  wasmReady = WebAssembly.instantiateStreaming(fetch("tbox.wasm"), go.importObject)
-    .then((r) => {
+  wasmReady = fetch("tbox.wasm")
+    .then((response) => {
+      if (!response.ok) throw new Error(`tbox.wasm: HTTP ${response.status}`);
+      const measured = sha256Response(response.clone());
+      return Promise.all([WebAssembly.instantiateStreaming(response, go.importObject), measured]);
+    })
+    .then(([r, digest]) => {
+      wasmEngineDigest = digest;
       wasmMemory = r.instance.exports.mem || go.mem || null;
       go.run(r.instance);
       wasmNativeIntrospect = globalThis.tboxIntrospect || null;
@@ -1507,7 +1523,11 @@ async function build() {
     const buildIso = withResult ? window.tboxBuildIsoWithResult : window.tboxBuildIso;
     let writtenBytes = 0;
     const result = await buildIso(
-      { label, initrd, flatpaks, packages, extraRun, request: req },
+      // engineDigest only ever names the module this page instantiated; a
+      // replaced build function is not that module.
+      { label, initrd, flatpaks, packages, extraRun, request: req,
+        ...(wasmEngineDigest && (buildIso === wasmNativeBuildIso || buildIso === wasmNativeBuildIsoWithResult)
+          ? { engineDigest: wasmEngineDigest } : {}) },
       async (u8) => {
         if (!(u8 instanceof Uint8Array) || !Number.isSafeInteger(writtenBytes + u8.byteLength)) {
           throw new Error("invalid ISO sink byte count");

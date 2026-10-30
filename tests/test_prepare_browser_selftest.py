@@ -1,6 +1,9 @@
 import hashlib
 import importlib.util
+import json
 from pathlib import Path
+import shutil
+import subprocess
 
 import pytest
 
@@ -21,7 +24,8 @@ def fixture(tmp_path):
     iso.write_bytes(iso_bytes)
     source = digest(b"base-image")
     overlay = digest(b"live-overlay")
-    engine = digest(b"tacklebox-executable")
+    # A browser build's engine is the WASM module it loaded (RFC 014).
+    engine = digest(b"browser-wasm")
     wasm = digest(b"browser-wasm")
     installer = digest(b"live-installer-bundle")
     measurements = {
@@ -110,8 +114,7 @@ def test_binds_exact_round_trip_and_receipt_identities_without_qualifying(tmp_pa
     assert env["TUNAOS_QUAL_SOURCE_DIGEST"] == source
     assert env["TUNAOS_QUAL_OVERLAY_DIGEST"] == overlay
     assert env["TUNAOS_QUAL_INSTALLER_DIGEST"] == installer
-    assert env["TUNAOS_QUAL_ENGINE_DIGEST"] == engine
-    assert env["TUNAOS_QUAL_ENGINE_DIGEST"] != wasm
+    assert env["TUNAOS_QUAL_ENGINE_DIGEST"] == engine == wasm
     assert env["TUNAOS_QUAL_BROWSER_VERSION"] == "156.0.0.0"
     assert env["TUNAOS_QUAL_CPU_BASELINE"] == "x86-64"
     assert binding["qualification"] == "diagnostic-unqualified"
@@ -145,6 +148,80 @@ def test_rejects_manifest_from_another_run_attempt(tmp_path):
 
     with pytest.raises(helper.InputError, match="producer differs"):
         helper.validate_inputs(**args)
+
+
+def test_rejects_receipt_engine_that_is_not_the_loaded_wasm(tmp_path):
+    args, *_ = fixture(tmp_path)
+    args["source_receipt"]["engine_digest"] = digest(b"tacklebox-executable")
+
+    with pytest.raises(helper.InputError, match="engine digest differs from the loaded WASM"):
+        helper.validate_inputs(**args)
+
+
+def engine_receipt(source, overlay, engine):
+    return {"base_image": "tuna-os/skipjack:gnome", "base_digest": source,
+            "overlay_digest": overlay, "engine_digest": engine, "platform": "linux/amd64",
+            "installer_app_id": "org.bootcinstaller.Installer",
+            "installer_revision": "c" * 64, "installer_bundle_sha256": "remote"}
+
+
+def erofs_image(tmp_path, receipt_text, *options):
+    tree = tmp_path / "tree"
+    (tree / "etc/tunaos").mkdir(parents=True)
+    (tree / "usr/lib").mkdir(parents=True)
+    (tree / "usr/lib/os-release").write_text("ID=tunaos\n")
+    if receipt_text is not None:
+        (tree / "etc/tunaos/live-source.json").write_text(receipt_text)
+    (tree / "etc/tunaos/live-installer-info").write_text("INSTALLER_REVISION=" + "c" * 64 + "\n")
+    image = tmp_path / "rootfs.sfs"
+    subprocess.run(["mkfs.erofs", *options, str(image), str(tree)], check=True, capture_output=True)
+    return image
+
+
+needs_mkfs_erofs = pytest.mark.skipif(shutil.which("mkfs.erofs") is None, reason="mkfs.erofs not installed")
+
+
+@needs_mkfs_erofs
+@pytest.mark.parametrize("options", [(), ("-Enoinline_data",)], ids=["flat-inline", "flat-plain"])
+def test_reads_engine_receipt_from_browser_erofs_live_root(tmp_path, options):
+    args, source, overlay, engine, *_ = fixture(tmp_path)
+    receipt = engine_receipt(source, overlay, engine)
+    image = erofs_image(tmp_path, json.dumps(receipt, indent=2) + "\n", *options)
+
+    assert helper.is_erofs(image)
+    assert json.loads(helper.cat_payload_member(image, "etc/tunaos/live-source.json")) == receipt
+    assert helper.cat_payload_member(image, "etc/tunaos/missing.json") is None
+    with pytest.raises(helper.InputError, match="crosses a non-directory"):
+        helper.cat_payload_member(image, "usr/lib/os-release/x")
+    args["source_receipt"] = json.loads(helper.cat_payload_member(image, "etc/tunaos/live-source.json"))
+    env, _ = helper.validate_inputs(**args)
+    assert (env["TUNAOS_QUAL_SOURCE_DIGEST"], env["TUNAOS_QUAL_OVERLAY_DIGEST"],
+            env["TUNAOS_QUAL_ENGINE_DIGEST"]) == (source, overlay, engine)
+
+
+@needs_mkfs_erofs
+@pytest.mark.parametrize("field,value,error", [
+    ("overlay_digest", "unknown", "missing or invalid identity fields"),
+    ("engine_digest", digest(b"tacklebox-executable"), "engine digest differs"),
+    ("base_digest", digest(b"other base"), "media source digest differs"),
+    ("overlay_digest", digest(b"other overlay"), "media overlay digest differs"),
+    ("platform", "linux/arm64", "media platform differs"),
+])
+def test_rejects_tampered_erofs_receipt(tmp_path, field, value, error):
+    args, source, overlay, engine, *_ = fixture(tmp_path)
+    receipt = engine_receipt(source, overlay, engine)
+    receipt[field] = value
+    image = erofs_image(tmp_path, json.dumps(receipt))
+    args["source_receipt"] = json.loads(helper.cat_payload_member(image, "etc/tunaos/live-source.json"))
+
+    with pytest.raises(helper.InputError, match=error):
+        helper.validate_inputs(**args)
+
+
+@needs_mkfs_erofs
+def test_erofs_live_root_without_receipt_is_absent(tmp_path):
+    image = erofs_image(tmp_path, None)
+    assert helper.cat_payload_member(image, "etc/tunaos/live-source.json") is None
 
 
 def test_installer_identity_must_come_from_valid_media_receipt():

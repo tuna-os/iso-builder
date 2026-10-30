@@ -143,10 +143,14 @@ The workflow adds no cross-repository artifact credential and writes nothing to 
 Before the workflow starts the strict harness at
 `64da1ea1af6b19487ad9cea85213c41646e3ff7f`, it reads
 `live-source.json` and `live-installer-info` from the ISO's live filesystem
-payloads. It compares source and overlay digests with the browser's
-`engineBuildResult`. The media receipt gives the tacklebox executable digest.
-
-The browser reports its WASM digest separately. The workflow uses the installer
+payloads (squashfs, or the EROFS live root the browser engine writes). The
+published overlay carries the installer identity; the engine completes
+`live-source.json` at build time with the base and overlay manifest digests it
+applied and the `engineDigest` the page measured over the exact `tbox.wasm`
+bytes it instantiated, and refuses the build if any of them is missing or
+disagrees with the overlay. The workflow compares source and overlay digests
+with the browser's `engineBuildResult` and the engine digest with the
+harness's independent `loadedWasm` measurement. The workflow uses the installer
 identity from the media receipt. It passes the browser name and version, plus
 same-runner memory and free-disk measurements, through `sudo`. It removes
 `TBOX_E2E_IMAGE` and `FISHERMAN_OVERRIDE` from the environment. If an identity is

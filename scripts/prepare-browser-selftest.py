@@ -14,6 +14,7 @@ from pathlib import Path
 import re
 import shutil
 import subprocess
+import struct
 import sys
 import tempfile
 
@@ -79,6 +80,101 @@ def parse_installer_receipt(text: str) -> str:
     return "sha256:" + candidate.lower()
 
 
+EROFS_MAGIC = 0xE0F5E1E2
+RECEIPT_LIMIT = 1024 * 1024
+
+
+def is_erofs(payload: str | Path) -> bool:
+    with open(payload, "rb") as stream:
+        stream.seek(1024)
+        head = stream.read(4)
+    return len(head) == 4 and struct.unpack("<I", head)[0] == EROFS_MAGIC
+
+
+def erofs_cat(payload: str | Path, member: str) -> bytes | None:
+    """Return one regular file from an uncompressed EROFS image, or None if absent.
+
+    The browser engine (tacklebox purefs.WriteErofs) writes its live root as
+    EROFS, which unsquashfs cannot read and erofs-utils 1.7 cannot cat. Only
+    the plain/inline layouts that writer emits are accepted; anything else
+    fails closed rather than being guessed at.
+    """
+    with open(payload, "rb") as stream:
+        size = os.fstat(stream.fileno()).st_size
+
+        def read(offset: int, length: int) -> bytes:
+            require(0 <= offset and length >= 0 and offset + length <= size,
+                    "EROFS payload reference is out of bounds")
+            stream.seek(offset)
+            return stream.read(length)
+
+        sb = read(1024, 128)
+        require(struct.unpack_from("<I", sb, 0)[0] == EROFS_MAGIC, "payload is not EROFS")
+        blkszbits, root_nid = sb[12], struct.unpack_from("<H", sb, 14)[0]
+        require(9 <= blkszbits <= 16, "EROFS block size is unsupported")
+        block = 1 << blkszbits
+        meta = struct.unpack_from("<I", sb, 40)[0] * block
+
+        def inode(nid: int) -> tuple[int, int, bytes]:
+            base = meta + nid * 32
+            fmt = struct.unpack_from("<H", read(base, 2))[0]
+            extended, layout = fmt & 1, (fmt >> 1) & 7
+            raw = read(base, 64 if extended else 32)
+            xattr_count, mode = struct.unpack_from("<HH", raw, 2)
+            length = struct.unpack_from("<Q" if extended else "<I", raw, 8)[0]
+            blkaddr = struct.unpack_from("<I", raw, 16)[0]
+            require(length <= size, "EROFS inode size is out of bounds")
+            xattrs = 12 + (xattr_count - 1) * 4 if xattr_count else 0
+            if layout == 0:  # FLAT_PLAIN
+                return mode, length, read(blkaddr * block, length)
+            require(layout == 2, "EROFS payload uses an unsupported data layout")
+            full = length - length % block  # FLAT_INLINE: whole blocks, then inline tail
+            tail = read(base + len(raw) + xattrs, length - full)
+            return mode, length, (read(blkaddr * block, full) if full else b"") + tail
+
+        nid = root_nid
+        parts = member.strip("/").split("/")
+        for index, name in enumerate(parts):
+            mode, _, data = inode(nid)
+            require(mode & 0o170000 == 0o040000, "EROFS receipt path crosses a non-directory")
+            found = None
+            for start in range(0, len(data), block):
+                chunk = data[start:start + block]
+                count = struct.unpack_from("<H", chunk, 8)[0] // 12
+                require(count > 0 and count * 12 <= len(chunk), "EROFS directory block is malformed")
+                for entry in range(count):
+                    child, nameoff = struct.unpack_from("<QH", chunk, entry * 12)
+                    end = (struct.unpack_from("<H", chunk, (entry + 1) * 12 + 8)[0]
+                           if entry + 1 < count else len(chunk))
+                    require(nameoff <= end <= len(chunk), "EROFS directory entry is malformed")
+                    if chunk[nameoff:end].split(b"\0", 1)[0] == name.encode():
+                        found = child
+                        break
+                if found is not None:
+                    break
+            if found is None:
+                return None
+            nid = found
+        mode, length, data = inode(nid)
+        require(mode & 0o170000 == 0o100000, f"EROFS {member} is not a regular file")
+        require(length <= RECEIPT_LIMIT, f"EROFS {member} is too large")
+        return data
+
+
+def cat_payload_member(payload: str | Path, member: str) -> str | None:
+    if is_erofs(payload):
+        data = erofs_cat(payload, member)
+        if data is None:
+            return None
+        try:
+            return data.decode()
+        except UnicodeDecodeError as exc:
+            raise InputError(f"embedded {member} is not UTF-8") from exc
+    result = subprocess.run(["unsquashfs", "-cat", str(payload), member],
+                            capture_output=True, text=True)
+    return result.stdout if result.returncode == 0 and result.stdout else None
+
+
 def extract_media_receipts(iso: str | Path, extractor: str | Path, destination: str | Path) -> tuple[dict, str]:
     result = subprocess.run([sys.executable, str(extractor), str(iso), str(destination)],
                             check=True, capture_output=True, text=True)
@@ -97,10 +193,9 @@ def extract_media_receipts(iso: str | Path, extractor: str | Path, destination: 
     for payload in payloads:
         for member, destination_list in (("etc/tunaos/live-source.json", sources),
                                          ("etc/tunaos/live-installer-info", installers)):
-            result = subprocess.run(["unsquashfs", "-cat", str(payload), member],
-                                    capture_output=True, text=True)
-            if result.returncode == 0 and result.stdout:
-                destination_list.append(result.stdout)
+            text = cat_payload_member(payload, member)
+            if text:
+                destination_list.append(text)
     require(sources, "ISO has no embedded etc/tunaos/live-source.json receipt")
     raw_sources, sources_normalized = [], []
     for text in sources:
@@ -181,7 +276,7 @@ def validate_inputs(*, iso: str | Path, measurements: dict, browser_evidence: di
             "artifact manifest measurements differ from the browser evidence")
 
     loaded_wasm = measurements.get("loadedWasm") or {}
-    require_digest(loaded_wasm.get("sha256"), "loaded WASM measurement")
+    loaded_wasm_digest = require_digest(loaded_wasm.get("sha256"), "loaded WASM measurement")
     require(isinstance(loaded_wasm.get("sizeBytes"), int) and
             not isinstance(loaded_wasm.get("sizeBytes"), bool) and loaded_wasm["sizeBytes"] > 0,
             "loaded WASM size is invalid")
@@ -203,6 +298,10 @@ def validate_inputs(*, iso: str | Path, measurements: dict, browser_evidence: di
             "media source digest differs from the browser engine observation")
     require(measured_overlay == source["overlay"],
             "media overlay digest differs from the browser engine observation")
+    # RFC 014: a browser build's engine is the WASM module the page loaded;
+    # the receipt must name those bytes, not a native tacklebox or a label.
+    require(source["engine"] == loaded_wasm_digest,
+            "media engine digest differs from the loaded WASM measurement")
     require_digest(installer_digest, "ISO installer receipt")
 
     browser = measurements.get("browser") or {}
