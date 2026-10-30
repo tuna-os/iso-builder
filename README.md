@@ -70,7 +70,7 @@ sequenceDiagram
 | Path | Description |
 |------|-------------|
 | `app/public/` | Static web application assets. `tbox.wasm` is tacklebox compiled for `GOOS=js GOARCH=wasm`. |
-| `app/wrangler.jsonc` | Cloudflare Pages deployment configuration. Deployed to `iso.tunaos.org`. |
+| `app/wrangler.jsonc` | Cloudflare Workers static-assets deployment configuration. Deployed to `iso.tunaos.org`. |
 | `worker/` | `cors-shim.js` — Cloudflare Worker shim (`relay.tunaos.org`) proxying GHCR + Flathub/package search APIs. |
 | `e2e/` | Playwright test suite driving the real WASM engine against live container registries. |
 | [`native/`](native/README.md) | Cross-platform desktop writer for creating and managing persistent multi-boot drives. |
