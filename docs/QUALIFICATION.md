@@ -79,7 +79,8 @@ The plan refuses `pair` with `benchmark`, `keep_iso`, `retain_candidate`,
 `retain_iso_artifact` or `strict_roundtrip_test`. `just full-build` then runs
 six `@full` samples with identical inputs. Odd samples 1, 3 and 5 are cold:
 each uses a fresh Chromium profile and keeps it on disk. Each even sample 2, 4
-and 6 is warm: it reopens the preceding cold profile and its OPFS layer cache.
+and 6 is warm: it reopens the cold profile from the sample before it, with its
+OPFS layer cache.
 
 Each sample's `qual-evidence-<slug>-s<N>.json` records `run.pair`,
 `run.cacheMode`, `phasesMs.wall` (navigation to `Done`, in ms) and
@@ -92,12 +93,12 @@ HEAD requests, redirect hops, `206` resumes and failed streams do not count.
 
 A warm sample fails when it fetched any complete layer blob, and lists those
 blobs in the failure. A cold sample fails when it observed none. The evidence
-step writes `qual-evidence-<slug>-pairs.json`. That file holds wall time,
-transfer counts and bytes, peak WASM and JS heap MB, OPFS usage and quota in
-bytes, and ISO bytes for each pair. It also holds the ISO and loaded-WASM
-SHA-256 and the engine build result from `build-measurements-*.json`. It
-rejects a pair whose cold and warm manifest digests differ, because the
-inputs changed.
+step writes `qual-evidence-<slug>-pairs.json`. For each pair, that file holds
+wall time, transfer counts and bytes, and peak WASM and JS heap MB. It also
+holds OPFS usage and quota in bytes, ISO bytes, the ISO and loaded-WASM SHA-256,
+and the engine build result from `build-measurements-*.json`. It rejects a
+pair when the manifest digests of
+the cold and warm samples differ, because the inputs changed.
 
 ## Browser build diagnostic measurements
 
