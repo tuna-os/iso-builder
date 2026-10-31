@@ -337,16 +337,18 @@ full-guest-verify-strict:
       sudo tee /etc/udev/rules.d/99-kvm4all.rules
     sudo udevadm control --reload-rules
     sudo udevadm trigger --name-match=kvm || true
-    diagnostic_env=()
     if [ "$DIAGNOSTIC_UNQUALIFIED" = "true" ]; then
       if [ "$STRICT_INSTALL_MODE" != "luks" ]; then
         echo "::error::Diagnostic strict testing requires LUKS"
         exit 1
       fi
-      diagnostic_env=(TUNAOS_INSTALLED_BOOT_DIAGNOSTIC=1)
-    fi
-    sudo env -u TBOX_E2E_IMAGE -u FISHERMAN_OVERRIDE -u TUNAOS_INSTALLED_BOOT_DIAGNOSTIC \
-      "${diagnostic_env[@]}" \
+      STRICT_INSTALL_MODE="$STRICT_INSTALL_MODE" DIAGNOSTIC_UNQUALIFIED="$DIAGNOSTIC_UNQUALIFIED" \
+        python3 scripts/browser-strict-diagnostic.py \
+        --harness-root "$GITHUB_WORKSPACE/tunaos-e2e-current" \
+        --iso "$ISO" --binding "e2e/test-results/same-byte-guest-test-binding-${SLUG}.json" \
+        --output "$OUT"
+    else
+      sudo env -u TBOX_E2E_IMAGE -u FISHERMAN_OVERRIDE -u TUNAOS_INSTALLED_BOOT_DIAGNOSTIC \
       VARIANT="$VARIANT" FLAVOR="$FLAVOR" \
       TUNAOS_QUAL_EXECUTION_KIND="$TUNAOS_QUAL_EXECUTION_KIND" \
       STRICT_PUBLISHED_MEDIA="$STRICT_PUBLISHED_MEDIA" \
@@ -365,6 +367,7 @@ full-guest-verify-strict:
       TUNAOS_QUAL_BROWSER_FREE_DISK_GIB="$TUNAOS_QUAL_BROWSER_FREE_DISK_GIB" \
       "$GITHUB_WORKSPACE/tunaos-e2e-current/scripts/iso-e2e.sh" "$ISO" --strict-offline-gui="$STRICT_INSTALL_MODE" \
       --output "$OUT" --timeout 900
+    fi
     {
       echo "### Same-byte strict guest test completed (${STRICT_INSTALL_MODE}, diagnostic-unqualified=${DIAGNOSTIC_UNQUALIFIED}; not full qualification)"
       echo "- ISO: \`${TUNAOS_QUAL_MEDIA_DIGEST}\`"

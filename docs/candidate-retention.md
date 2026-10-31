@@ -200,21 +200,46 @@ is missing or disagrees with the overlay.
 The workflow compares source and overlay digests with the browser's
 `engineBuildResult`. It compares the engine digest with the harness's independent
 `loadedWasm` measurement. The workflow uses the installer identity from the media
-receipt. It passes the browser name and version, plus same-runner memory and
-free-disk measurements, through `sudo`. It removes `TBOX_E2E_IMAGE` and
-`FISHERMAN_OVERRIDE` from the environment. If an identity is missing or
-inconsistent, the workflow stops before guest execution.
+receipt. It passes the browser name and version, plus the memory and free disk
+that CI measured, to the guest harness.
+
+The plain leg uses `sudo`. The diagnostic leg uses an unprivileged service.
+Neither path forwards `TBOX_E2E_IMAGE` or
+`FISHERMAN_OVERRIDE`. If an identity is missing or inconsistent, the workflow
+stops before guest execution.
 
 The sidecar preserves `not-assessed` for the observed plain context and
 `diagnostic-unqualified` for the diagnostic LUKS context. The guest output directory is
-`luks-verify-<slug>-diag` for both retained-byte test contexts. The harness creates Unix sockets inside this short
+`luks-verify-<slug>-obs` for plain and `luks-verify-<slug>-diag` for LUKS. The harness creates Unix sockets inside this short
 directory; `sun_path` holds 107 bytes. The recipe stops before guest execution if
 `strict-plain-warm-serial.sock` there would exceed that limit.
+
+### Isolated LUKS diagnostics
+
+[Run 41249448336](https://github.com/tuna-os/iso-builder/actions/runs/41249448336)
+built and retained an ISO. It checked the downloaded bytes and the binding to
+the same run. The strict harness then returned 77 before it started a VM:
+`TUNAOS_INSTALLED_BOOT_DIAGNOSTIC=1` needs a real supervisor socket.
+That run proves no install or detached boot.
+
+The browser adapter imports `ContainedProcess` and `OwnedQemu` from the
+immutable harness above. These existing classes own each service, its signals,
+and cleanup. The adapter starts the real socket and proxy for that owner.
+It does not create a dummy socket or run the native producer's CLI.
+
+The adapter checks the same-run binding and ISO hash again. It keeps the browser
+identity, the diagnostic label, and the full 900-second window for the harness.
+The service does not retain raw stdout or stderr. The adapter stops all owned
+services on every exit. A cleanup failure cannot turn a failure into a pass.
+
+The receipt reports the primary exit and the result of cleanup. It never
+qualifies an image.
+
 
 This test does not authenticate the producer or frontend. It does not turn a
 failed browser identity into a pass, qualify the target, publish an ISO, or change
 catalog or download status. The sidecar records `baseAnnotationMatched` as
-evidence; that value does not prove a match. This change has no hosted run.
+evidence; that value does not prove a match. These identities alone do not prove a guest boot.
 
 Before upload, the diagnostic-context finalizer renames each nested qualification
 receipt to `diagnostic-unqualified-evidence.json`, with a number if that name
