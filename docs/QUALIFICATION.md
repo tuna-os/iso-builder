@@ -52,11 +52,11 @@ Issue #270 still needs these steps:
 - Bind the browser output and producer inputs to the strict harness.
 - Support isolated candidate builds before any public claim of qualification.
 - Preserve each sample outside the output directory that Playwright clears.
-- Measure transfers for paired cold and warm runs with unchanged inputs.
+- Run the cold/warm pair protocol below and review its evidence.
 - Review the harness pin against the newer strict contract in
   [tunaOS #3431](https://github.com/tuna-os/tunaOS/pull/3431).
 
-The current benchmark uses three cold profiles. It does not prove warm reuse.
+The benchmark (`benchmark=true`) uses three cold profiles. It does not prove warm reuse.
 
 A maintainer must review and approve deployment. A merge to main automatically
 deploys the app and relay. Public download routes, R2 publication, retention and existing objects stay intact.
@@ -72,11 +72,40 @@ not prove that association. The current producer lacks this integration and
 must keep targets unqualified. A native install result does not establish
 browser origin. Placeholder browser names and versions cannot pass the gate.
 
+## Cold/warm pair protocol
+
+Dispatch `ci.yml` with `run_full=true`, `pair=true` and one `only=<slug>`.
+The plan refuses `pair` with `benchmark`, `keep_iso`, `retain_candidate`,
+`retain_iso_artifact` or `strict_roundtrip_test`. `just full-build` then runs
+six `@full` samples with identical inputs. Odd samples 1, 3 and 5 are cold:
+each uses a fresh Chromium profile and keeps it on disk. Each even sample 2, 4
+and 6 is warm: it reopens the cold profile from the sample before it, with its
+OPFS layer cache.
+
+Each sample's `qual-evidence-<slug>-s<N>.json` records `run.pair`,
+`run.cacheMode`, `phasesMs.wall` (navigation to `Done`, in ms) and
+`registryTransfers`. The browser's own network events (page and layer worker)
+produce that record. It holds every `/v2/<repo>/blobs/<digest>` response with
+method, status, Range header, encoded body bytes and failure, plus the observed
+manifest digests. A complete layer blob is a finished `GET` that returned
+`200` without a Range header and whose digest is not a manifest's config.
+HEAD requests, redirect hops, `206` resumes and failed streams do not count.
+
+A warm sample fails when it fetched any complete layer blob, and lists those
+blobs in the failure. A cold sample fails when it observed none. The evidence
+step writes `qual-evidence-<slug>-pairs.json`. For each pair, that file holds
+wall time, transfer counts and bytes, and peak WASM and JS heap MB. It also
+holds OPFS usage and quota in bytes, ISO bytes, the ISO and loaded-WASM SHA-256,
+and the engine build result from `build-measurements-*.json`. It rejects a
+pair when the manifest digests of
+the cold and warm samples differ, because the inputs changed.
+
 ## Browser build diagnostic measurements
 
 The existing `@full` test writes a separate `build-measurements-*.json` file
-beside its legacy evidence. The full diagnostics artifact includes this file;
-the qualification-evidence validator does not consume it.
+beside its legacy evidence. The full diagnostics artifact includes this file.
+The qualification-evidence validator reads it only for the pair summary's
+build identities.
 
 The record contains the SHA-256 and byte count of the saved ISO. If the test
 retains a separate copy for later steps, it hashes that copy too and needs

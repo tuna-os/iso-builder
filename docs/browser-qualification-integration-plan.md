@@ -52,7 +52,8 @@ It does not provide failure-safe retention. Do not describe it as a retention-on
 Do not leave `only` blank: that selects all eleven editions.
 Upstream reference cells use `qualify=false`. They prove no offline GUI parity for
 TunaOS and qualify no TunaOS target. The input `benchmark=true` creates three cold
-profiles, not a cold/warm pair. This review dispatched no workflow.
+profiles, not a cold/warm pair. The input `pair=true` runs three cold/warm pairs; see
+the [pair protocol](QUALIFICATION.md#coldwarm-pair-protocol). This review dispatched no workflow.
 
 ## Integration stages
 
