@@ -497,7 +497,7 @@ jobs:
   # ISO, so this is not a per-push gate.
   full-matrix:
     needs: [full-plan, wasm]
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     # The strict same-byte route has bounded stages: 75 min to build, 30 to
     # split the ISO, 30+5 to upload it, 5 to drop local chunks, 30 to download,
     # 30 to verify, 10 to prepare, and 60 for the guest: 275 min total. Setup
