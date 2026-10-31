@@ -127,11 +127,38 @@ The steps run after the browser build, and also after a failed guest check:
 
 ### Optional strict test of the exact round-tripped bytes
 
-The bounded same-byte path is off by default and accepts only this dispatch:
+The bounded same-byte path is off by default. It accepts two contexts for
+`skipjack-gnome` only. The observed plain-install context is:
 
 ```json
-{"run_full":true,"only":"skipjack-gnome","benchmark":false,"keep_iso":false,"retain_iso_artifact":true,"diagnostic_unqualified":true,"strict_roundtrip_test":true,"retain_iso_artifact_days":"7"}
+{"run_full":true,"only":"skipjack-gnome","benchmark":false,"keep_iso":false,"retain_candidate":false,"pair":false,"retain_iso_artifact":true,"diagnostic_unqualified":false,"strict_roundtrip_test":true,"strict_install_mode":"plain","retain_iso_artifact_days":"7"}
 ```
+
+The diagnostic context uses the same bounds with `strict_install_mode: "luks"`
+and `diagnostic_unqualified: true`. Plain diagnostic and non-diagnostic LUKS
+combinations are rejected; neither context permits publication.
+
+### Admission and qualification boundaries
+
+The plain context grants CI-only admission to an actually observed image that
+the production catalog has not qualified. The browser harness enables it only
+with `TBOX_E2E_STRICT_OBSERVED=1`, `TBOX_E2E_FULL=1`, and the exact bounded input
+combination above. The frozen `__TBOX_STRICT_OBSERVED__` grant binds
+`tuna-os/skipjack:gnome`, `linux/amd64`, install mode `plain`, and route
+`retained-iso-roundtrip`. It is not a URL, UI, or browser-storage override and
+cannot coexist with the diagnostic grant.
+
+Observed builds retain `qualification: not-assessed`. Their `strictObserved`
+evidence is labeled `observed, not assessed` and records the image, platform,
+and catalog pins; it supplies no `qualificationId`. The browser resolves the
+actual architecture and variant descriptor and records the bytes it used.
+Admission does not assert that those observations match qualified catalog pins.
+
+Diagnostic builds instead retain `qualification: diagnostic-unqualified` and
+the explicit diagnostic override label. A qualified catalog target remains a
+separate state governed by the unchanged production catalog guards. Neither
+successful artifact retention nor a passing single-mode guest test promotes an
+observed or diagnostic build to qualified.
 
 The job timeout is 360 minutes for this path. The capped build, artifact
 transfer, input preparation, and guest test total 275 minutes. Setup and the
@@ -143,7 +170,7 @@ The workflow adds no cross-repository artifact credential and writes nothing to 
 Before guest execution, the workflow reads `live-source.json` and
 `live-installer-info` from the ISO payloads. These use SquashFS or the EROFS live
 root that the browser engine writes. The strict harness uses commit
-`64da1ea1af6b19487ad9cea85213c41646e3ff7f`.
+`a700a7d3aa393361793a8e5966284f310fe36dab`.
 
 The published overlay carries the installer identity. At build time, the engine
 completes `live-source.json` with the base and overlay manifest digests it applied.
@@ -159,8 +186,9 @@ free-disk measurements, through `sudo`. It removes `TBOX_E2E_IMAGE` and
 `FISHERMAN_OVERRIDE` from the environment. If an identity is missing or
 inconsistent, the workflow stops before guest execution.
 
-The sidecar uses the diagnostic-unqualified label. The guest output directory is
-`luks-verify-<slug>-diag`. The harness creates Unix sockets inside this short
+The sidecar preserves `not-assessed` for the observed plain context and
+`diagnostic-unqualified` for the diagnostic LUKS context. The guest output directory is
+`luks-verify-<slug>-diag` for both retained-byte test contexts. The harness creates Unix sockets inside this short
 directory; `sun_path` holds 107 bytes. The recipe stops before guest execution if
 `strict-plain-warm-serial.sock` there would exceed that limit.
 
@@ -169,9 +197,11 @@ failed browser identity into a pass, qualify the target, publish an ISO, or chan
 catalog or download status. The sidecar records `baseAnnotationMatched` as
 evidence; that value does not prove a match. This change has no hosted run.
 
-Before upload, the finalizer renames each nested qualification receipt to a diagnostic name.
-It uses `diagnostic-unqualified-evidence.json`, with a number if that name exists.
-The finalizer writes `DIAGNOSTIC-UNQUALIFIED.txt` in the guest output directory.
+Before upload, the diagnostic-context finalizer renames each nested qualification
+receipt to `diagnostic-unqualified-evidence.json`, with a number if that name
+exists, and writes `DIAGNOSTIC-UNQUALIFIED.txt` in the guest output directory.
+Observed-context evidence must retain its `not-assessed` label rather than claim
+diagnostic override use or full qualification.
 The diagnostics artifact includes the renamed receipt and marker.
 The strict path skips the separate `qual-*` evidence upload.
 

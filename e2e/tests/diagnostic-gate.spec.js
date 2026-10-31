@@ -8,7 +8,7 @@ const fs = require("fs");
 const { spawnSync } = require("child_process");
 const { diagnosticRecord } = require("./build-measurements");
 const {
-  diagnosticGrantFromEnv, installDiagnosticGrant, resolveLiveDigests, catalogEntryFor, refreshDiagnosticSnapshot, parseGateRefusal, gateRefusalMessage, gateRefusalSummary,
+  diagnosticGrantFromEnv, installDiagnosticGrant, strictObservedGrantFromEnv, installStrictObservedGrant, resolveLiveDigests, catalogEntryFor, refreshDiagnosticSnapshot, parseGateRefusal, gateRefusalMessage, gateRefusalSummary,
 } = require("./diagnostic-gate");
 
 const ROOT = path.resolve(__dirname, "../..");
@@ -134,6 +134,118 @@ test.describe("spec-side grant resolution", () => {
   }
 });
 
+test.describe("bounded strict-observed admission", () => {
+  const env = {
+    TBOX_E2E_STRICT_OBSERVED: "1", TBOX_E2E_FULL: "1",
+    STRICT_ROUNDTRIP_TEST: "true", STRICT_INSTALL_MODE: "plain",
+    DIAGNOSTIC_UNQUALIFIED: "false", RETAIN_ISO_ARTIFACT: "true",
+    ONLY: "skipjack-gnome", BENCHMARK: "false", KEEP_ISO: "false",
+    RETAIN_CANDIDATE: "false", PAIR: "false",
+  };
+  const want = { image: IMAGE, platform: PLATFORM };
+  const observedGrant = () => strictObservedGrantFromEnv(env, want);
+
+  test("requires every bounded producer input and an exact target", () => {
+    expect(strictObservedGrantFromEnv({}, want)).toBeNull();
+    expect(observedGrant()).toEqual({ kind: "strict-observed", ...want,
+      installMode: "plain", route: "retained-iso-roundtrip" });
+    for (const key of Object.keys(env)) {
+      expect(() => strictObservedGrantFromEnv({ ...env, [key]: "wrong" }, want), key).toThrow(/TBOX_E2E_STRICT_OBSERVED/);
+    }
+    for (const other of [{ image: "tuna-os/yellowfin:gnome", platform: PLATFORM }, { image: IMAGE, platform: "linux/amd64/v2" }]) {
+      expect(() => strictObservedGrantFromEnv(env, other)).toThrow(/retained Skipjack GNOME/);
+    }
+    expect(() => strictObservedGrantFromEnv({ ...env, DIAGNOSTIC_ALLOW_UNQUALIFIED: "1" }, want)).toThrow(/no diagnostic/);
+  });
+
+  test("real app admits the retained plain observation without qualification or diagnostic labels", async ({ page }) => {
+    await page.addInitScript(installStrictObservedGrant, observedGrant());
+    await page.goto(PRESET);
+    await inspectPreset(page);
+    await expect(page.locator("#build")).toBeEnabled();
+    await expect(page.locator(".badge.status")).toContainText("not-assessed");
+    await expect(page.locator("#stage")).toContainText("observed, not assessed");
+    const result = await page.evaluate(() => ({
+      request: globalThis.tboxGetBuildRequest(),
+      grant: Object.getOwnPropertyDescriptor(globalThis, "__TBOX_STRICT_OBSERVED__"),
+      catalogQualification: globalThis.tboxCurrentOperation.catalogEntry.qualification.status,
+    }));
+    expect(result.request.qualificationId).toBeUndefined();
+    expect(result.catalogQualification).toBe("unqualified");
+    expect(result.grant.writable).toBe(false);
+    expect(result.grant.configurable).toBe(false);
+  });
+
+  test("observing an already-qualified fixture still omits qualificationId after request synchronization", async ({ page }) => {
+    await require("./qualified-catalog-fixture").qualifiedCatalogFixture(page);
+    await page.addInitScript(installStrictObservedGrant, observedGrant());
+    await page.goto(PRESET);
+    await inspectPreset(page);
+    await expect(page.locator("#build")).toBeEnabled();
+    await expect(page.locator(".badge.status")).toContainText("not-assessed");
+    expect(await page.evaluate(() => globalThis.tboxGetBuildRequest().qualificationId)).toBeUndefined();
+    expect(await page.evaluate(() => globalThis.tboxCurrentOperation.catalogEntry.qualification.status)).toBe("qualified");
+  });
+
+  for (const [name, change] of [
+    ["another image", { image: "tuna-os/yellowfin:gnome" }],
+    ["another platform", { platform: "linux/amd64/v2" }],
+    ["another mode", { installMode: "luks" }],
+    ["another route", { route: "normal" }],
+    ["another kind", { kind: "qualified" }],
+  ]) {
+    test(`real app refuses strict grant for ${name}`, async ({ page }) => {
+      await page.addInitScript(installStrictObservedGrant, { ...observedGrant(), ...change });
+      await page.goto(PRESET);
+      await inspectPreset(page);
+      await expect(page.locator("#build")).toBeDisabled();
+      await expect(page.locator("#stage")).toContainText("Browser build unavailable");
+    });
+  }
+
+  test("conflicting grants fail closed instead of choosing a label", async ({ page }) => {
+    await page.addInitScript(installStrictObservedGrant, observedGrant());
+    await withGrant(page, grant());
+    await page.goto(PRESET);
+    await inspectPreset(page);
+    await expect(page.locator("#build")).toBeDisabled();
+    await expect(page.locator(".badge.status")).toContainText("unqualified");
+  });
+
+  test("strict observation cannot bypass the browser storage guard", async ({ page }) => {
+    await page.addInitScript(installStrictObservedGrant, observedGrant());
+    await page.addInitScript(() => {
+      Object.defineProperty(navigator.storage, "estimate", { value: async () => ({ quota: 1024, usage: 0 }) });
+    });
+    await page.goto(PRESET);
+    await inspectPreset(page);
+    await expect(page.locator("#build")).toBeDisabled();
+    await expect(page.locator("#stage")).toContainText("insufficient browser storage");
+  });
+
+  test("strict observation cannot make an unavailable target executable", async ({ page }) => {
+    const catalog = structuredClone(require("../../app/public/catalog-snapshot.json"));
+    catalog.targets.find((entry) => entry.targetKey === "skipjack:gnome:linux/amd64").availability.available = false;
+    await page.route("**/catalog-snapshot.json", (route) => route.fulfill({ json: catalog }));
+    await page.addInitScript(installStrictObservedGrant, observedGrant());
+    await page.goto(PRESET);
+    await inspectPreset(page);
+    await expect(page.locator("#build")).toBeDisabled();
+    await expect(page.locator("#stage")).toContainText("Browser build unavailable");
+  });
+
+  test("URL and storage cannot install an observed grant", async ({ page }) => {
+    await page.addInitScript(() => {
+      localStorage.setItem("__TBOX_STRICT_OBSERVED__", JSON.stringify({ kind: "strict-observed" }));
+      globalThis.TBOX_E2E_STRICT_OBSERVED = "1";
+    });
+    await page.goto(`${PRESET}&TBOX_E2E_STRICT_OBSERVED=1&strictObserved=true`);
+    await inspectPreset(page);
+    await expect(page.locator("#build")).toBeDisabled();
+    await expect(page.locator("#stage")).toContainText("Browser build unavailable");
+  });
+});
+
 test.describe("diagnostic pin refresh", () => {
   const CATALOG = require("../../app/public/catalog-snapshot.json");
   const h = (c) => `sha256:${c.repeat(64)}`;
@@ -141,7 +253,7 @@ test.describe("diagnostic pin refresh", () => {
   function fakeRegistry({ perPlatform = 1, bad = null } = {}) {
     const index = { manifests: [
       { digest: h("a"), platform: { os: "linux", architecture: "amd64" } },
-      { digest: h("b"), platform: { os: "linux", architecture: "amd64/v2" } },
+      { digest: h("b"), platform: { os: "linux", architecture: "amd64", variant: "v2" } },
       ...Array.from({ length: perPlatform - 1 }, () => ({ digest: h("e"), platform: { os: "linux", architecture: "amd64" } })),
     ] };
     const calls = [];
@@ -173,6 +285,16 @@ test.describe("diagnostic pin refresh", () => {
     await expect(resolveLiveDigests({ ...base, fetchImpl: fakeRegistry({ perPlatform: 2 }).fetchImpl })).rejects.toThrow(/exactly one/);
     await expect(resolveLiveDigests({ ...base, platform: "linux/arm64", fetchImpl: fakeRegistry().fetchImpl })).rejects.toThrow(/exactly one/);
     await expect(resolveLiveDigests({ ...base, fetchImpl: fakeRegistry({ bad: "nope" }).fetchImpl })).rejects.toThrow(/malformed digest/);
+    await expect(resolveLiveDigests({ ...base, platform: "linux/amd64/v3", fetchImpl: fakeRegistry().fetchImpl })).rejects.toThrow(/exactly one/);
+    const duplicateVariant = fakeRegistry().fetchImpl;
+    const ambiguousVariant = async (url, init) => {
+      const response = await duplicateVariant(url, init);
+      if (!url.endsWith("/manifests/gnome")) return response;
+      const body = await response.json();
+      body.manifests.push({ ...body.manifests[1] });
+      return { ...response, json: async () => body };
+    };
+    await expect(resolveLiveDigests({ ...base, platform: "linux/amd64/v2", fetchImpl: ambiguousVariant })).rejects.toThrow(/exactly one.*found 2/);
     await expect(resolveLiveDigests({ ...base, repository: "docker.io/x/y", fetchImpl: fakeRegistry().fetchImpl })).rejects.toThrow(/cannot resolve/);
   });
 

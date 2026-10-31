@@ -231,7 +231,8 @@ def plan(env):
 def valid():
     return dict(RETAIN_ISO_ARTIFACT='true', RUN_FULL='true', ONLY='skipjack-gnome', BENCHMARK='false',
                 KEEP_ISO='false', RETAIN_ISO_ARTIFACT_DAYS='7', RETAIN_CANDIDATE='false',
-                STRICT_INSTALL_MODE='plain', DIAGNOSTIC_UNQUALIFIED='false', STRICT_ROUNDTRIP_TEST='false')
+                STRICT_INSTALL_MODE='plain', DIAGNOSTIC_UNQUALIFIED='false', STRICT_ROUNDTRIP_TEST='false',
+                PAIR='false')
 
 
 def test_plan_accepts_any_single_named_cell_without_r2():
@@ -272,13 +273,15 @@ def test_strict_roundtrip_plan_accepts_bounded_observed_or_diagnostic_cell(mode,
 
 
 @pytest.mark.parametrize('key,value', [
-    ('ONLY', 'bonito-kde'), ('RUN_FULL', 'false'), ('BENCHMARK', 'true'),
+    ('ONLY', 'bonito-kde'), ('ONLY', 'skipjack-gnome,bonito-kde'),
+    ('RUN_FULL', 'false'), ('BENCHMARK', 'true'), ('PAIR', 'true'),
     ('KEEP_ISO', 'true'), ('STRICT_INSTALL_MODE', 'both'), ('STRICT_INSTALL_MODE', ''),
     ('RETAIN_ISO_ARTIFACT', 'false'), ('RETAIN_CANDIDATE', 'true'),
 ])
-def test_strict_roundtrip_plan_rejects_unbounded_or_published_modes(key, value):
+@pytest.mark.parametrize('mode,diagnostic', [('plain', 'false'), ('luks', 'true')])
+def test_strict_roundtrip_plan_rejects_unbounded_or_published_modes(key, value, mode, diagnostic):
     env = valid()
-    env.update(STRICT_ROUNDTRIP_TEST='true')
+    env.update(STRICT_ROUNDTRIP_TEST='true', STRICT_INSTALL_MODE=mode, DIAGNOSTIC_UNQUALIFIED=diagnostic)
     env[key] = value
     r = plan(env)
     assert r.returncode != 0

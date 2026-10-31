@@ -1,11 +1,9 @@
 // Test-only helpers for building a catalog-unqualified target in @full.
 //
-// The production qualification gate (app.js catalogQualification) is never
-// weakened. The app honours one JS global, installed by Playwright
-// addInitScript, that names the exact image and platform of the operation
-// (app.js diagnosticUnqualifiedGrant). Nothing the deployed site's normal path
-// can reach (URL, storage, UI, environment) installs it. The result is labelled
-// "diagnostic-unqualified" everywhere and is never a qualification.
+// Production catalog qualification is never changed. CI installs frozen,
+// named-target grants with addInitScript; URL, storage and UI cannot grant one.
+// Diagnostic builds stay diagnostic-unqualified. The bounded retained-ISO plain
+// route instead records a strict-observed, not-assessed build.
 
 const LABEL = "diagnostic, unqualified build";
 const QUALIFICATION = "diagnostic-unqualified";
@@ -35,6 +33,29 @@ function diagnosticGrantFromEnv(env, { image, platform }) {
 // global exists only when the spec decided to grant it.
 function installDiagnosticGrant(grant) {
   Object.defineProperty(globalThis, "__TBOX_DIAGNOSTIC_UNQUALIFIED__", {
+    value: Object.freeze({ ...grant }), enumerable: false, configurable: false, writable: false,
+  });
+}
+
+function strictObservedGrantFromEnv(env, { image, platform }) {
+  if (env.TBOX_E2E_STRICT_OBSERVED === undefined || env.TBOX_E2E_STRICT_OBSERVED === "") return null;
+  const required = {
+    TBOX_E2E_STRICT_OBSERVED: "1", TBOX_E2E_FULL: "1",
+    STRICT_ROUNDTRIP_TEST: "true", STRICT_INSTALL_MODE: "plain",
+    DIAGNOSTIC_UNQUALIFIED: "false", RETAIN_ISO_ARTIFACT: "true",
+    ONLY: "skipjack-gnome", BENCHMARK: "false", KEEP_ISO: "false",
+    RETAIN_CANDIDATE: "false", PAIR: "false",
+  };
+  if (Object.entries(required).some(([key, value]) => env[key] !== value) ||
+      env.DIAGNOSTIC_ALLOW_UNQUALIFIED || image !== "tuna-os/skipjack:gnome" || platform !== "linux/amd64") {
+    throw new Error("TBOX_E2E_STRICT_OBSERVED requires the retained Skipjack GNOME plain strict roundtrip, no diagnostic grant or publishing");
+  }
+  return Object.freeze({ kind: "strict-observed", image, platform,
+    installMode: "plain", route: "retained-iso-roundtrip" });
+}
+
+function installStrictObservedGrant(grant) {
+  Object.defineProperty(globalThis, "__TBOX_STRICT_OBSERVED__", {
     value: Object.freeze({ ...grant }), enumerable: false, configurable: false, writable: false,
   });
 }
@@ -95,8 +116,10 @@ async function resolveLiveDigests({ repository, tag, platform, fetchImpl = fetch
   };
   const index = await get(tag);
   if (!Array.isArray(index.body.manifests)) throw new Error(`${repository}:${tag} is not an image index`);
-  const want = platform.replace(/^linux\//, "");
-  const hits = index.body.manifests.filter((d) => d.platform?.os === "linux" && d.platform.architecture === want);
+  const [os, architecture, variant = "", ...extra] = platform.split("/");
+  if (os !== "linux" || !architecture || extra.length) throw new Error(`cannot resolve exact platform ${platform}`);
+  const hits = index.body.manifests.filter((d) => d.platform?.os === os &&
+    d.platform.architecture === architecture && (d.platform.variant || "") === variant);
   if (hits.length !== 1) throw new Error(`expected exactly one ${platform} manifest in ${repository}:${tag}, found ${hits.length}`);
   const manifest = await get(hits[0].digest);
   const configDigest = manifest.body.config?.digest;
@@ -131,5 +154,6 @@ function refreshDiagnosticSnapshot(catalog, targetKey, live) {
 module.exports = {
   resolveLiveDigests, catalogEntryFor, refreshDiagnosticSnapshot,
   LABEL, QUALIFICATION, diagnosticGrantFromEnv, installDiagnosticGrant,
+  strictObservedGrantFromEnv, installStrictObservedGrant,
   parseGateRefusal, gateRefusalMessage, gateRefusalSummary,
 };

@@ -628,6 +628,14 @@ jobs:
           # diagnostic-unqualified and are never a qualification.
           DIAGNOSTIC_ALLOW_UNQUALIFIED: ${{ github.event.inputs.diagnostic_unqualified == 'true' && github.event.inputs.only != '' && '1' || '' }}
           DIAGNOSTIC_TARGET: ${{ contains(matrix.edition.ref, '/') && matrix.edition.ref || format('tuna-os/{0}', matrix.edition.ref) }}
+          TBOX_E2E_STRICT_OBSERVED: ${{ github.event.inputs.strict_roundtrip_test == 'true' && github.event.inputs.strict_install_mode == 'plain' && github.event.inputs.diagnostic_unqualified != 'true' && '1' || '' }}
+          STRICT_ROUNDTRIP_TEST: ${{ github.event.inputs.strict_roundtrip_test }}
+          STRICT_INSTALL_MODE: ${{ github.event.inputs.strict_install_mode }}
+          DIAGNOSTIC_UNQUALIFIED: ${{ github.event.inputs.diagnostic_unqualified }}
+          RETAIN_ISO_ARTIFACT: ${{ github.event.inputs.retain_iso_artifact }}
+          ONLY: ${{ github.event.inputs.only }}
+          KEEP_ISO: ${{ github.event.inputs.keep_iso }}
+          RETAIN_CANDIDATE: ${{ github.event.inputs.retain_candidate }}
           # Fresh Playwright profile per sample, so every sample is cold.
           # PAIR=true overrides this per sample: `just full-build` runs each
           # warm sample in the preceding cold sample's profile.

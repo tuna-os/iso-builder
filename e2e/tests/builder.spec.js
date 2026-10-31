@@ -16,7 +16,7 @@ const fs = require("fs");
 const { qualifiedCatalogFixture } = require("./qualified-catalog-fixture");
 const { observeLoadedWasm, loadedWasmMeasurement, hashSavedIso, buildOperationIdentity, completedBuildResult, diagnosticRecord, observeRegistryTransfers } = require("./build-measurements");
 const { removeSavePicker, buildFailedSignature } = require("./full-harness");
-const { diagnosticGrantFromEnv, installDiagnosticGrant, resolveLiveDigests, catalogEntryFor, refreshDiagnosticSnapshot, parseGateRefusal, gateRefusalMessage, gateRefusalSummary } = require("./diagnostic-gate");
+const { diagnosticGrantFromEnv, installDiagnosticGrant, strictObservedGrantFromEnv, installStrictObservedGrant, resolveLiveDigests, catalogEntryFor, refreshDiagnosticSnapshot, parseGateRefusal, gateRefusalMessage, gateRefusalSummary } = require("./diagnostic-gate");
 const CATALOG = require("../../app/public/catalog-snapshot.json");
 
 const SHOTS = process.env.TBOX_E2E_SHOTS
@@ -389,9 +389,16 @@ test.describe("iso builder", () => {
     // (the default) leaves the production gate untouched.
     let diagnosticPins = null;
     const diagnosticGrant = diagnosticGrantFromEnv(process.env, { image: IMAGE, platform: process.env.TBOX_E2E_PLATFORM || undefined });
+    const strictObserved = strictObservedGrantFromEnv(process.env, { image: IMAGE, platform: process.env.TBOX_E2E_PLATFORM || undefined });
     if (diagnosticGrant) {
       console.log(`DIAGNOSTIC, UNQUALIFIED BUILD requested for ${IMAGE}: result is not a qualification`);
       await page.addInitScript(installDiagnosticGrant, diagnosticGrant);
+    }
+    if (strictObserved) {
+      console.log(`STRICT OBSERVED BUILD requested for ${IMAGE}: qualification is not assessed`);
+      await page.addInitScript(installStrictObservedGrant, strictObserved);
+    }
+    if (diagnosticGrant || strictObserved) {
       const entry = catalogEntryFor(CATALOG, IMAGE, process.env.TBOX_E2E_PLATFORM || undefined);
       if (!entry) throw new Error(`diagnostic target ${IMAGE} is not in the catalog snapshot`);
       const live = await resolveLiveDigests({ repository: entry.publication.repository, tag: entry.publication.tag, platform: entry.target.platform });
@@ -663,10 +670,18 @@ test.describe("iso builder", () => {
       expect(reason, "gate reason shown by the app").toBeTruthy();
       diagnostic = { image: IMAGE, platform: evPlatform, gateReason: reason, catalogPins: diagnosticPins };
     }
+    let observed = null;
+    if (strictObserved) {
+      const badge = ((await page.locator(".badge.status").first().textContent().catch(() => "")) || "").trim();
+      expect(badge, "app must label the retained plain build as not-assessed").toContain("not-assessed");
+      expect(await page.evaluate(() => globalThis.tboxGetBuildRequest().qualificationId)).toBeUndefined();
+      observed = { label: "observed, not assessed", image: IMAGE, platform: evPlatform, catalogPins: diagnosticPins };
+    }
     const evidence = {
       schemaVersion: 1,
       kind: "qualification-evidence",
       ...(diagnostic ? { qualification: "diagnostic-unqualified", diagnosticUnqualified: { label: "diagnostic, unqualified build", ...diagnostic } } : {}),
+      ...(observed ? { qualification: "not-assessed", strictObserved: observed } : {}),
       half: "browser",
       browser: { name: "chromium", userAgent },
       target: {
