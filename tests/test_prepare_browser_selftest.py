@@ -1,3 +1,4 @@
+from copy import deepcopy
 import hashlib
 import importlib.util
 import json
@@ -18,7 +19,7 @@ def digest(data):
     return "sha256:" + hashlib.sha256(data).hexdigest()
 
 
-def fixture(tmp_path):
+def fixture(tmp_path, diagnostic=True):
     iso_bytes = b"round-tripped ISO bytes\n"
     iso = tmp_path / "skipjack-gnome.iso"
     iso.write_bytes(iso_bytes)
@@ -101,7 +102,17 @@ def fixture(tmp_path):
         "flavor": "gnome",
         "slug": "skipjack-gnome",
         "platform": "linux/amd64",
+        "install_mode": "luks" if diagnostic else "plain",
+        "diagnostic_unqualified": diagnostic,
     }
+    if not diagnostic:
+        measurements["qualification"] = manifest["qualification"] = "not-assessed"
+        del measurements["diagnosticUnqualified"]
+        del manifest["measurements"]["diagnosticUnqualified"]
+        del browser_evidence["diagnosticUnqualified"]
+        del browser_evidence["qualification"]
+    # Separate JSON inputs cannot share references at the real boundary.
+    args["artifact_manifest"] = deepcopy(manifest)
     return args, source, overlay, engine, wasm, installer
 
 
@@ -118,6 +129,9 @@ def test_binds_exact_round_trip_and_receipt_identities_without_qualifying(tmp_pa
     assert env["TUNAOS_QUAL_BROWSER_VERSION"] == "156.0.0.0"
     assert env["TUNAOS_QUAL_CPU_BASELINE"] == "x86-64"
     assert binding["qualification"] == "diagnostic-unqualified"
+    assert env["STRICT_INSTALL_MODE"] == "luks"
+    assert env["DIAGNOSTIC_UNQUALIFIED"] == "true"
+    assert env["TUNAOS_INSTALLED_BOOT_DIAGNOSTIC"] == "1"
     assert binding["identities"]["overlayBaseAnnotationMatched"] is False
     assert binding["producer"]["artifactId"] == 987654
     assert binding["missingBrowserIdentity"] == ["producer", "frontend"]
@@ -156,6 +170,103 @@ def test_rejects_receipt_engine_that_is_not_the_loaded_wasm(tmp_path):
 
     with pytest.raises(helper.InputError, match="engine digest differs from the loaded WASM"):
         helper.validate_inputs(**args)
+
+
+def test_observed_plain_is_not_assessed_and_keeps_identity_limits(tmp_path):
+    args, source, overlay, engine, wasm, installer = fixture(tmp_path, diagnostic=False)
+    env, binding = helper.validate_inputs(**args)
+
+    assert env["STRICT_INSTALL_MODE"] == "plain"
+    assert env["DIAGNOSTIC_UNQUALIFIED"] == "false"
+    assert env["TUNAOS_INSTALLED_BOOT_DIAGNOSTIC"] == "0"
+    assert env["TUNAOS_QUAL_SOURCE_DIGEST"] == source
+    assert env["TUNAOS_QUAL_OVERLAY_DIGEST"] == overlay
+    assert env["TUNAOS_QUAL_ENGINE_DIGEST"] == engine == wasm
+    assert env["TUNAOS_QUAL_INSTALLER_DIGEST"] == installer
+    assert binding["qualification"] == "not-assessed"
+    assert "fullQualificationEvidence" not in binding
+    assert binding["missingBrowserIdentity"] == ["producer", "frontend"]
+
+
+@pytest.mark.parametrize("component", ["measurements", "browser_evidence", "artifact_manifest"])
+@pytest.mark.parametrize("diagnostic", [False, True], ids=["observed", "diagnostic"])
+def test_rejects_input_label_that_disagrees_with_requested_diagnostic_flag(tmp_path, component, diagnostic):
+    args, *_ = fixture(tmp_path, diagnostic=diagnostic)
+    args[component]["qualification"] = "not-assessed" if diagnostic else "diagnostic-unqualified"
+    with pytest.raises(helper.InputError, match="qualification|diagnostic"):
+        helper.validate_inputs(**args)
+
+
+@pytest.mark.parametrize("component", ["measurements", "browser_evidence"])
+@pytest.mark.parametrize("stale_block", [None, False, {}, {
+    "label": "diagnostic, unqualified build", "image": "tuna-os/skipjack:gnome", "platform": "linux/amd64",
+}])
+def test_observed_plain_rejects_old_or_contradictory_diagnostic_block(tmp_path, component, stale_block):
+    args, *_ = fixture(tmp_path, diagnostic=False)
+    args[component]["diagnosticUnqualified"] = stale_block
+    with pytest.raises(helper.InputError, match="diagnostic"):
+        helper.validate_inputs(**args)
+
+
+@pytest.mark.parametrize("diagnostic,mode", [(True, "plain"), (False, "luks")])
+def test_rejects_install_mode_outside_requested_diagnostic_context(tmp_path, diagnostic, mode):
+    args, *_ = fixture(tmp_path, diagnostic=diagnostic)
+    args["install_mode"] = mode
+    with pytest.raises(helper.InputError, match="requires luks"):
+        helper.validate_inputs(**args)
+
+
+@pytest.mark.parametrize("field,value", [
+    ("repository", "another/repository"), ("runId", "12344"),
+    ("runAttempt", "1"), ("sha", "b" * 40),
+])
+@pytest.mark.parametrize("diagnostic", [False, True])
+def test_rejects_stale_artifact_producer_identity(tmp_path, field, value, diagnostic):
+    args, *_ = fixture(tmp_path, diagnostic=diagnostic)
+    args["artifact_manifest"]["producer"][field] = value
+    with pytest.raises(helper.InputError, match="producer differs"):
+        helper.validate_inputs(**args)
+
+
+@pytest.mark.parametrize("field,value", [
+    ("artifact_id", "0"), ("artifact_name", "iso-skipjack-gnome-run12345-a1"),
+])
+def test_observed_plain_rejects_wrong_uploaded_artifact_identity(tmp_path, field, value):
+    args, *_ = fixture(tmp_path, diagnostic=False)
+    args[field] = value
+    with pytest.raises(helper.InputError, match="artifact"):
+        helper.validate_inputs(**args)
+
+
+@pytest.mark.parametrize("section,field,value", [
+    ("browser", "userAgent", "another browser session"),
+    ("browser", "name", "firefox"), ("run", "sample", 2),
+    ("target", "image", "tuna-os/bonito:gnome"),
+    ("target", "platform", "linux/arm64"),
+])
+@pytest.mark.parametrize("diagnostic", [False, True])
+def test_rejects_browser_half_identity_mismatch(tmp_path, section, field, value, diagnostic):
+    args, *_ = fixture(tmp_path, diagnostic=diagnostic)
+    args["browser_evidence"][section][field] = value
+    with pytest.raises(helper.InputError, match="browser evidence"):
+        helper.validate_inputs(**args)
+
+
+@pytest.mark.parametrize("field,value,error", [
+    ("base_digest", digest(b"another base"), "media source digest differs"),
+    ("overlay_digest", digest(b"another overlay"), "media overlay digest differs"),
+    ("engine_digest", digest(b"backend executable"), "engine digest differs"),
+])
+def test_observed_plain_rejects_media_identity_mismatch(tmp_path, field, value, error):
+    args, *_ = fixture(tmp_path, diagnostic=False)
+    args["source_receipt"][field] = value
+    with pytest.raises(helper.InputError, match=error):
+        helper.validate_inputs(**args)
+
+
+def test_backend_binary_hash_is_not_an_installer_receipt():
+    with pytest.raises(helper.InputError, match="lacks a valid"):
+        helper.parse_installer_receipt("INSTALLER_BACKEND_SHA256=" + "a" * 64 + "\n")
 
 
 def engine_receipt(source, overlay, engine):

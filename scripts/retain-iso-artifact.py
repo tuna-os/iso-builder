@@ -43,7 +43,19 @@ def hash_file(path):
     return sha(h), size
 
 
-def load_measurements(path, iso_digest, iso_size):
+def validate_diagnostic_context(qualification, measurements, diagnostic_unqualified):
+    expected = 'diagnostic-unqualified' if diagnostic_unqualified else 'not-assessed'
+    if qualification != expected:
+        fail('qualification differs from --diagnostic-unqualified context')
+    diagnostic = measurements.get('diagnosticUnqualified')
+    if diagnostic_unqualified:
+        if not isinstance(diagnostic, dict) or diagnostic.get('label') != 'diagnostic, unqualified build':
+            fail('diagnostic-unqualified measurements lack the diagnosticUnqualified label')
+    elif 'diagnosticUnqualified' in measurements:
+        fail('non-diagnostic measurements contain a diagnosticUnqualified block')
+
+
+def load_measurements(path, iso_digest, iso_size, diagnostic_unqualified=False):
     m = json.loads(Path(path).read_text())
     if m.get('kind') != 'diagnostic-build-measurements' or m.get('schemaVersion') != 1:
         fail('measurements are not diagnostic-build-measurements v1')
@@ -55,8 +67,7 @@ def load_measurements(path, iso_digest, iso_size):
     for key in ('loadedWasm', 'browser'):
         if not isinstance(m.get(key), dict):
             fail(f'measurements lack {key}')
-    if m['qualification'] == 'diagnostic-unqualified' and not isinstance(m.get('diagnosticUnqualified'), dict):
-        fail('diagnostic-unqualified measurements lack the diagnosticUnqualified block')
+    validate_diagnostic_context(m['qualification'], m, diagnostic_unqualified)
     return m
 
 
@@ -72,7 +83,7 @@ def split(args):
     count = -(-size // args.chunk_bytes)
     if count > MAX_CHUNKS:
         fail(f'{count} chunks exceeds {MAX_CHUNKS}; raise --chunk-bytes')
-    m = load_measurements(args.measurements, digest, size)
+    m = load_measurements(args.measurements, digest, size, args.diagnostic_unqualified == 'true')
     out = Path(args.out)
     out.mkdir(parents=True, exist_ok=True)
     if any(out.iterdir()):
@@ -115,6 +126,12 @@ def verify(args):
         fail('not a candidate-iso-artifact-manifest v1')
     if manifest.get('qualification') not in LABELS:
         fail('manifest qualification label invalid')
+    measurements = manifest.get('measurements')
+    if not isinstance(measurements, dict):
+        fail('manifest measurements missing')
+    validate_diagnostic_context(manifest['qualification'], measurements, args.diagnostic_unqualified == 'true')
+    if measurements.get('iso') != manifest.get('iso'):
+        fail('manifest measurements differ from the retained ISO')
     iso, chunks = manifest['iso'], manifest['chunks']
     if not DIGEST.match(iso['sha256']) or not chunks:
         fail('malformed manifest')
@@ -163,12 +180,14 @@ def main(argv=None):
     s.add_argument('--run-id')
     s.add_argument('--run-attempt')
     s.add_argument('--sha')
+    s.add_argument('--diagnostic-unqualified', choices=('true', 'false'), default='false')
     s.set_defaults(fn=split)
     v = sub.add_parser('verify')
     v.add_argument('--dir', required=True)
     v.add_argument('--manifest-name', default='manifest.json')
     v.add_argument('--output')
     v.add_argument('--expected-sha256', help='independent ISO hash, e.g. from the browser measurements')
+    v.add_argument('--diagnostic-unqualified', choices=('true', 'false'), default='false')
     v.set_defaults(fn=verify)
     args = p.parse_args(argv)
     args.fn(args)
