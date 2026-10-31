@@ -1,13 +1,15 @@
 #!/usr/bin/env python3
 """Split a browser-built ISO into hash-pinned chunks for a GitHub Actions artifact.
 
-No credentials, no network. `split` writes <slug>.iso.partNNNN files plus a
+`split` and `verify` use no credentials or network. `split` writes <slug>.iso.partNNNN files plus a
 manifest recording the sha256 of the whole ISO and of every chunk, tied to the
 browser measurements of the same bytes. `verify` re-reads a downloaded copy,
 checks every chunk and the reassembled ISO against that manifest, and can write
 the restored ISO. Nothing here qualifies media: the manifest carries the
 measurements' own label (`not-assessed` or `diagnostic-unqualified`) and refuses
 anything else.
+`recover` uses authenticated `gh api` to fetch only run 41153841817's immutable
+archives, checking their independently pinned metadata and SHA-256 before extraction.
 """
 import argparse
 import hashlib
@@ -16,6 +18,10 @@ import os
 from pathlib import Path
 import re
 import sys
+import shutil
+import subprocess
+import tempfile
+import zipfile
 
 MAX_ISO_BYTES = 16 * 1024 ** 3
 DEFAULT_CHUNK_BYTES = 2 * 1024 ** 3
@@ -150,6 +156,76 @@ def verify(args):
                       'restored': args.output}, sort_keys=True))
 
 
+def recover(args):
+    """Fetch only the immutable run 41153841817 diagnostic, never rebuild."""
+    repository = 'tuna-os/iso-builder'
+    run_id = 41153841817
+    source_sha = '41cf974098ef5a90c9a73fd3942ed0abeb0c8058'
+    archives = (
+        (13027183695, 'iso-skipjack-gnome-run41153841817-a1',
+         'sha256:057c98786f98d78eaa03edee9c9db48a54499f3a146940a4ffcb4deea79ff04b',
+         11452406380, Path(args.dir)),
+        (13027593918, 'browser-evidence-skipjack-gnome-run41153841817-a1',
+         'sha256:c24cdca4d2eb0866864c8acbb83825951b031a3d9613c462d91731eb157f333e',
+         2623, Path(args.evidence_dir)),
+    )
+
+    def metadata(path):
+        return json.loads(subprocess.check_output(
+            ['gh', 'api', f'repos/{repository}/{path}'], text=True))
+
+    def check_run():
+        run = metadata(f'actions/runs/{run_id}')
+        if not (run.get('id') == run_id and run.get('run_attempt') == 1
+                and run.get('head_sha') == source_sha
+                and run.get('path') == '.github/workflows/ci.yml'
+                and run.get('status') == 'completed' and run.get('conclusion') == 'failure'):
+            fail('recovery producer run identity changed')
+        return run
+
+    def check_artifact(artifact_id, name, digest, size):
+        artifact = metadata(f'actions/artifacts/{artifact_id}')
+        producer = artifact.get('workflow_run') or {}
+        if not (artifact.get('id') == artifact_id and artifact.get('name') == name
+                and artifact.get('digest') == digest and artifact.get('size_in_bytes') == size
+                and artifact.get('expired') is False and producer.get('id') == run_id
+                and producer.get('head_sha') == source_sha
+                and producer.get('repository_id') == 1305022978):
+            fail('recovery artifact identity, archive digest, size or expiry changed')
+        return artifact
+
+    observations = {'producerBefore': check_run(), 'artifacts': []}
+    for artifact_id, name, digest, size, destination in archives:
+        before = check_artifact(artifact_id, name, digest, size)
+        destination.mkdir(parents=True, exist_ok=True)
+        with tempfile.TemporaryDirectory(prefix='retained-archive-', dir=destination.parent) as scratch:
+            archive = Path(scratch) / 'artifact.zip'
+            with archive.open('xb') as stream:
+                subprocess.run(['gh', 'api', f'repos/{repository}/actions/artifacts/{artifact_id}/zip'],
+                               stdout=stream, check=True)
+            if hash_file(archive) != (digest, size):
+                fail('recovery archive bytes differ from authenticated artifact metadata')
+            after = check_artifact(artifact_id, name, digest, size)
+            with zipfile.ZipFile(archive) as zipped:
+                names = set()
+                for member in zipped.infolist():
+                    if member.filename in names or member.filename != Path(member.filename).name:
+                        fail('recovery archive contains duplicate or nested members')
+                    names.add(member.filename)
+                    allowed = (member.filename == 'manifest.json' or
+                               re.fullmatch(r'skipjack-gnome\.iso\.part[0-9]{4}', member.filename))
+                    if artifact_id == 13027593918:
+                        allowed = member.filename.endswith('.json') and member.file_size <= 1024 ** 2
+                    if not allowed or member.is_dir():
+                        fail('unexpected recovery archive member')
+                    with zipped.open(member) as src, (destination / member.filename).open('xb') as dst:
+                        shutil.copyfileobj(src, dst, BLOCK)
+            observations['artifacts'].append({'before': before, 'after': after})
+    observations['producerAfter'] = check_run()
+    (Path(args.dir) / 'recovery-transport.json').write_text(
+        json.dumps(observations, indent=2, sort_keys=True) + '\n')
+
+
 def main(argv=None):
     p = argparse.ArgumentParser(description=__doc__)
     sub = p.add_subparsers(dest='cmd', required=True)
@@ -170,6 +246,10 @@ def main(argv=None):
     v.add_argument('--output')
     v.add_argument('--expected-sha256', help='independent ISO hash, e.g. from the browser measurements')
     v.set_defaults(fn=verify)
+    r = sub.add_parser('recover', help='fetch exact run 41153841817 retained diagnostic archives')
+    r.add_argument('--dir', required=True)
+    r.add_argument('--evidence-dir', required=True)
+    r.set_defaults(fn=recover)
     args = p.parse_args(argv)
     args.fn(args)
 

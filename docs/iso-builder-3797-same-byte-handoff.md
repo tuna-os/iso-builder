@@ -2,7 +2,7 @@
 
 ## Current work
 
-Implementation is in the isolated worktree `/tmp/iso-builder-3797-same-byte`, branch `codex/3797-same-byte-selftest-20261027`, based on `origin/main` at `d14a830`. The user's main worktree and its untracked `.spektacular/` and `e2e/screenshots/` files were left untouched.
+Recovery implementation is in the isolated worktree `~/tuna-wt/Finish-RetainedRecovery`, based on fetched `origin/main` at `b000857`. The same-run implementation notes below describe the earlier path; the retained-run recovery route is documented at the end.
 
 The workflow accepts this path only with these inputs: `run_full=true`, `only=skipjack-gnome`, `retain_iso_artifact=true`, `diagnostic_unqualified=true`, `benchmark=false`, `keep_iso=false`, and `retain_candidate=false`. It uses an artifact from the same GitHub run. It needs no cross-repository artifact credential or R2. Before the workflow downloads the artifact, it deletes the local ISO. The strict harness uses the ISO that the workflow rebuilds and checks by hash.
 
@@ -40,3 +40,85 @@ PR #285 remains separate and unmerged. This branch uses its diagnostic fields; i
 ```json
 {"run_full":true,"only":"skipjack-gnome","benchmark":false,"keep_iso":false,"retain_iso_artifact":true,"diagnostic_unqualified":true,"strict_roundtrip_test":true,"retain_iso_artifact_days":"7"}
 ```
+
+## Recover run 41153841817 without rebuilding
+
+Run [41153841817](https://github.com/tuna-os/iso-builder/actions/runs/41153841817)
+built the browser ISO, then failed in `download-artifact@v8` after five
+retries (25 seconds). The subsequent missing `manifest.json` was a dependent
+transport error, not a guest verdict. The runner still had 74 GiB free.
+The normal round-trip verify step now requires successful download; the
+original download failure remains fatal.
+
+TunaOS `iso-e2e.yml` exposes only `r2-latest` and `build`, not a working
+artifact source. This workflow therefore has one bounded opt-in
+`recover_retained_iso` route for these exact retained bytes. It uses the
+existing three consumer recipes: `iso-artifact-verify`,
+`full-strict-inputs`, and `full-guest-verify-strict`. It never rebuilds a
+browser ISO or engine, publishes, deploys, uses R2, or needs a new secret.
+All build/publish inputs must remain false.
+
+After the parent validates and publishes this branch, dispatch it on GitHub's
+Linux/KVM runner (the parent's current host lacks `/dev/kvm`):
+
+```bash
+gh workflow run ci.yml -R tuna-os/iso-builder \
+  --ref <published-recovery-branch> -f recover_retained_iso=true
+```
+
+The recovery job authenticates GitHub API metadata before and after archive
+collection, including original run ID `41153841817`, attempt `1`, source SHA
+`41cf974098ef5a90c9a73fd3942ed0abeb0c8058`, repository ID, artifact ID,
+name, expiry, archive size and SHA-256. A failed original run is expected and
+does not prevent recovery. A changed attempt, expired artifact or mismatch
+fails closed. The download uses the existing authenticated `gh api` ZIP
+transport without added retries. No dependent verifier runs after download
+failure.
+
+The hard-bound ISO artifact is `13027183695`, archive size `11452406380`,
+archive hash
+`sha256:057c98786f98d78eaa03edee9c9db48a54499f3a146940a4ffcb4deea79ff04b`.
+The original browser evidence is artifact `13027593918`, archive size
+`2623`, archive hash
+`sha256:c24cdca4d2eb0866864c8acbb83825951b031a3d9613c462d91731eb157f333e`.
+Archive digests authenticate manifest, chunks and evidence before extraction.
+Every chunk and the restored ISO must verify against the original manifest
+and independently recorded ISO hash
+`sha256:1676d57d19a9041c9e919843137c96e54ebeeaeebf8068b602aa3da7f16a8810`.
+
+The existing EROFS receipt consumer from PR #315 at
+`2e90c45e7eaa8cec052ccee5a448c0b733ebe48e` is included here. It binds the
+manifest's original producer/run/attempt/source SHA, browser measurements,
+target and source/overlay/installer/WASM receipts from the exact ISO. It
+does not substitute the recovery branch's engine or source identity. The
+strict consumer uses a short socket path and checks its actual length.
+The recovery job checks out the explicitly approved strict harness from tunaOS
+PR #4044 at immutable revision `6c67e774313432a2d5cbfc29328cf5bf0b9b16ea`
+and records the checked-out SHA before running the strict guest driver.
+There is no mutable-main fallback: tunaOS main does not yet include this
+strict driver and payload extractor.
+
+Host observations now explicitly carry `measurementOrigin: recovery-host`
+and `measuredOnBrowserRunner: false` for a different repository/run/attempt
+or absent execution identity. Only the matching original producer-run
+context retains `true`. These are recovery-host resource measurements, not
+original browser-host qualification evidence.
+
+Recovery uploads original browser evidence, authenticated transport metadata,
+manifest, round-trip verification, media/identity binding and diagnostic
+guest output even on failure. Finalization does not suppress guest failure.
+Transport/preparation success is not guest acceptance: only the actual
+strict install, detached cold and warm run can establish its guest verdict.
+All results remain diagnostic-unqualified; producer/frontend authentication
+and catalog qualification are not claimed.
+
+After evidence upload, the existing job-scoped cleanup removes the restored
+ISO and chunks, short `luks-verify-<slug>-diag` tree (including guest disks,
+swtpm state and SSH keys), and processes carrying those exact owned paths.
+Other cells, runs and similarly prefixed sibling directories are not owned.
+
+For a manual execution on a suitable Linux/KVM host, use a fresh private
+short checkout such as `~/tuna-wt/ir`, not `/tmp`. The workflow is the
+supported parent execution route here. No retained ISO download or guest
+execution was performed while implementing this recovery.
+

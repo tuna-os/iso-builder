@@ -51,6 +51,10 @@ on:
   pull_request:
   workflow_dispatch:
     inputs:
+      recover_retained_iso:
+        description: "Resume diagnostic strict guest test of immutable run 41153841817 ISO only; no browser rebuild or publication. Leave all build/publish inputs false."
+        type: boolean
+        default: false
       run_full:
         description: "Run full ISO build tests (@full)"
         type: boolean
@@ -124,6 +128,7 @@ jobs:
   # the old single-job setup. Real native runners close that gap outright
   # instead of fighting cross-compiled cgo/vet limitations.
   qualification-contract:
+    if: inputs.recover_retained_iso != true
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
@@ -141,6 +146,7 @@ jobs:
       - run: python -m pytest -q tests
 
   native-linux:
+    if: inputs.recover_retained_iso != true
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
@@ -267,6 +273,7 @@ jobs:
   # Renovate's digest bumps now move the CLI, the native app and the web
   # engine together instead of letting the wasm drift on its own.
   wasm:
+    if: inputs.recover_retained_iso != true
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
@@ -402,6 +409,7 @@ jobs:
   # redden unrelated pull requests. A parser that matches nothing exits 2,
   # because a pass over zero refs would mean nothing.
   catalog:
+    if: inputs.recover_retained_iso != true
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
@@ -434,7 +442,7 @@ jobs:
   # pulls to iterate on one edition is indefensible — the first sweep did
   # exactly that and spent eight cells learning one thing.
   full-plan:
-    if: github.event_name == 'workflow_dispatch' && (github.event.inputs.run_full == 'true' || github.event.inputs.retain_candidate == 'true' || github.event.inputs.retain_iso_artifact == 'true' || github.event.inputs.strict_roundtrip_test == 'true')
+    if: github.event_name == 'workflow_dispatch' && inputs.recover_retained_iso != true && (github.event.inputs.run_full == 'true' || github.event.inputs.retain_candidate == 'true' || github.event.inputs.retain_iso_artifact == 'true' || github.event.inputs.strict_roundtrip_test == 'true')
     runs-on: ubuntu-latest
     timeout-minutes: 5
     outputs:
@@ -758,6 +766,7 @@ jobs:
         run: just iso-artifact-drop-local
 
       - name: download ISO artifact again
+        id: iso-artifact-download
         if: ${{ always() && !cancelled() && steps.iso-artifact-upload.outcome == 'success' }}
         timeout-minutes: 30
         uses: actions/download-artifact@v8
@@ -767,7 +776,7 @@ jobs:
 
       - name: verify ISO artifact round trip
         id: iso-roundtrip
-        if: ${{ always() && !cancelled() && steps.iso-artifact-upload.outcome == 'success' }}
+        if: ${{ always() && !cancelled() && steps.iso-artifact-download.outcome == 'success' }}
         timeout-minutes: 30
         env:
           SLUG: ${{ matrix.edition.slug }}
@@ -953,6 +962,89 @@ jobs:
             just ci-cleanup
           else
             echo "just was never installed in this job; nothing was created"
+          fi
+
+  retained-recovery:
+    if: github.event_name == 'workflow_dispatch' && inputs.recover_retained_iso == true
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      actions: read
+    timeout-minutes: 180
+    env:
+      SLUG: skipjack-gnome
+      EDITION_REF: skipjack:gnome
+      PLATFORM: linux/amd64
+      REPOSITORY: tuna-os/iso-builder
+      RUN_ID: "41153841817"
+      RUN_ATTEMPT: "1"
+      SOURCE_SHA: 41cf974098ef5a90c9a73fd3942ed0abeb0c8058
+      ARTIFACT: iso-skipjack-gnome-run41153841817-a1
+      ARTIFACT_NAME: iso-skipjack-gnome-run41153841817-a1
+      ARTIFACT_ID: "13027183695"
+      ISO_SHA256: sha256:1676d57d19a9041c9e919843137c96e54ebeeaeebf8068b602aa3da7f16a8810
+      STRICT_ROUNDTRIP_TEST: "true"
+      RETAIN_ISO_ARTIFACT_DAYS: "7"
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - name: reject mixed recovery and build dispatch
+        env:
+          BUILD_REQUESTED: ${{ inputs.run_full || inputs.keep_iso || inputs.retain_candidate || inputs.retain_iso_artifact || inputs.strict_roundtrip_test || inputs.benchmark || inputs.pair }}
+        run: test "$BUILD_REQUESTED" = false
+      - name: install existing consumer dependencies
+        run: sudo apt-get update -qq && sudo apt-get install -y --no-install-recommends just
+      - name: checkout approved strict harness (PR4044 immutable revision)
+        uses: actions/checkout@v7
+        with:
+          repository: tuna-os/tunaOS
+          ref: 6c67e774313432a2d5cbfc29328cf5bf0b9b16ea
+          path: tunaos-e2e-current
+          persist-credentials: false
+      - name: record immutable harness identity
+        run: git -C tunaos-e2e-current rev-parse HEAD >> "$GITHUB_STEP_SUMMARY"
+      - name: fetch authenticated immutable retained archives
+        id: recovery-download
+        timeout-minutes: 60
+        run: |
+          python3 scripts/retain-iso-artifact.py recover \
+            --dir "$RUNNER_TEMP/iso-roundtrip" --evidence-dir e2e/test-results
+      - name: verify retained manifest chunks and original ISO hash
+        timeout-minutes: 30
+        run: just iso-artifact-verify
+      - name: bind original receipts and recovery-host observations
+        timeout-minutes: 10
+        run: just full-strict-inputs
+      - name: strict guest test of exact retained ISO (diagnostic-unqualified)
+        timeout-minutes: 60
+        run: just full-guest-verify-strict
+      - name: finalize diagnostic receipts without hiding first failure
+        if: always()
+        run: just full-label-output
+      - name: upload recovery evidence (never qualification)
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: retained-recovery-41153841817-diagnostic-${{ github.run_id }}
+          path: |
+            e2e/test-results/*.json
+            ${{ runner.temp }}/iso-roundtrip/manifest.json
+            ${{ runner.temp }}/iso-roundtrip/recovery-transport.json
+            ${{ runner.temp }}/iso-roundtrip-result.json
+            luks-verify-*-diag/
+            !luks-verify-*/*.qcow2
+            !luks-verify-*/swtpm/
+            !luks-verify-*/vsock-ssh-key*
+          retention-days: 7
+          if-no-files-found: warn
+      - name: cleanup retained recovery (after diagnostic upload)
+        if: always()
+        timeout-minutes: 3
+        run: |
+          if command -v just >/dev/null; then
+            just ci-cleanup
           fi
 
   deploy:
