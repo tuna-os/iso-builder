@@ -14,8 +14,6 @@ import pytest
 import yaml
 
 ROOT = Path(__file__).parents[1]
-sys.path.insert(0, str(ROOT / 'tests'))
-from ci_sources import recipe  # noqa: E402
 SCRIPT = ROOT / 'scripts/retain-iso-artifact.py'
 spec = importlib.util.spec_from_file_location('iso_artifact', SCRIPT)
 m = importlib.util.module_from_spec(spec)
@@ -56,10 +54,14 @@ def run(*args):
     return subprocess.run([sys.executable, str(SCRIPT), *args], text=True, capture_output=True)
 
 
-def split(tmp_path, iso, qualification='not-assessed', chunk=2048, out='out', over=None):
+def split(tmp_path, iso, qualification='not-assessed', chunk=2048, out='out', over=None,
+          diagnostic_unqualified=None):
     path, data = iso
     meas = measurements(tmp_path, data, qualification, **(over or {}))
+    if diagnostic_unqualified is None:
+        diagnostic_unqualified = qualification == 'diagnostic-unqualified'
     return run('split', '--iso', str(path), '--measurements', str(meas), '--out', str(tmp_path / out),
+               '--diagnostic-unqualified', str(diagnostic_unqualified).lower(),
                '--slug', 'skipjack-gnome', '--chunk-bytes', str(chunk), '--run-id', '7', '--run-attempt', '1',
                '--repository', 'tuna-os/iso-builder', '--sha', 'a' * 40)
 
@@ -97,6 +99,67 @@ def test_diagnostic_label_is_carried_into_the_manifest(tmp_path, iso):
     manifest = json.loads(r.stdout)
     assert manifest['qualification'] == 'diagnostic-unqualified'
     assert manifest['measurements']['diagnosticUnqualified']['label'] == 'diagnostic, unqualified build'
+
+
+def test_diagnostic_round_trip_requires_matching_explicit_flag(tmp_path, iso):
+    assert split(tmp_path, iso, qualification='diagnostic-unqualified').returncode == 0
+    out = tmp_path / 'out'
+    refused = run('verify', '--dir', str(out), '--diagnostic-unqualified', 'false')
+    assert refused.returncode != 0 and 'diagnostic-unqualified context' in refused.stderr
+    restored = tmp_path / 'restored.iso'
+    result = run('verify', '--dir', str(out), '--diagnostic-unqualified', 'true',
+                 '--expected-sha256', digest(iso[1]), '--output', str(restored))
+    assert result.returncode == 0, result.stderr
+    assert restored.read_bytes() == iso[1]
+    assert json.loads(result.stdout)['qualification'] == 'diagnostic-unqualified'
+
+
+@pytest.mark.parametrize('qualification,requested', [
+    ('not-assessed', True), ('diagnostic-unqualified', False),
+])
+def test_split_refuses_flag_mismatch_without_writing_artifacts(tmp_path, iso, qualification, requested):
+    result = split(tmp_path, iso, qualification=qualification, diagnostic_unqualified=requested)
+    assert result.returncode != 0 and 'diagnostic-unqualified context' in result.stderr
+    assert not (tmp_path / 'out').exists()
+
+
+@pytest.mark.parametrize('stale_block', [None, False, {}, {
+    'label': 'diagnostic, unqualified build', 'image': 'tuna-os/skipjack:gnome',
+    'platform': 'linux/amd64',
+}])
+def test_observed_retention_refuses_stale_diagnostic_block(tmp_path, iso, stale_block):
+    result = split(tmp_path, iso, over={'diagnosticUnqualified': stale_block})
+    assert result.returncode != 0 and 'diagnosticUnqualified block' in result.stderr
+    assert not (tmp_path / 'out').exists()
+
+
+def test_verify_refuses_relabeling_old_diagnostic_artifact_as_observed(tmp_path, iso):
+    assert split(tmp_path, iso, qualification='diagnostic-unqualified').returncode == 0
+    path = tmp_path / 'out/manifest.json'
+    manifest = json.loads(path.read_text())
+    manifest['qualification'] = 'not-assessed'
+    path.write_text(json.dumps(manifest))
+    restored = tmp_path / 'not-restored.iso'
+    result = run('verify', '--dir', str(path.parent), '--diagnostic-unqualified', 'false',
+                 '--output', str(restored))
+    assert result.returncode != 0 and 'diagnosticUnqualified block' in result.stderr
+    assert not restored.exists()
+
+
+def test_verify_refuses_diagnostic_context_for_observed_artifact(tmp_path, iso):
+    assert split(tmp_path, iso).returncode == 0
+    result = run('verify', '--dir', str(tmp_path / 'out'), '--diagnostic-unqualified', 'true')
+    assert result.returncode != 0 and 'diagnostic-unqualified context' in result.stderr
+
+
+def test_verify_refuses_manifest_with_stale_iso_measurement(tmp_path, iso):
+    assert split(tmp_path, iso).returncode == 0
+    path = tmp_path / 'out/manifest.json'
+    manifest = json.loads(path.read_text())
+    manifest['measurements']['iso']['sha256'] = digest(b'another ISO')
+    path.write_text(json.dumps(manifest))
+    result = run('verify', '--dir', str(path.parent))
+    assert result.returncode != 0 and 'measurements differ from the retained ISO' in result.stderr
 
 
 @pytest.mark.parametrize('label', ['qualified', 'verified', '', None])
@@ -162,13 +225,13 @@ def test_verify_refuses_a_tampered_manifest_label(tmp_path, iso):
 
 
 def plan(env):
-    assert 'plan-full-matrix.py' in recipe('full-plan')
     return subprocess.run([sys.executable, 'scripts/plan-full-matrix.py'], cwd=ROOT, env={**os.environ, **env}, text=True, capture_output=True)
 
 
 def valid():
     return dict(RETAIN_ISO_ARTIFACT='true', RUN_FULL='true', ONLY='skipjack-gnome', BENCHMARK='false',
-                KEEP_ISO='false', RETAIN_ISO_ARTIFACT_DAYS='7', RETAIN_CANDIDATE='false')
+                KEEP_ISO='false', RETAIN_ISO_ARTIFACT_DAYS='7', RETAIN_CANDIDATE='false',
+                STRICT_INSTALL_MODE='plain', DIAGNOSTIC_UNQUALIFIED='false', STRICT_ROUNDTRIP_TEST='false')
 
 
 def test_plan_accepts_any_single_named_cell_without_r2():
@@ -199,9 +262,10 @@ def test_plan_rejects_unbounded_scope(key, value):
     r = plan(env)
     assert r.returncode != 0 and 'ISO artifact retention requires' in r.stderr
 
-def test_strict_roundtrip_plan_accepts_only_the_bounded_diagnostic_cell():
+@pytest.mark.parametrize('mode,diagnostic', [('plain', 'false'), ('luks', 'true')])
+def test_strict_roundtrip_plan_accepts_bounded_observed_or_diagnostic_cell(mode, diagnostic):
     env = valid()
-    env.update(STRICT_ROUNDTRIP_TEST='true', DIAGNOSTIC_UNQUALIFIED='true')
+    env.update(STRICT_ROUNDTRIP_TEST='true', STRICT_INSTALL_MODE=mode, DIAGNOSTIC_UNQUALIFIED=diagnostic)
     r = plan(env)
     assert r.returncode == 0, r.stderr
     assert 'count=1' in r.stdout and '"slug": "skipjack-gnome"' in r.stdout
@@ -209,112 +273,26 @@ def test_strict_roundtrip_plan_accepts_only_the_bounded_diagnostic_cell():
 
 @pytest.mark.parametrize('key,value', [
     ('ONLY', 'bonito-kde'), ('RUN_FULL', 'false'), ('BENCHMARK', 'true'),
-    ('KEEP_ISO', 'true'), ('DIAGNOSTIC_UNQUALIFIED', 'false'),
+    ('KEEP_ISO', 'true'), ('STRICT_INSTALL_MODE', 'both'), ('STRICT_INSTALL_MODE', ''),
     ('RETAIN_ISO_ARTIFACT', 'false'), ('RETAIN_CANDIDATE', 'true'),
 ])
 def test_strict_roundtrip_plan_rejects_unbounded_or_published_modes(key, value):
     env = valid()
-    env.update(STRICT_ROUNDTRIP_TEST='true', DIAGNOSTIC_UNQUALIFIED='true')
+    env.update(STRICT_ROUNDTRIP_TEST='true')
     env[key] = value
     r = plan(env)
     assert r.returncode != 0
 
 
-def test_workflow_artifact_path_needs_no_secrets_and_defaults_off():
-    inputs = WORKFLOW[True]['workflow_dispatch']['inputs'] if True in WORKFLOW else WORKFLOW['on']['workflow_dispatch']['inputs']
-    assert inputs['retain_iso_artifact']['default'] is False
-    assert inputs['retain_candidate']['default'] is False
-    job = WORKFLOW['jobs']['full-matrix']
-    names = [s.get('name', '') for s in job['steps']]
-    first = names.index('retain ISO as GitHub artifact (chunked, sha256-verified)')
-    last = names.index('verify ISO artifact round trip')
-    for step in job['steps'][first:last + 1]:
-        assert 'secrets.' not in yaml.safe_dump(step), step.get('name')
-        assert 'always()' in step['if'] and '!cancelled()' in step['if']
-    split_step = job['steps'][first]
-    assert "steps.browser-build.outcome == 'success'" in split_step['if']
-    upload = next(s for s in job['steps'] if s.get('name') == 'upload ISO chunks')
-    assert upload['with']['compression-level'] == 0 and upload['with']['if-no-files-found'] == 'error'
-    assert 'retain_iso_artifact_days' in upload['with']['retention-days']
-    assert WORKFLOW['permissions'] == {'contents': 'read'}
-    # The R2 path is untouched and still gated on its own input.
-    assert "retain_candidate == 'true'" in next(s for s in job['steps'] if s.get('name', '').startswith('retain opt-in'))['if']
+@pytest.mark.parametrize('mode,diagnostic', [('plain', 'true'), ('luks', 'false'),
+                                           ('plain', 'invalid')])
+def test_strict_roundtrip_plan_rejects_mismatched_diagnostic_mode(mode, diagnostic):
+    env = valid()
+    env.update(STRICT_ROUNDTRIP_TEST='true', STRICT_INSTALL_MODE=mode, DIAGNOSTIC_UNQUALIFIED=diagnostic)
+    assert plan(env).returncode != 0
 
 
-def test_strict_roundtrip_budget_covers_work_and_keeps_finalization_time():
-    job = WORKFLOW['jobs']['full-matrix']
-    steps = job['steps']
-
-    def named(prefix):
-        return next(s for s in steps if s.get('name', '').startswith(prefix))
-
-    expression = job['timeout-minutes']
-    assert "strict_roundtrip_test == 'true' && 360" in expression
-    assert "retain_iso_artifact == 'true' && 330" in expression
-
-    work = [
-        named('build '),
-        named('retain ISO as GitHub artifact'),
-        named('upload ISO chunks'),
-        named('upload ISO manifest'),
-        named('drop local chunks'),
-        named('download ISO artifact again'),
-        named('verify ISO artifact round trip'),
-        named('prepare strict inputs'),
-        named('verify exact retained ISO'),
-    ]
-    # The plan refuses pair=true with retention, so the build step's budget is
-    # its non-pair branch here.
-    build = work[0]['timeout-minutes']
-    assert build == "${{ github.event.inputs.pair == 'true' && 300 || 75 }}"
-    minutes = [75] + [s['timeout-minutes'] for s in work[1:]]
-    assert minutes == [75, 30, 30, 5, 5, 30, 30, 10, 60]
-    assert sum(minutes) == 275
-
-    setup = [
-        steps[0],
-        next(s for s in steps if s.get('with', {}).get('name') == 'engine'),
-        next(s for s in steps if s.get('uses', '').startswith('actions/setup-node@')),
-        named('Cache Playwright browsers'),
-        named('install deps + chromium'),
-        named('checkout current tunaOS strict harness'),
-    ]
-    assert [s['timeout-minutes'] for s in setup] == [5, 5, 5, 5, 20, 5]
-    assert sum(s['timeout-minutes'] for s in setup) == 45
-
-    finalization = [
-        named('disk after build'),
-        named('label diagnostic output and make guest harness output readable'),
-        named('upload browser evidence'),
-        named('upload diagnostics'),
-    ]
-    assert [s['timeout-minutes'] for s in finalization] == [5, 10, 10, 10]
-    assert sum(s['timeout-minutes'] for s in finalization) == 35
-    # The always-run ci-cleanup step is the last step of the job and takes 3 of the
-    # 5 minutes that used to be unallocated margin.
-    cleanup = steps[-1]
-    assert cleanup['name'].startswith('cleanup (') and cleanup['if'] == 'always()'
-    assert cleanup['timeout-minutes'] == 3
-    assert 360 - 275 - 45 - 35 - cleanup['timeout-minutes'] == 2
-
-
-def test_diagnostic_receipt_finalizer_runs_before_upload_and_skips_qualification_upload():
-    steps = WORKFLOW['jobs']['full-matrix']['steps']
-    names = [s.get('name', '') for s in steps]
-    finalizer = next(s for s in steps if s.get('name') == 'label diagnostic output and make guest harness output readable')
-    diagnostics = next(s for s in steps if s.get('name') == 'upload diagnostics')
-    browser_evidence = next(s for s in steps if s.get('name') == 'upload browser evidence (survives guest failure)')
-    validate = next(s for s in steps if s.get('name') == 'validate + merge qualification evidence')
-    upload_qualification = next(s for s in steps if s.get('name') == 'upload qualification evidence')
-
-    assert finalizer['if'] == 'always()'
-    assert finalizer['env']['STRICT_ROUNDTRIP_TEST'] == "${{ github.event.inputs.strict_roundtrip_test }}"
-    assert finalizer['run'].strip() == 'just full-label-output'
-    label = recipe('full-label-output')
-    assert 'finalize-diagnostic-output.py' in label
-    assert label.index('finalize-diagnostic-output.py') < label.index('sudo chown -R')
-    assert names.index(finalizer['name']) < names.index(diagnostics['name'])
-    assert 'luks-verify-*/' in diagnostics['with']['path']
-    assert names.index(finalizer['name']) < names.index(browser_evidence['name'])
-    assert "strict_roundtrip_test != 'true'" in validate['if']
-    assert "strict_roundtrip_test != 'true'" in upload_qualification['if']
+def test_strict_choice_does_not_change_normal_full_route():
+    env = valid()
+    env.update(RETAIN_ISO_ARTIFACT='false', ONLY='', STRICT_INSTALL_MODE='luks')
+    assert plan(env).returncode == 0

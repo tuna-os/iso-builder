@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """Derive strict guest-test inputs only from a round-tripped browser ISO and receipts.
 
-This labels the run diagnostic-unqualified. It does not authenticate the browser
-producer or qualify a target; missing media identities fail closed.
+This checks consistency, not authentication, and does not qualify a target.
+Missing media identities fail closed; diagnostic builds remain unqualified.
 """
 from __future__ import annotations
 
@@ -219,7 +219,8 @@ def validate_inputs(*, iso: str | Path, measurements: dict, browser_evidence: di
                     artifact_manifest: dict, source_receipt: dict, installer_digest: str,
                     repository: str, run_id: str, run_attempt: str, source_sha: str,
                     artifact_id: str, artifact_name: str, variant: str, flavor: str,
-                    slug: str, platform: str) -> tuple[dict, dict]:
+                    slug: str, platform: str, install_mode: str = "plain",
+                    diagnostic_unqualified: bool = False) -> tuple[dict, dict]:
     require(repository == "tuna-os/iso-builder", "producer repository is not tuna-os/iso-builder")
     require(run_id.isdigit() and int(run_id) > 0, "producer run id is invalid")
     require(run_attempt.isdigit() and int(run_attempt) > 0, "producer run attempt is invalid")
@@ -229,18 +230,28 @@ def validate_inputs(*, iso: str | Path, measurements: dict, browser_evidence: di
     require(artifact_name == f"iso-{slug}-run{run_id}-a{run_attempt}",
             "artifact name does not bind target, run id and attempt")
     require(PLATFORM.fullmatch(platform) is not None, "matrix platform is unsupported")
+    require(type(diagnostic_unqualified) is bool, "diagnostic-unqualified must be true or false")
+    require(install_mode in {"plain", "luks"}, "install mode must be plain or luks")
+    require(install_mode == ("luks" if diagnostic_unqualified else "plain"),
+            "diagnostic-unqualified requires luks; observed non-diagnostic tests require plain")
+    qualification = "diagnostic-unqualified" if diagnostic_unqualified else "not-assessed"
     image = f"tuna-os/{variant}:{flavor}"
 
     require(measurements.get("schemaVersion") == 1 and
             measurements.get("kind") == "diagnostic-build-measurements",
             "browser measurements are not diagnostic-build-measurements v1")
-    require(measurements.get("qualification") == "diagnostic-unqualified",
-            "self-test accepts only diagnostic-unqualified browser builds")
+    require(measurements.get("qualification") == qualification,
+            "browser measurements qualification differs from diagnostic-unqualified context")
     diagnostic = measurements.get("diagnosticUnqualified")
-    require(isinstance(diagnostic, dict) and diagnostic.get("label") == "diagnostic, unqualified build",
-            "browser measurements lack the diagnostic-unqualified label")
-    require(diagnostic.get("image") == image and diagnostic.get("platform") == platform,
-            "browser measurement target differs from the requested matrix cell")
+    if diagnostic_unqualified:
+        require(isinstance(diagnostic, dict) and
+                diagnostic.get("label") == "diagnostic, unqualified build",
+                "browser measurements lack the diagnostic-unqualified label")
+        require(diagnostic.get("image") == image and diagnostic.get("platform") == platform,
+                "browser measurement target differs from the requested matrix cell")
+    else:
+        require("diagnosticUnqualified" not in measurements,
+                "non-diagnostic browser measurements contain a diagnosticUnqualified block")
 
     measured_iso = measurements.get("iso") or {}
     expected_iso = require_digest(measured_iso.get("sha256"), "browser ISO measurement")
@@ -259,8 +270,8 @@ def validate_inputs(*, iso: str | Path, measurements: dict, browser_evidence: di
     manifest = artifact_manifest
     require(manifest.get("kind") == "candidate-iso-artifact-manifest" and
             manifest.get("schemaVersion") == 1, "artifact manifest schema is invalid")
-    require(manifest.get("qualification") == "diagnostic-unqualified",
-            "artifact manifest is not diagnostic-unqualified")
+    require(manifest.get("qualification") == qualification,
+            "artifact manifest qualification differs from diagnostic-unqualified context")
     require(manifest.get("slug") == slug, "artifact manifest target differs from the selected target")
     require(manifest.get("iso") == {"sha256": actual_iso, "sizeBytes": size},
             "artifact manifest does not bind the round-tripped ISO")
@@ -309,19 +320,32 @@ def validate_inputs(*, iso: str | Path, measurements: dict, browser_evidence: di
     require(browser_match is not None and isinstance(browser.get("userAgent"), str)
             and browser["userAgent"].strip(),
             "browser measurements lack a same-session Chromium product, version or user agent")
-    evidence_diag = browser_evidence.get("diagnosticUnqualified") or {}
+    evidence_diag = browser_evidence.get("diagnosticUnqualified")
     evidence_target = browser_evidence.get("target") or {}
     evidence_browser = browser_evidence.get("browser") or {}
     evidence_run = browser_evidence.get("run") or {}
-    require(browser_evidence.get("kind") == "qualification-evidence" and
-            browser_evidence.get("half") == "browser" and
-            browser_evidence.get("qualification") == "diagnostic-unqualified",
-            "browser evidence is not a diagnostic-unqualified browser half")
-    require(evidence_target.get("image") == image and evidence_target.get("platform") == platform and
-            evidence_diag.get("image") == image and evidence_diag.get("platform") == platform,
+    require(browser_evidence.get("schemaVersion") == 1 and
+            browser_evidence.get("kind") == "qualification-evidence" and
+            browser_evidence.get("half") == "browser",
+            "browser evidence is not a browser half v1")
+    if diagnostic_unqualified:
+        require(browser_evidence.get("qualification") == qualification and
+                isinstance(evidence_diag, dict) and
+                evidence_diag.get("label") == "diagnostic, unqualified build",
+                "browser evidence lacks the diagnostic-unqualified label")
+        require(evidence_diag.get("image") == image and evidence_diag.get("platform") == platform,
+                "browser evidence diagnostic target differs from the media and matrix")
+    else:
+        # The existing normal browser producer omits qualification and the
+        # diagnostic block; absence must never erase an old diagnostic label.
+        require(browser_evidence.get("qualification") in (None, "not-assessed") and
+                "diagnosticUnqualified" not in browser_evidence,
+                "non-diagnostic browser evidence contains a diagnostic or qualified label")
+    require(evidence_target.get("image") == image and evidence_target.get("platform") == platform,
             "browser evidence target differs from the media and matrix")
-    require(evidence_browser.get("userAgent") == browser["userAgent"] and evidence_run.get("sample") == 1,
-            "browser evidence user agent or sample differs from the measured build")
+    require(evidence_browser.get("name") == "chromium" and
+            evidence_browser.get("userAgent") == browser["userAgent"] and evidence_run.get("sample") == 1,
+            "browser evidence browser, user agent or sample differs from the measured build")
 
     cpu_baseline = {"linux/amd64": "x86-64", "linux/amd64/v2": "x86-64-v2",
                     "linux/arm64": "armv8-a"}[platform]
@@ -332,6 +356,10 @@ def validate_inputs(*, iso: str | Path, measurements: dict, browser_evidence: di
     env = {
         "VARIANT": variant,
         "FLAVOR": flavor,
+        "STRICT_INSTALL_MODE": install_mode,
+        "DIAGNOSTIC_UNQUALIFIED": str(diagnostic_unqualified).lower(),
+        # Explicitly clear inherited diagnostic context for normal observations.
+        "TUNAOS_INSTALLED_BOOT_DIAGNOSTIC": "1" if diagnostic_unqualified else "0",
         "TUNAOS_QUAL_SOURCE_DIGEST": source["source"],
         "TUNAOS_QUAL_SOURCE_REF": source["sourceRef"],
         "TUNAOS_QUAL_OVERLAY_DIGEST": source["overlay"],
@@ -353,8 +381,10 @@ def validate_inputs(*, iso: str | Path, measurements: dict, browser_evidence: di
                 f"unsafe environment value for {key}")
     binding = {
         "schema": "BrowserIsoSameByteGuestTest/v1",
-        "qualification": "diagnostic-unqualified",
-        "notice": "This test does not authenticate the producer or qualify the target.",
+        "qualification": qualification,
+        "notice": ("Single-mode observation; full qualification is not assessed. "
+                   "Consistency, not authentication: this test does not authenticate "
+                   "the producer or qualify the target."),
         "producer": {**expected_producer, "artifactName": artifact_name, "artifactId": int(artifact_id)},
         "target": {"image": image, "slug": slug, "platform": platform, "cpuBaseline": cpu_baseline},
         "iso": {"sha256": actual_iso, "sizeBytes": size},
@@ -388,6 +418,8 @@ def main(argv=None) -> int:
     parser.add_argument("--flavor", required=True)
     parser.add_argument("--slug", required=True)
     parser.add_argument("--platform", required=True)
+    parser.add_argument("--install-mode", choices=("plain", "luks"), default="plain")
+    parser.add_argument("--diagnostic-unqualified", choices=("true", "false"), default="false")
     parser.add_argument("--out-env", required=True)
     parser.add_argument("--out-binding", required=True)
     args = parser.parse_args(argv)
@@ -402,6 +434,7 @@ def main(argv=None) -> int:
             run_id=args.run_id, run_attempt=args.run_attempt, source_sha=args.source_sha,
             artifact_id=args.artifact_id, artifact_name=args.artifact_name,
             variant=args.variant, flavor=args.flavor, slug=args.slug, platform=args.platform,
+            install_mode=args.install_mode, diagnostic_unqualified=args.diagnostic_unqualified == "true",
         )
     except (InputError, OSError, subprocess.CalledProcessError) as exc:
         print(f"same-byte guest input validation failed: {exc}", file=sys.stderr)
@@ -410,7 +443,8 @@ def main(argv=None) -> int:
     env_path.parent.mkdir(parents=True, exist_ok=True)
     env_path.write_text("".join(f"{key}={value}\n" for key, value in env.items()), encoding="utf-8")
     Path(args.out_binding).write_text(json.dumps(binding, indent=2, sort_keys=True) + "\n", encoding="utf-8")
-    print(f"validated diagnostic same-byte guest inputs for {args.slug} {binding['iso']['sha256']}")
+    print(f"validated {binding['qualification']} {args.install_mode} same-byte guest inputs "
+          f"for {args.slug} {binding['iso']['sha256']}")
     return 0
 
 

@@ -26,10 +26,16 @@ if os.environ.get("RETAIN_ISO_ARTIFACT") == "true":
         raise SystemExit("ISO artifact retention requires retain_iso_artifact_days between 1 and 90")
 if os.environ.get("STRICT_ROUNDTRIP_TEST") == "true":
     expected = {"ONLY": "skipjack-gnome", "RUN_FULL": "true", "BENCHMARK": "false",
-                "KEEP_ISO": "false", "DIAGNOSTIC_UNQUALIFIED": "true",
+                "KEEP_ISO": "false",
                 "RETAIN_ISO_ARTIFACT": "true", "RETAIN_CANDIDATE": "false"}
     if any(os.environ.get(k) != v for k, v in expected.items()):
-        raise SystemExit("strict_roundtrip_test requires run_full=true, only=skipjack-gnome, retain_iso_artifact=true, diagnostic_unqualified=true, benchmark=false, keep_iso=false, retain_candidate=false")
+        raise SystemExit("strict_roundtrip_test requires run_full=true, only=skipjack-gnome, retain_iso_artifact=true, benchmark=false, keep_iso=false, retain_candidate=false")
+    mode = os.environ.get("STRICT_INSTALL_MODE", "plain")
+    diagnostic = os.environ.get("DIAGNOSTIC_UNQUALIFIED", "false")
+    if mode not in ("plain", "luks") or diagnostic not in ("true", "false"):
+        raise SystemExit("strict_roundtrip_test requires strict_install_mode=plain|luks and diagnostic_unqualified=true|false")
+    if (mode, diagnostic) not in (("plain", "false"), ("luks", "true")):
+        raise SystemExit("strict_roundtrip_test requires plain with diagnostic_unqualified=false or luks with diagnostic_unqualified=true")
 if os.environ.get("RETAIN_CANDIDATE") == "true":
     expected = {"ONLY": "yellowfin-gnome", "RUN_FULL": "true", "BENCHMARK": "false", "KEEP_ISO": "false"}
     if any(os.environ.get(k) != v for k, v in expected.items()):

@@ -76,9 +76,16 @@ on:
         type: string
         default: "7"
       strict_roundtrip_test:
-        description: "Test exact retained Skipjack GNOME ISO bytes with current TunaOS strict harness; diagnostic only. Requires run_full, only=skipjack-gnome, retain_iso_artifact, diagnostic_unqualified; no benchmark or R2."
+        description: "Test exact retained Skipjack GNOME ISO bytes: observed plain or diagnostic LUKS, never full qualification. Requires run_full, only=skipjack-gnome, retain_iso_artifact; no benchmark or R2."
         type: boolean
         default: false
+      strict_install_mode:
+        description: "Strict-roundtrip-only install mode; plain requires diagnostic_unqualified=false, luks requires true. Normal full runs still test both modes."
+        type: choice
+        options:
+          - plain
+          - luks
+        default: plain
       benchmark:
         description: "Run each @full build three times (cold profiles) and attach median/range evidence"
         type: boolean
@@ -456,6 +463,7 @@ jobs:
           DIAGNOSTIC_UNQUALIFIED: ${{ github.event.inputs.diagnostic_unqualified }}
           RETAIN_ISO_ARTIFACT: ${{ github.event.inputs.retain_iso_artifact }}
           STRICT_ROUNDTRIP_TEST: ${{ github.event.inputs.strict_roundtrip_test }}
+          STRICT_INSTALL_MODE: ${{ github.event.inputs.strict_install_mode }}
           RETAIN_ISO_ARTIFACT_DAYS: ${{ github.event.inputs.retain_iso_artifact_days }}
         # No --quiet: just's --quiet also discards the recipe's stdout.
         run: just full-plan >> "$GITHUB_OUTPUT"
@@ -651,7 +659,7 @@ jobs:
         timeout-minutes: 5
         with:
           repository: tuna-os/tunaOS
-          ref: e89bf562d7488242295bf02c228bbba4c509b388
+          ref: a700a7d3aa393361793a8e5966284f310fe36dab
           path: tunaos-e2e
       - name: checkout current tunaOS strict harness (pinned)
         if: github.event.inputs.strict_roundtrip_test == 'true'
@@ -659,7 +667,7 @@ jobs:
         timeout-minutes: 5
         with:
           repository: tuna-os/tunaOS
-          ref: 64da1ea1af6b19487ad9cea85213c41646e3ff7f
+          ref: a700a7d3aa393361793a8e5966284f310fe36dab
           path: tunaos-e2e-current
 
       - name: verify guest under QEMU (${{ matrix.edition.slug }})
@@ -724,6 +732,7 @@ jobs:
         timeout-minutes: 30
         env:
           SLUG: ${{ matrix.edition.slug }}
+          DIAGNOSTIC_UNQUALIFIED: ${{ github.event.inputs.diagnostic_unqualified }}
         run: just iso-artifact-split
 
       - name: upload ISO chunks
@@ -776,6 +785,7 @@ jobs:
           ISO_SHA256: ${{ steps.iso-artifact.outputs.iso_sha256 }}
           ARTIFACT_ID: ${{ steps.iso-artifact-upload.outputs.artifact-id }}
           STRICT_ROUNDTRIP_TEST: ${{ github.event.inputs.strict_roundtrip_test }}
+          DIAGNOSTIC_UNQUALIFIED: ${{ github.event.inputs.diagnostic_unqualified }}
           RETAIN_ISO_ARTIFACT_DAYS: ${{ github.event.inputs.retain_iso_artifact_days }}
         run: just iso-artifact-verify
       - name: prepare strict inputs from round-tripped media receipts
@@ -792,6 +802,8 @@ jobs:
           RUN_ID: ${{ github.run_id }}
           RUN_ATTEMPT: ${{ github.run_attempt }}
           SOURCE_SHA: ${{ github.sha }}
+          STRICT_INSTALL_MODE: ${{ github.event.inputs.strict_install_mode }}
+          DIAGNOSTIC_UNQUALIFIED: ${{ github.event.inputs.diagnostic_unqualified }}
         run: just full-strict-inputs
 
       - name: verify exact retained ISO under current strict harness
@@ -799,6 +811,8 @@ jobs:
         timeout-minutes: 60
         env:
           SLUG: ${{ matrix.edition.slug }}
+          STRICT_INSTALL_MODE: ${{ github.event.inputs.strict_install_mode }}
+          DIAGNOSTIC_UNQUALIFIED: ${{ github.event.inputs.diagnostic_unqualified }}
         run: just full-guest-verify-strict
 
       - name: disk after build
@@ -875,6 +889,7 @@ jobs:
         env:
           SLUG: ${{ matrix.edition.slug }}
           STRICT_ROUNDTRIP_TEST: ${{ github.event.inputs.strict_roundtrip_test }}
+          DIAGNOSTIC_UNQUALIFIED: ${{ github.event.inputs.diagnostic_unqualified }}
         run: just full-label-output
       # The browser-half evidence and the measurements of the exact ISO bytes
       # exist as soon as the build step succeeds. They must not wait for the

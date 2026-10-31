@@ -220,6 +220,7 @@ iso-artifact-split:
       --iso "$RUNNER_TEMP/${SLUG}.iso" \
       --measurements "e2e/test-results/build-measurements-qual-evidence-${SLUG}-s1.json" \
       --out "$RUNNER_TEMP/iso-artifact" --slug "$SLUG" \
+      --diagnostic-unqualified "${DIAGNOSTIC_UNQUALIFIED:-false}" \
       --repository "$GITHUB_REPOSITORY" --run-id "$GITHUB_RUN_ID" \
       --run-attempt "$GITHUB_RUN_ATTEMPT" --sha "$GITHUB_SHA" \
       > "$RUNNER_TEMP/iso-artifact-manifest.json"
@@ -252,9 +253,10 @@ iso-artifact-verify:
       output_args=(--output "$RUNNER_TEMP/${SLUG}-roundtrip.iso")
     fi
     python3 scripts/retain-iso-artifact.py verify --dir "$RUNNER_TEMP/iso-roundtrip" \
+      --diagnostic-unqualified "${DIAGNOSTIC_UNQUALIFIED:-false}" \
       --expected-sha256 "$ISO_SHA256" "${output_args[@]}" > "$RUNNER_TEMP/iso-roundtrip-result.json"
     {
-      echo "### ISO retained as GitHub artifact (diagnostic, not qualified)"
+      echo "### ISO retained as GitHub artifact (observed, not qualified)"
       echo ""
       echo "- artifact: \`${ARTIFACT}\` (id ${ARTIFACT_ID}), retention ${RETAIN_ISO_ARTIFACT_DAYS} day(s)"
       echo "- ISO sha256: \`${ISO_SHA256}\`"
@@ -262,7 +264,7 @@ iso-artifact-verify:
       echo '```json'
       cat "$RUNNER_TEMP/iso-roundtrip-result.json"
       echo '```'
-      echo "Fetch: \`gh run download ${GITHUB_RUN_ID} -R ${GITHUB_REPOSITORY} -n ${ARTIFACT}\` then \`python3 scripts/retain-iso-artifact.py verify --dir <dir> --expected-sha256 <browser-measured hash> --output ${SLUG}.iso\`."
+      echo "Fetch: \`gh run download ${GITHUB_RUN_ID} -R ${GITHUB_REPOSITORY} -n ${ARTIFACT}\` then \`python3 scripts/retain-iso-artifact.py verify --dir <dir> --diagnostic-unqualified ${DIAGNOSTIC_UNQUALIFIED:-false} --expected-sha256 <browser-measured hash> --output ${SLUG}.iso\`."
     } >> "$GITHUB_STEP_SUMMARY"
 
 # Derive the strict-guest inputs from the round-tripped media receipts and
@@ -288,25 +290,29 @@ full-strict-inputs:
       --repository "$REPOSITORY" --run-id "$RUN_ID" --run-attempt "$RUN_ATTEMPT" \
       --source-sha "$SOURCE_SHA" --artifact-id "$ARTIFACT_ID" --artifact-name "$ARTIFACT_NAME" \
       --variant "$variant" --flavor "$flavor" --slug "$SLUG" --platform "$PLATFORM" \
+      --install-mode "$STRICT_INSTALL_MODE" --diagnostic-unqualified "$DIAGNOSTIC_UNQUALIFIED" \
       --out-env "$RUNNER_TEMP/same-byte-inputs.env" \
       --out-binding "e2e/test-results/same-byte-guest-test-binding-${SLUG}.json"
     cat "$RUNNER_TEMP/same-byte-inputs.env" >> "$GITHUB_ENV"
     {
-      echo "### Same-byte strict guest test inputs (diagnostic only)"
+      echo "### Same-byte strict guest test inputs (${STRICT_INSTALL_MODE}, diagnostic-unqualified=${DIAGNOSTIC_UNQUALIFIED})"
       echo "Media receipts, browser measurements, run/attempt and artifact id matched. This does not qualify the target."
       cat "e2e/test-results/same-byte-guest-test-binding-${SLUG}.json"
     } >> "$GITHUB_STEP_SUMMARY"
 
-# Run the exact retained ISO under the current strict harness (diagnostic,
-# never a qualification). The TUNAOS_QUAL_* identities come from
-# $GITHUB_ENV, written by full-strict-inputs. Env: SLUG.
+# Run one install mode on the exact retained ISO (observed, never full
+# qualification). The TUNAOS_QUAL_* identities come from $GITHUB_ENV,
+# written by full-strict-inputs. Env: SLUG, STRICT_INSTALL_MODE, DIAGNOSTIC_UNQUALIFIED.
 # Run the exact retained ISO under the current strict harness.
 full-guest-verify-strict:
     #!/usr/bin/env bash
     set -euo pipefail
+    STRICT_INSTALL_MODE="${STRICT_INSTALL_MODE:-plain}"
+    DIAGNOSTIC_UNQUALIFIED="${DIAGNOSTIC_UNQUALIFIED:-false}"
     # The harness binds monitor/vnc/swtpm/serial sockets under OUTPUT; the
     # longest is strict-plain-warm-serial.sock, and sun_path holds 107 bytes.
-    OUT="luks-verify-${SLUG}-diag"
+    OUT="luks-verify-${SLUG}-obs"
+    if [ "$DIAGNOSTIC_UNQUALIFIED" = "true" ]; then OUT="luks-verify-${SLUG}-diag"; fi
     SOCK="$PWD/$OUT/strict-plain-warm-serial.sock"
     if [ "${#SOCK}" -ge 108 ]; then
       echo "::error::Harness socket path is ${#SOCK} bytes, over the 107-byte sun_path limit: $SOCK"
@@ -321,7 +327,16 @@ full-guest-verify-strict:
       sudo tee /etc/udev/rules.d/99-kvm4all.rules
     sudo udevadm control --reload-rules
     sudo udevadm trigger --name-match=kvm || true
-    sudo env -u TBOX_E2E_IMAGE -u FISHERMAN_OVERRIDE \
+    diagnostic_env=()
+    if [ "$DIAGNOSTIC_UNQUALIFIED" = "true" ]; then
+      if [ "$STRICT_INSTALL_MODE" != "luks" ]; then
+        echo "::error::Diagnostic strict testing requires LUKS"
+        exit 1
+      fi
+      diagnostic_env=(TUNAOS_INSTALLED_BOOT_DIAGNOSTIC=1)
+    fi
+    sudo env -u TBOX_E2E_IMAGE -u FISHERMAN_OVERRIDE -u TUNAOS_INSTALLED_BOOT_DIAGNOSTIC \
+      "${diagnostic_env[@]}" \
       VARIANT="$VARIANT" FLAVOR="$FLAVOR" \
       TUNAOS_QUAL_EXECUTION_KIND="$TUNAOS_QUAL_EXECUTION_KIND" \
       STRICT_PUBLISHED_MEDIA="$STRICT_PUBLISHED_MEDIA" \
@@ -338,22 +353,22 @@ full-guest-verify-strict:
       TUNAOS_QUAL_BROWSER_VERSION="$TUNAOS_QUAL_BROWSER_VERSION" \
       TUNAOS_QUAL_BROWSER_MEMORY_GIB="$TUNAOS_QUAL_BROWSER_MEMORY_GIB" \
       TUNAOS_QUAL_BROWSER_FREE_DISK_GIB="$TUNAOS_QUAL_BROWSER_FREE_DISK_GIB" \
-      "$GITHUB_WORKSPACE/tunaos-e2e-current/scripts/iso-e2e.sh" "$ISO" --strict-offline-gui \
+      "$GITHUB_WORKSPACE/tunaos-e2e-current/scripts/iso-e2e.sh" "$ISO" --strict-offline-gui="$STRICT_INSTALL_MODE" \
       --output "$OUT" --timeout 900
     {
-      echo "### Same-byte strict guest test completed (diagnostic, not qualified)"
+      echo "### Same-byte strict guest test completed (${STRICT_INSTALL_MODE}, diagnostic-unqualified=${DIAGNOSTIC_UNQUALIFIED}; not full qualification)"
       echo "- ISO: \`${TUNAOS_QUAL_MEDIA_DIGEST}\`"
-      echo "- Browser test diagnostics and media-bound identities are attached; producer/frontend authentication remains absent."
+      echo "- Single-mode observations and media-bound identities are attached; producer/frontend authentication remains absent."
     } >> "$GITHUB_STEP_SUMMARY"
 
 # The guest harness runs under sudo, so its output starts root-owned. Label
 # the strict receipt first, then hand the tree back to the runner user so
-# upload-artifact can read it. Env: SLUG, STRICT_ROUNDTRIP_TEST.
-# Label diagnostic output and hand harness output back to the runner user.
+# upload-artifact can read it. Env: SLUG, STRICT_ROUNDTRIP_TEST, DIAGNOSTIC_UNQUALIFIED.
+# Label diagnostic output when requested and hand harness output back to the runner user.
 full-label-output:
     #!/usr/bin/env bash
     set -euo pipefail
-    if [ "$STRICT_ROUNDTRIP_TEST" = "true" ]; then
+    if [ "$STRICT_ROUNDTRIP_TEST" = "true" ] && [ "$DIAGNOSTIC_UNQUALIFIED" = "true" ]; then
       sudo python3 scripts/finalize-diagnostic-output.py \
         "luks-verify-${SLUG}-diag"
     fi
