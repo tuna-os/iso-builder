@@ -74,6 +74,53 @@ An overlay with `baseAnnotationMatched: false` does not prove annotation linkage
 These records do not qualify boot, installation, hardware or performance.
 Their filenames stay outside the qualification consumer globs.
 
+## Layer cache integrity
+
+The cache checks each layer before it serves the bytes.
+Each SHA-256 instance has a buffer for its schedule.
+It uses the same buffer for each block.
+Separate instances do not share mutable scratch.
+This does not skip verification or hold a whole layer in memory.
+
+## Experimental build measurements
+
+On 2026-10-28, cold Chromium builds used the same image and overlay inputs.
+The table shows the full build phase, not the shorter UI timer.
+Save time is separate.
+
+| Local candidate | Build phase |
+|---|---:|
+| Original | 20m 18.7s |
+| Hash scratch reuse and buffered writes, latest control | 13m 21.0s |
+| Same changes with lazy arena reopen | 9m 05.2s |
+
+One original, two hash/buffer runs and one arena run were made.
+The latest pair ran the arena candidate first, then the control.
+The arena change cut this pair's build time by 31.94%.
+The combined change cut time by 55.27% against the earlier original.
+We used two pairs for that comparison.
+These are measurements, not qualification or a speed guarantee.
+
+All outputs had 9,447,305,216 bytes.
+The inventory covered 78 outer files, 7 EFI files and 67 OCI blobs.
+Only timestamps differed in the latest pair.
+Browser storage use after the build was about 1.85 GB lower.
+This is not a peak storage measurement.
+
+The engine base was `5cc970f316615937c9caa5b7b9244381992cf0b1`.
+The browser base was `8822b23cb027a7edb89ab7d79651eca9b4b8e2e8`.
+The image manifest was
+`sha256:71db4be3c4ddd827b8c89c7de191f5f0d99551815b886503de2c5b093af4b767`.
+The overlay manifest was
+`sha256:c86293fb3e9d65a91261cf52fe34bde9e9f0aa684046eaf03e022eb3688fd328`.
+The arena WASM was
+`sha256:0531cb4704c680be71709dfaac59ffbb94c71bea37ad3993a1a7f871efef44e3`.
+
+These measurements include engine changes and reuse of the buffer for each hash.
+The cache change alone does not include the engine changes.
+The engine pin, production builds and deployment stay unchanged here.
+We did not check Firefox, Safari, boot or encrypted installation.
+
 ## Tests
 
 `e2e/tests/build-result.spec.js` checks the schema, counts and browser lifecycle.
