@@ -120,14 +120,14 @@ For diagnostic LUKS, use `strict_install_mode=luks` and
 `diagnostic_unqualified=true` together. The catalog/source admission guards
 still apply; a non-diagnostic run does not bypass them.
 
-Both routes retain the browser-built ISO, discard the local original, download
-the chunks again, reconstruct the ISO and verify its hash against the browser
-measurement **before** starting the guest. The helper binds media receipts,
-source, browser, run/attempt and artifact identities to the strict invocation.
-Only diagnostic LUKS enables installed-boot diagnostic output. Neither
-single-mode result is full qualification evidence. Normal, non-roundtrip full
-runs retain their existing both-mode strict qualification contract; this
-choice does not narrow that route.
+Both routes retain the browser-built ISO and discard the local original.
+They download the chunks again, reconstruct the ISO, and verify its hash against
+the browser measurement **before** the guest starts. The helper checks that the
+receipt agrees with the source, browser, `GITHUB_RUN_ID`, `GITHUB_RUN_ATTEMPT`,
+and artifact identities for the strict invocation. Only LUKS with diagnostics
+sets `TUNAOS_INSTALLED_BOOT_DIAGNOSTIC=1`. Neither single-mode result is full
+qualification evidence. Other full runs still need both modes for full
+qualification.
 
 ### Brand assets and primary configuration
 
