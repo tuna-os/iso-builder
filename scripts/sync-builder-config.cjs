@@ -22,6 +22,11 @@ if(args.includes('--check')) {
  const input=args[0], index=args.indexOf('--source-commit'), commit=args[index+1];
  if(!input||index<0||!/^[a-f0-9]{40}$/.test(commit||''))throw Error('Usage: node scripts/sync-builder-config.cjs <exported JSON> --source-commit <immutable SHA>, or --check');
  const bytes=fs.readFileSync(input);const config=validate(JSON.parse(bytes));
+ const wordmarkIndex=args.indexOf('--wordmark');
+ if(config.brand.logo_url==='/wordmark.svg'){
+  if(wordmarkIndex<0||!args[wordmarkIndex+1])throw Error('Wordmark import requires --wordmark <primary lettermarks/tunaos.svg>');
+  fs.copyFileSync(args[wordmarkIndex+1],path.join(root,'app/public/wordmark.svg'));
+ }
  let flavors;
  if(config.schema_version===2){const index=args.indexOf('--flavors');if(index<0||!args[index+1])throw Error('v2 import requires --flavors <primary metadata JSON>');const data=fs.readFileSync(args[index+1]);const doc=JSON.parse(data);if(doc.schema_version!==1||doc.kind!=='builder-flavor-metadata'||!Array.isArray(doc.flavors))throw Error('Invalid primary metadata');flavors={path:'docs/iso-builder.flavors.json',sha256:digest(data)};fs.writeFileSync(flavorsPath,data);}
  fs.writeFileSync(destination,bytes);

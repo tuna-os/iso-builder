@@ -94,6 +94,42 @@ cd e2e && npm ci && npx playwright install --with-deps chromium
 npx playwright test --grep-invert @full        # Runs UI & inspect network flow
 ```
 
+### Brand assets and primary configuration
+
+The wide header uses `/wordmark.svg`, copied without modification from
+`system_files/usr/share/tunaos/lettermarks/tunaos.svg` at tunaOS
+[`95d55c725755b12e54b0c1a3d4f7e3c2a00ba62c`](https://github.com/tuna-os/tunaOS/commit/95d55c725755b12e54b0c1a3d4f7e3c2a00ba62c)
+(PR #4168). The favicon and notifications keep the fish from Noto Emoji;
+the old builder mascot is not a wordmark.
+Anime wallpapers remain tunaOS assets, not marks for the builder.
+
+Import the config, flavor metadata and wordmark from that same immutable
+primary checkout; do not hand-edit generated config or create a second catalog:
+
+```sh
+node scripts/sync-builder-config.cjs /path/to/tunaOS/docs/iso-builder.config.json \
+  --source-commit 95d55c725755b12e54b0c1a3d4f7e3c2a00ba62c \
+  --flavors /path/to/tunaOS/docs/iso-builder.flavors.json \
+  --wordmark /path/to/tunaOS/system_files/usr/share/tunaos/lettermarks/tunaos.svg
+node scripts/generate-builder-config.cjs
+node scripts/generate-guided-catalog.cjs
+node scripts/generate-experiences.cjs
+```
+
+The source config must declare `brand.logo_url: "/wordmark.svg"` and
+`brand.favicon_url: "/favicon-32.png"`. The sync script copies the bytes
+from the primary export without changes and records their commit and digest.
+The generators use the existing catalog snapshot and the manifest for
+deployment experiences.
+
+After regeneration, serve `app/public` with the command above and open
+<http://localhost:8080/> at desktop and 320px viewport widths. Confirm the whole
+wordmark is visible, navigation wraps, and the tab shows the emoji mark.
+Select each experience and confirm it retains the project's marks.
+
+This prepares source only: do not deploy until maintainers republish the overlay
+and put the agreed base binding in place.
+
 > [!IMPORTANT]
 > Playwright tests run in a persistent browser context in `~/tmp/`, not in `/tmp`. Some Linux systems limit `/tmp` to a small `tmpfs` RAM disk. There, Chrome can run out of storage space when it downloads the layers of a real image.
 

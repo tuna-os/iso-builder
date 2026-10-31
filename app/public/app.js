@@ -39,11 +39,11 @@ function applyBuilderBranding() {
   document.title = `${brand.name} ISO Builder`;
   const link = document.querySelector(".site-header .brand");
   link.textContent = ""; link.href = brand.homepage_url;
+  // logo_url is the brand wordmark: it carries the name, so it replaces the text.
   if (brand.logo_url) {
-    const img = document.createElement("img"); img.src = brand.logo_url; img.alt = "";
+    const img = document.createElement("img"); img.src = brand.logo_url; img.alt = brand.name;
     link.appendChild(img);
-  }
-  link.appendChild(document.createTextNode(brand.name));
+  } else link.appendChild(document.createTextNode(brand.name));
   const favicon = document.querySelector('link[rel="icon"]');
   if (brand.favicon_url) favicon.href = brand.favicon_url; else favicon.remove();
   const nav = document.querySelector(".site-header nav"); nav.textContent = "";
@@ -246,7 +246,7 @@ function askNotify() {
 function notify(title, body) {
   if (!("Notification" in window)) return;
   if (Notification.permission !== "granted" || !document.hidden) return;
-  try { new Notification(title, { body, icon: "logo.png" }); } catch {}
+  try { new Notification(title, { body, icon: "mark-192.png" }); } catch {}
 }
 
 // ── Flatpak checklist + Flathub search ──────────────────────────────────

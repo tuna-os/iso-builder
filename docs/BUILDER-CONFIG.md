@@ -24,6 +24,14 @@ The primary repository owns the schema, validator and export. The browser
 validates the same contract before it starts. Invalid configuration shows an
 error. It never selects a different brand as a fallback.
 
+## Brand marks
+
+`brand.logo_url` is a wordmark. The wordmark shows the brand name, so the header
+shows the wordmark in place of the name text. The image alt text is the name.
+A brand without `logo_url` gets a text header. `brand.favicon_url` is a small
+square mark. For the TunaOS files and their licenses, see
+`app/public/brand-marks-NOTICE.txt`.
+
 ## Catalog and questions
 
 Version 2 supplies paths, facet labels, recommendations and a default leaf ID.

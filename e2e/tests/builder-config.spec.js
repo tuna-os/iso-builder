@@ -47,6 +47,7 @@ test('alternate catalog brand/default uses only configured choices',async({page}
  await expect(page.locator('#image')).toHaveValue('bonito:kde');
  await expect(page.locator('#label')).toHaveValue('WORKSHOP');
  await expect(page.locator('.site-header img')).toHaveCount(0);
+ await expect(page.locator('.site-header .brand')).toHaveText('Example Workshop');
  await expect(page.locator('link[rel=icon]')).toHaveCount(0);
  expect(await page.evaluate(()=>window.tboxGetBuildRequest().options.outputFilename)).toMatch(/^workshop-/);
 });
@@ -63,6 +64,9 @@ for(const name of ['bluefin','bazzite']) test(`${name} config uses the same UI a
  await expect(page.locator('#guided-picker')).toBeVisible();
  await expect(page.locator('#introspect')).toBeDisabled();
  await expect(page.locator('.site-header img')).toHaveCount(config.brand.logo_url?1:0);
+ // A wordmark carries the name: it replaces the header text, and its alt keeps the accessible name.
+ await expect(page.locator('.site-header .brand')).toHaveText(config.brand.logo_url?'':config.brand.name);
+ await expect(page.locator('.site-header .brand')).toHaveAccessibleName(config.brand.name);
  await expect(page.locator('link[rel=icon]')).toHaveCount(0);
  await page.evaluate(async()=>{await window.inspect();await window.build();await window.buildDdi({});window.prepareDdi({});});
  expect(remote).toEqual([]);

@@ -31,8 +31,8 @@
 
   .site-header { background: var(--header-bg); border-bottom: 1px solid rgba(255, 255, 255, 0.08); }
   .site-header .inner { max-width: 1200px; margin: 0 auto; display: flex; align-items: center; gap: .75rem; padding: .5rem 1rem; }
-  .site-header img { width: auto; max-width: 150px; height: 30px; object-fit: contain; border-radius: 0; }
-  .site-header .brand { font-weight: 700; font-size: 1.15rem; letter-spacing: -0.01em; color: var(--header-fg); text-decoration: none; }
+  .site-header img { display: block; width: auto; max-width: 100%; height: 30px; object-fit: contain; border-radius: 0; }
+  .site-header .brand { flex: 0 0 auto; max-width: 100%; font-weight: 700; font-size: 1.15rem; letter-spacing: -0.01em; color: var(--header-fg); text-decoration: none; }
   .site-header nav { margin-left: auto; display: flex; gap: .3rem; flex-wrap: wrap; }
   .site-header nav a { color: var(--header-link); text-decoration: none; font-size: .92rem; font-weight: 500; padding: .4rem .6rem; }
   .site-header nav a:hover, .site-header nav a.active { color: var(--header-fg); }

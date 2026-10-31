@@ -4,7 +4,7 @@ globalThis.TBOX_BUILDER_CONFIG = {
     "documentation_url": "https://tunaos.org/docs/iso-builder",
     "favicon_url": "/favicon-32.png",
     "homepage_url": "https://tunaos.org",
-    "logo_url": "/logo.png",
+    "logo_url": "/wordmark.svg",
     "name": "TunaOS",
     "support_url": "https://github.com/tuna-os"
   },
