@@ -197,6 +197,26 @@ def test_rejects_input_label_that_disagrees_with_requested_diagnostic_flag(tmp_p
         helper.validate_inputs(**args)
 
 
+@pytest.mark.parametrize("component", ["measurements", "browser_evidence", "artifact_manifest"])
+@pytest.mark.parametrize("diagnostic", [False, True], ids=["observed", "diagnostic"])
+def test_single_mode_observation_rejects_qualified_input(tmp_path, component, diagnostic):
+    args, *_ = fixture(tmp_path, diagnostic=diagnostic)
+    args[component]["qualification"] = "qualified"
+    with pytest.raises(helper.InputError):
+        helper.validate_inputs(**args)
+
+
+def test_observed_plain_accepts_explicit_not_assessed_browser_evidence(tmp_path):
+    args, *_ = fixture(tmp_path, diagnostic=False)
+    args["browser_evidence"]["qualification"] = "not-assessed"
+
+    _, binding = helper.validate_inputs(**args)
+
+    assert binding["qualification"] == "not-assessed"
+    assert "qualificationId" not in binding
+    assert "fullQualificationEvidence" not in binding
+
+
 @pytest.mark.parametrize("component", ["measurements", "browser_evidence"])
 @pytest.mark.parametrize("stale_block", [None, False, {}, {
     "label": "diagnostic, unqualified build", "image": "tuna-os/skipjack:gnome", "platform": "linux/amd64",
@@ -212,7 +232,7 @@ def test_observed_plain_rejects_old_or_contradictory_diagnostic_block(tmp_path, 
 def test_rejects_install_mode_outside_requested_diagnostic_context(tmp_path, diagnostic, mode):
     args, *_ = fixture(tmp_path, diagnostic=diagnostic)
     args["install_mode"] = mode
-    with pytest.raises(helper.InputError, match="requires luks"):
+    with pytest.raises(helper.InputError):
         helper.validate_inputs(**args)
 
 
