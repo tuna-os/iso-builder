@@ -160,9 +160,29 @@ qualification guards. If CI retains an artifact or a guest test passes for one
 mode, that result does not qualify an observed or diagnostic build.
 
 The job timeout is 360 minutes for this path. The capped build, artifact
-transfer, input preparation, and guest test total 275 minutes. Setup and the
-pinned harness checkout have 45 minutes of caps. Finalization has 35 minutes;
-the job keeps 5 minutes for margin.
+transfer, input preparation, and guest test total 275 minutes. Each setup step
+has its own cap. The 360-minute limit also includes finalization and cleanup.
+
+### Runner preparation
+
+[Run 41249440653](https://github.com/tuna-os/iso-builder/actions/runs/41249440653)
+stopped before the browser build. The step that used apt to install `just`
+reached its 20-minute cap with no output. The next step reported
+`just: command not found`. No ISO or guest receipt exists for that try.
+
+The full job now uses the existing action `extractions/setup-just`, pinned at
+`53165ef7e734c5c07cb06b3c8e7b647c5aa16db3`. It does not use apt to install
+`just`. The job uses the x64 Ubuntu 24.04 runner and sets
+`PREINSTALLED_BROWSER_DEPS=true`. The recipe accepts that flag only in this
+GitHub Actions context.
+
+The recipe installs the exact Chromium that the Playwright lockfile selects.
+On a cache hit, it uses those cached bytes. It must launch and close Chromium
+with the libraries on the runner in both cases. A missing browser or library
+fails the step; the recipe does not ignore the error or try another source.
+Other contexts still install the system dependencies. The build and guest
+windows do not change.
+
 
 The workflow adds no cross-repository artifact credential and writes nothing to R2. It deletes the local ISO, downloads the artifact from this run, and checks each chunk and the full-file hash against the browser measurement. It restores the same bytes to a separate ISO file. It compares the manifest's repository, source SHA, run ID, try number, target, and measurements with this job. The upload action returns an artifact ID. The workflow records that ID in the binding sidecar before guest boot.
 

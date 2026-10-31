@@ -497,14 +497,13 @@ jobs:
   # ISO, so this is not a per-push gate.
   full-matrix:
     needs: [full-plan, wasm]
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     # The strict same-byte route has bounded stages: 75 min to build, 30 to
     # split the ISO, 30+5 to upload it, 5 to drop local chunks, 30 to download,
     # 30 to verify, 10 to prepare, and 60 for the guest: 275 min total. Setup
-    # and the pinned harness checkout have 45 min of caps. Output labeling and
-    # diagnostics upload have 35 min, the final always-run ci-cleanup step 3
-    # min; 2 min remains as margin.
-    # The strict route therefore needs the GitHub maximum of 360 min.
+    # and the pinned harness checkout, output labeling, uploads and cleanup
+    # have their own step caps. The unchanged GitHub maximum of 360 min also
+    # bounds their combined runtime; individual caps are not extra job time.
     # Without the strict guest test, retained-ISO runs need 330 min for the
     # same setup, browser, 25-minute guest check, artifact transfer, and uploads.
     # Candidate retention keeps its existing 130-minute cap. Cold/warm pairs
@@ -598,13 +597,16 @@ jobs:
           path: ~/.cache/ms-playwright
           key: ${{ runner.os }}-playwright-${{ hashFiles('e2e/package-lock.json') }}
 
+      - name: install pinned just without apt
+        uses: extractions/setup-just@53165ef7e734c5c07cb06b3c8e7b647c5aa16db3 # v4
+        timeout-minutes: 5
+
       - name: install deps + chromium
         timeout-minutes: 20
         env:
           CACHE_HIT: ${{ steps.playwright-cache.outputs.cache-hit }}
-        run: |
-          sudo apt-get update -qq && sudo apt-get install -y -qq --no-install-recommends just
-          just e2e-install
+          PREINSTALLED_BROWSER_DEPS: "true"
+        run: just e2e-install
 
       - name: build ${{ matrix.edition.ref }} (${{ matrix.edition.base }})
         id: browser-build

@@ -75,6 +75,84 @@ def test_steps_that_hold_secrets_stay_in_the_workflow():
             assert 'just ' not in step['run'], step['name']
 
 
+def browser_setup(tmp_path, *, cached=True, context=None, launch_failure=False):
+    """Execute the real recipe and its JS runtime probe, with no package I/O."""
+    bins = tmp_path / 'bin'
+    bins.mkdir()
+    e2e = tmp_path / 'e2e'
+    package = e2e / 'node_modules/@playwright/test'
+    package.mkdir(parents=True)
+    log = tmp_path / 'setup.log'
+    for name in ('npm', 'npx', 'sudo'):
+        stub = bins / name
+        stub.write_text(f'#!/bin/sh\nprintf "%s\\n" "{name} $*" >> "$SETUP_LOG"\n'
+                        + ('exit 97\n' if name == 'sudo' else 'exit 0\n'))
+        stub.chmod(0o755)
+    (package / 'index.js').write_text(
+        'const fs = require("node:fs"); const log = value => fs.appendFileSync(process.env.SETUP_LOG, value + "\\n");\n'
+        'exports.chromium = { launch: async options => { log("launch " + JSON.stringify(options));\n'
+        'if (process.env.LAUNCH_FAILURE === "1") throw new Error("missing Chromium library");\n'
+        'return { version: () => "fixture-version", close: async () => { log("close"); } }; } };\n')
+    env = {**os.environ, 'PATH': f'{bins}:{os.environ["PATH"]}', 'SETUP_LOG': str(log),
+           'CACHE_HIT': str(cached).lower(), 'PREINSTALLED_BROWSER_DEPS': 'true',
+           'GITHUB_ACTIONS': 'true', 'RUNNER_OS': 'Linux', 'RUNNER_ARCH': 'X64', 'ImageOS': 'ubuntu24',
+           'LAUNCH_FAILURE': '1' if launch_failure else '0', **(context or {})}
+    result = subprocess.run(['just', '--justfile', str(ROOT / 'justfile'), '--working-directory',
+                             str(tmp_path), 'e2e-install'], env=env, text=True, capture_output=True)
+    return result, log.read_text().splitlines() if log.exists() else []
+
+
+@needs_just
+@pytest.mark.parametrize('cached', [False, True])
+def test_preinstalled_runner_requires_exact_browser_launch_and_close(tmp_path, cached):
+    result, calls = browser_setup(tmp_path, cached=cached)
+    assert result.returncode == 0, result.stderr
+    assert calls == ['npm ci', *([] if cached else ['npx playwright install chromium']),
+                     'launch {"args":["--disable-dev-shm-usage"]}', 'close']
+    assert 'Chromium runtime ready: fixture-version' in result.stdout
+
+
+@needs_just
+def test_missing_preinstalled_browser_library_fails_without_apt_fallback(tmp_path):
+    result, calls = browser_setup(tmp_path, launch_failure=True)
+    assert result.returncode != 0 and 'missing Chromium library' in result.stderr
+    assert calls == ['npm ci', 'launch {"args":["--disable-dev-shm-usage"]}']
+
+
+@needs_just
+@pytest.mark.parametrize('context', [
+    {'GITHUB_ACTIONS': ''}, {'RUNNER_OS': 'Darwin'}, {'RUNNER_ARCH': 'ARM64'},
+    {'ImageOS': 'ubuntu26'}, {'PREINSTALLED_BROWSER_DEPS': '1'},
+])
+def test_preinstalled_browser_route_refuses_other_contexts_before_package_io(tmp_path, context):
+    result, calls = browser_setup(tmp_path, context=context)
+    assert result.returncode != 0 and 'requires the Ubuntu 24.04 x64' in result.stderr
+    assert calls == []
+
+
+@needs_just
+@pytest.mark.parametrize('cached', [False, True])
+def test_normal_browser_setup_keeps_system_dependency_install(tmp_path, cached):
+    result, calls = browser_setup(tmp_path, cached=cached, context={'PREINSTALLED_BROWSER_DEPS': ''})
+    assert result.returncode == 0, result.stderr
+    assert calls == ['npm ci', 'npx playwright ' + ('install-deps chromium' if cached else 'install --with-deps chromium')]
+
+
+def test_full_runner_uses_existing_pinned_just_and_preserves_setup_cap():
+    jobs = yaml.safe_load((ROOT / '.github/workflows/ci.yml').read_text())['jobs']
+    full = jobs['full-matrix']
+    assert full['runs-on'] == 'ubuntu-24.04'
+    steps = full['steps']
+    tool = next(step for step in steps if step.get('name') == 'install pinned just without apt')
+    assert tool['uses'] == 'extractions/setup-just@53165ef7e734c5c07cb06b3c8e7b647c5aa16db3'
+    setup = next(step for step in steps if step.get('name') == 'install deps + chromium')
+    assert setup['timeout-minutes'] == 20
+    assert setup['run'] == 'just e2e-install'
+    assert setup['env']['PREINSTALLED_BROWSER_DEPS'] == 'true'
+    assert steps.index(tool) < steps.index(setup)
+    assert all('PREINSTALLED_BROWSER_DEPS' not in step.get('env', {}) for step in jobs['e2e']['steps'])
+
+
 # --- scripts/validate-qualification-evidence.py (moved verbatim from ci.yml) --------------
 
 def evidence(**over):

@@ -82,16 +82,26 @@ wasm-build:
 
 # ── e2e + full-matrix: shared browser setup ────────────────────────────────
 
-# Install the Playwright deps and chromium. CACHE_HIT=true (the
-# actions/cache output) skips the browser download and installs only the OS
-# libraries.
+# CACHE_HIT=true skips the exact Playwright browser download. Only the full
+# Ubuntu 24.04 Actions runner uses its preinstalled libraries; actual Chromium
+# launch and close must succeed there. Other contexts install the OS libraries.
 # Install Playwright deps and chromium.
 e2e-install:
     #!/usr/bin/env bash
     set -euo pipefail
     cd e2e
+    if [ -n "${PREINSTALLED_BROWSER_DEPS:-}" ]; then
+      if [ "$PREINSTALLED_BROWSER_DEPS" != "true" ] || [ "${GITHUB_ACTIONS:-}" != "true" ] || \
+         [ "${RUNNER_OS:-}" != "Linux" ] || [ "${RUNNER_ARCH:-}" != "X64" ] || [ "${ImageOS:-}" != "ubuntu24" ]; then
+        echo "PREINSTALLED_BROWSER_DEPS requires the Ubuntu 24.04 x64 GitHub Actions runner" >&2
+        exit 1
+      fi
+    fi
     npm ci
-    if [ "${CACHE_HIT:-}" != "true" ]; then
+    if [ "${PREINSTALLED_BROWSER_DEPS:-}" = "true" ]; then
+      if [ "${CACHE_HIT:-}" != "true" ]; then npx playwright install chromium; fi
+      node -e 'const { chromium } = require("@playwright/test"); (async () => { const browser = await chromium.launch({ args: ["--disable-dev-shm-usage"] }); console.log("Chromium runtime ready:", browser.version()); await browser.close(); })().catch(error => { console.error(error); process.exitCode = 1; });'
+    elif [ "${CACHE_HIT:-}" != "true" ]; then
       npx playwright install --with-deps chromium
     else
       npx playwright install-deps chromium
