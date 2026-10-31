@@ -1,9 +1,9 @@
 // Test-only helpers for building a catalog-unqualified target in @full.
 //
-// The production qualification gate (app.js catalogQualification) is never
+// The production qualification gate (catalog.js catalogQualification) is never
 // weakened. The app honours one JS global, installed by Playwright
 // addInitScript, that names the exact image and platform of the operation
-// (app.js diagnosticUnqualifiedGrant). Nothing the deployed site's normal path
+// (catalog.js diagnosticUnqualifiedGrant). Nothing the deployed site's normal path
 // can reach (URL, storage, UI, environment) installs it. The result is labelled
 // "diagnostic-unqualified" everywhere and is never a qualification.
 

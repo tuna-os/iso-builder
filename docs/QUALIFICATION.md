@@ -140,7 +140,7 @@ build, publication or change to download routes.
 
 ## Diagnostic build of an unqualified target (test only)
 
-The browser gate (`catalogQualification` in `app/public/app.js`) refuses each
+The browser gate (`catalogQualification` in `app/public/catalog.js`) refuses each
 target that has incomplete qualification evidence. A target cannot make its first
 evidence through the gate. The `@full` spec can build one named target for
 diagnosis only:
