@@ -113,7 +113,7 @@ e2e-gate:
 
 # Resolve e2e/editions.json into the matrix, honouring the dispatch inputs
 # (ONLY, RUN_FULL, KEEP_ISO, ...). Output is `editions=`/`count=` lines:
-#   just --quiet full-plan >> "$GITHUB_OUTPUT"
+#   just full-plan >> "$GITHUB_OUTPUT"   (not --quiet: it drops recipe stdout)
 # Resolve the full-matrix plan from the dispatch inputs.
 full-plan:
     python3 scripts/plan-full-matrix.py

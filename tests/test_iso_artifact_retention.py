@@ -162,8 +162,6 @@ def test_verify_refuses_a_tampered_manifest_label(tmp_path, iso):
 
 
 def plan(env):
-    pick = next(s for s in WORKFLOW['jobs']['full-plan']['steps'] if s.get('id') == 'pick')
-    assert pick['run'].strip() == 'just --quiet full-plan >> "$GITHUB_OUTPUT"'
     assert 'plan-full-matrix.py' in recipe('full-plan')
     return subprocess.run([sys.executable, 'scripts/plan-full-matrix.py'], cwd=ROOT, env={**os.environ, **env}, text=True, capture_output=True)
 
@@ -177,6 +175,19 @@ def test_plan_accepts_any_single_named_cell_without_r2():
     r = plan(valid())
     assert r.returncode == 0, r.stderr
     assert 'count=1' in r.stdout and '"slug": "skipjack-gnome"' in r.stdout
+
+
+def test_plan_step_writes_matrix_outputs(tmp_path):
+    # Runs the workflow's own step command: an output-suppressing invocation
+    # once left editions/count empty, so full-matrix was never created.
+    pick = next(s for s in WORKFLOW['jobs']['full-plan']['steps'] if s.get('id') == 'pick')
+    out = tmp_path / 'github_output'
+    r = subprocess.run(['bash', '-e', '-c', pick['run']], cwd=ROOT, text=True, capture_output=True,
+                       env={**os.environ, **valid(), 'GITHUB_OUTPUT': str(out)})
+    assert r.returncode == 0, r.stderr
+    lines = out.read_text().splitlines()
+    assert 'count=1' in lines
+    assert any(line.startswith('editions=') and '"slug": "skipjack-gnome"' in line for line in lines)
 
 
 @pytest.mark.parametrize('key,value', [('ONLY', ''), ('ONLY', 'skipjack-gnome,bonito-kde'), ('RUN_FULL', 'false'),
