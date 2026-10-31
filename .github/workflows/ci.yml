@@ -987,3 +987,28 @@ jobs:
           workingDirectory: worker
           wranglerVersion: "4"
 
+      # A wrangler exit 0 only means the Cloudflare API accepted an upload.
+      # Fetch production the way a browser does and fail the run if the app is
+      # not served, serves a different engine than this run built and e2e
+      # tested, or the relay cannot issue a GHCR token. Retried because a new
+      # version can take a moment to reach every edge. On failure, follow
+      # runbooks/deploy-and-rollback.md ("Roll back").
+      - name: verify production (iso.tunaos.org, relay.tunaos.org)
+        timeout-minutes: 6
+        run: |
+          want="$(sha256sum app/public/tbox.wasm | cut -d' ' -f1)"
+          for attempt in 1 2 3 4 5 6; do
+            app="$(curl --connect-timeout 5 --max-time 10 -sS -H 'Cache-Control: no-cache' -o index.html -w '%{http_code}' https://iso.tunaos.org/ || true)"
+            engine="$(curl --connect-timeout 5 --max-time 10 -fsS -H 'Cache-Control: no-cache' https://iso.tunaos.org/tbox.wasm | sha256sum | cut -d' ' -f1 || true)"
+            relay="$(curl --connect-timeout 5 --max-time 10 -sS -o healthz.json -w '%{http_code}' https://relay.tunaos.org/healthz || true)"
+            echo "attempt $attempt: app=$app engine=$engine (built $want) relay=$relay"
+            if [ "$app" = 200 ] && grep -q 'src="app.js"' index.html && [ "$engine" = "$want" ] && [ "$relay" = 200 ]; then
+              echo "production verified"
+              exit 0
+            fi
+            sleep 20
+          done
+          cat healthz.json || true
+          echo "::error::production verification failed after deploy; see runbooks/deploy-and-rollback.md"
+          exit 1
+
