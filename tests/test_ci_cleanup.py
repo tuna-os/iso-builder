@@ -45,7 +45,10 @@ def job(tmp_path):
         touch(temp / 'pw-profile-777-2/tmp/pw-prof-0/Default/Cache'),
         touch(ws / 'luks-verify-yellowfin-gnome/disk.qcow2', b'q' * 4096),
         touch(ws / 'luks-verify-yellowfin-gnome/swtpm/swtpm.pid'),
-        touch(ws / 'luks-verify-yellowfin-gnome-same-byte-diagnostic-unqualified/serial.log'),
+        touch(ws / 'luks-verify-yellowfin-gnome-diag/serial.log'),
+        touch(ws / 'luks-verify-yellowfin-gnome-diag/disk.qcow2', b'q' * 4096),
+        touch(ws / 'luks-verify-yellowfin-gnome-diag/swtpm/swtpm.pid'),
+        touch(ws / 'luks-verify-yellowfin-gnome-diag/vsock-ssh-key'),
         touch(ws / 'e2e/test-results/qual-evidence.json'),
         touch(ws / 'e2e/playwright-report/index.html'),
         touch(ws / 'e2e/iso-builder-e2e-output.iso'),
@@ -60,6 +63,7 @@ def job(tmp_path):
         touch(temp / '_runner_file_commands/save_state'),  # the runner's own state
         touch(ws / 'luks-verify-bonito-kde/disk.qcow2'),
         touch(ws / 'luks-verify-yellowfin-gnome-2/disk.qcow2'),
+        touch(ws / 'luks-verify-yellowfin-gnome-diag-other/disk.qcow2'),
         touch(ws / 'e2e/package.json'),
         touch(ws / 'e2e/tests/builder.spec.js'),
         touch(ws / 'justfile'),
@@ -178,18 +182,22 @@ def test_stops_processes_started_against_this_jobs_paths_only(job):
     qemu = spawn(f"-pidfile={ws / 'luks-verify-yellowfin-gnome/qemu.pid'}")
     swtpm = spawn('--tpmstate', f"dir={ws / 'luks-verify-yellowfin-gnome/swtpm'}")
     chromium = spawn(f"--user-data-dir={temp / 'pw-profile-777-2/tmp/pw-prof-0'}")
+    diag_qemu = spawn(f"-pidfile={ws / 'luks-verify-yellowfin-gnome-diag/qemu.pid'}")
+    diag_swtpm = spawn('--tpmstate', f"dir={ws / 'luks-verify-yellowfin-gnome-diag/swtpm'}")
+    diag_sibling = spawn(f"-pidfile={ws / 'luks-verify-yellowfin-gnome-diag-other/qemu.pid'}")
     other_cell = spawn(f"-pidfile={ws / 'luks-verify-bonito-kde/qemu.pid'}")
     prefix_sibling = spawn(f"-pidfile={ws / 'luks-verify-yellowfin-gnome-2/qemu.pid'}")
     other_run = spawn(f"--user-data-dir={temp / 'pw-profile-778-2/tmp/pw-prof-0'}")
     bystander = spawn('/usr/bin/unrelated')
     try:
         assert cc.main(env) == 0
-        for p in (qemu, swtpm, chromium):
+        for p in (qemu, swtpm, chromium, diag_qemu, diag_swtpm):
             assert p.wait(timeout=10) is not None, 'owned process must be stopped'
-        for p in (other_cell, prefix_sibling, other_run, bystander):
+        for p in (other_cell, prefix_sibling, other_run, bystander, diag_sibling):
             assert p.poll() is None, 'unowned process must keep running'
     finally:
-        for p in (qemu, swtpm, chromium, other_cell, prefix_sibling, other_run, bystander):
+        for p in (qemu, swtpm, chromium, diag_qemu, diag_swtpm, diag_sibling,
+                  other_cell, prefix_sibling, other_run, bystander):
             p.kill()
             p.wait()
 

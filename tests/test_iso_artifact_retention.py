@@ -161,6 +161,16 @@ def test_verify_refuses_a_tampered_manifest_label(tmp_path, iso):
     assert r.returncode != 0 and 'qualification label invalid' in r.stderr
 
 
+def test_roundtrip_verification_requires_successful_download():
+    steps = WORKFLOW['jobs']['full-matrix']['steps']
+    download = next(s for s in steps if s.get('id') == 'iso-artifact-download')
+    verify = next(s for s in steps if s.get('id') == 'iso-roundtrip')
+    assert download['uses'] == 'actions/download-artifact@v8'
+    assert "steps.iso-artifact-download.outcome == 'success'" in verify['if']
+    assert 'continue-on-error' not in download
+    assert 'continue-on-error' not in verify
+
+
 def plan(env):
     assert 'plan-full-matrix.py' in recipe('full-plan')
     return subprocess.run([sys.executable, 'scripts/plan-full-matrix.py'], cwd=ROOT, env={**os.environ, **env}, text=True, capture_output=True)
@@ -318,3 +328,63 @@ def test_diagnostic_receipt_finalizer_runs_before_upload_and_skips_qualification
     assert names.index(finalizer['name']) < names.index(browser_evidence['name'])
     assert "strict_roundtrip_test != 'true'" in validate['if']
     assert "strict_roundtrip_test != 'true'" in upload_qualification['if']
+
+
+@pytest.mark.parametrize("field,value", [
+    ("run_attempt", 2), ("head_sha", "0" * 40), ("status", "in_progress"),
+])
+def test_recovery_refuses_changed_producer_before_fetch(tmp_path, monkeypatch, field, value):
+    run_doc = {
+        "id": 41153841817, "run_attempt": 1,
+        "head_sha": "41cf974098ef5a90c9a73fd3942ed0abeb0c8058",
+        "path": ".github/workflows/ci.yml", "status": "completed", "conclusion": "failure",
+    }
+    run_doc[field] = value
+    calls = []
+
+    def api(command, **kwargs):
+        calls.append(command[-1])
+        return json.dumps(run_doc)
+
+    monkeypatch.setattr(m.subprocess, "check_output", api)
+    with pytest.raises(SystemExit, match="producer run identity"):
+        m.main(["recover", "--dir", str(tmp_path / "chunks"),
+                "--evidence-dir", str(tmp_path / "evidence")])
+    assert calls == ["repos/tuna-os/iso-builder/actions/runs/41153841817"]
+    assert not (tmp_path / "chunks").exists()
+
+
+@pytest.mark.parametrize("tamper", ["expired", "digest", "source", "archive"])
+def test_recovery_rejects_artifact_metadata_or_download_corruption(tmp_path, monkeypatch, tamper):
+    sha = "41cf974098ef5a90c9a73fd3942ed0abeb0c8058"
+    run_doc = {"id": 41153841817, "run_attempt": 1, "head_sha": sha,
+               "path": ".github/workflows/ci.yml", "status": "completed", "conclusion": "failure"}
+    artifact = {
+        "id": 13027183695, "name": "iso-skipjack-gnome-run41153841817-a1",
+        "digest": "sha256:057c98786f98d78eaa03edee9c9db48a54499f3a146940a4ffcb4deea79ff04b",
+        "size_in_bytes": 11452406380, "expired": False,
+        "workflow_run": {"id": 41153841817, "head_sha": sha, "repository_id": 1305022978},
+    }
+    if tamper == "expired":
+        artifact["expired"] = True
+    elif tamper == "digest":
+        artifact["digest"] = digest(b"other")
+    elif tamper == "source":
+        artifact["workflow_run"]["head_sha"] = "0" * 40
+    downloads = []
+
+    def api(command, **kwargs):
+        return json.dumps(run_doc if "/runs/" in command[-1] else artifact)
+
+    def download(command, *, stdout, check):
+        downloads.append(command[-1])
+        stdout.write(b"corrupt archive")
+
+    monkeypatch.setattr(m.subprocess, "check_output", api)
+    monkeypatch.setattr(m.subprocess, "run", download)
+    with pytest.raises(SystemExit, match="archive bytes" if tamper == "archive" else "artifact identity"):
+        m.main(["recover", "--dir", str(tmp_path / "chunks"),
+                "--evidence-dir", str(tmp_path / "evidence")])
+    assert len(downloads) == (1 if tamper == "archive" else 0)
+    assert not (tmp_path / "chunks/manifest.json").exists()
+    assert not (tmp_path / "evidence").exists()

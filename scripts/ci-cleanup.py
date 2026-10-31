@@ -107,7 +107,7 @@ def plan(env):
                 pattern = re.compile(rf'{re.escape(slug)}-s[0-9]+\.iso')
                 owned.extend((temp / n, temp) for n in sorted(os.listdir(temp)) if pattern.fullmatch(n))
     for slug in slugs:
-        for suffix in ('', '-same-byte-diagnostic-unqualified'):
+        for suffix in ('', '-diag'):
             d = ws / f'luks-verify-{slug}{suffix}'
             owned.append((d, ws))
             markers.append(d)
