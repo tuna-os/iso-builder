@@ -1,0 +1,37 @@
+TunaOS brand marks: the wordmark and the emoji mark.
+
+The wordmark is for wide places: the site header. The emoji mark is for
+small places: the favicon, the build notification and the native catalog.
+
+Files:
+
+  app/public/wordmark.svg      the TunaOS lettermark, light text for the
+                               dark header (brand.logo_url)
+  app/public/favicon-32.png    emoji mark, 32x32 (brand.favicon_url)
+  app/public/mark-192.png      emoji mark, 192x192 (notification icon)
+  native/assets/tunaos.png     emoji mark, 64x64 (native catalog icon)
+
+The emoji mark is U+1F41F FISH from Noto Emoji
+(https://github.com/googlefonts/noto-emoji). Noto Emoji is under the
+Apache License 2.0. The PNG files are renders of the tunaOS file
+system_files/usr/share/pixmaps/tunaos.svg at tuna-os/tunaOS commit
+121cb9095068c673a80b742225c26bf8de16f0fa.
+
+Source checksum (sha256 of tunaos.svg):
+  793fa28adce395c580b3e5e28aad5639b76675ac00f3e6fa74a390d5953d3dce
+
+To render the PNG files again (rsvg-convert from librsvg), run this from
+the repository root:
+
+  curl -fsSLo /tmp/tunaos.svg https://raw.githubusercontent.com/tuna-os/tunaOS/121cb9095068c673a80b742225c26bf8de16f0fa/system_files/usr/share/pixmaps/tunaos.svg
+  rsvg-convert -w 32 -h 32 /tmp/tunaos.svg -o app/public/favicon-32.png
+  rsvg-convert -w 192 -h 192 /tmp/tunaos.svg -o app/public/mark-192.png
+  rsvg-convert -w 64 -h 64 /tmp/tunaos.svg -o native/assets/tunaos.png
+
+The wordmark is a copy of the tunaOS file
+system_files/usr/share/tunaos/lettermarks/tunaos.svg at tuna-os/tunaOS commit
+95d55c725755b12e54b0c1a3d4f7e3c2a00ba62c (PR #4168). Its emoji is the same
+Noto Emoji fish. Its text is Baloo 2 (SIL Open Font License 1.1), as outlines.
+To copy it again from that immutable tunaOS checkout:
+
+  cp ../tunaOS/system_files/usr/share/tunaos/lettermarks/tunaos.svg app/public/wordmark.svg

@@ -26,7 +26,7 @@ type curatedImage struct {
 	Image               string // <repo>:<tag>
 	Org                 string // display grouping — project/publisher, not TunaOS's own desktop-variant axis
 	Description         string
-	LogoAsset           string   // filename under assets/, e.g. "tuna-os.png" — "" falls back to no icon
+	LogoAsset           string   // filename under assets/, e.g. "tunaos.png" — "" falls back to no icon
 	Base                string   // searchable base/variant identifier
 	Desktop             string   // searchable desktop identifier (gnome, kde, ...)
 	Architectures       []string // architectures advertised by the image
@@ -184,7 +184,7 @@ func buildCuratedImages() []curatedImage {
 				Image:               fmt.Sprintf("ghcr.io/tuna-os/%s:%s", v.id, de),
 				Org:                 "TunaOS",
 				Description:         "Part of the TunaOS project's own curated fish-themed image set.",
-				LogoAsset:           "tuna-os.png",
+				LogoAsset:           "tunaos.png", // Noto Emoji fish; see app/public/brand-marks-NOTICE.txt
 				Base:                v.id,
 				Desktop:             de,
 				Architectures:       arches,

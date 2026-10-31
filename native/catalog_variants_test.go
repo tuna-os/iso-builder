@@ -292,6 +292,20 @@ func TestCuratedAndExternalCatalogQualificationLabels(t *testing.T) {
 
 }
 
+// Every catalog row names an embedded logo. A renamed or deleted asset must
+// fail here, not show a silent blank icon.
+func TestCatalogLogoAssetsAreEmbedded(t *testing.T) {
+	for _, img := range append(buildCuratedImages(), buildExternalCatalog()...) {
+		if img.LogoAsset == "" {
+			t.Errorf("catalog image %q has no LogoAsset", img.Image)
+			continue
+		}
+		if catalogLogo(img.LogoAsset) == nil {
+			t.Errorf("catalog image %q: LogoAsset %q is not embedded under assets/", img.Image, img.LogoAsset)
+		}
+	}
+}
+
 func TestCatalogSnapshotDigest(t *testing.T) {
 	// The shared snapshot serializes object keys in canonical sorted order.
 	raw, err := catalogAssetsFS.ReadFile("catalog-snapshot.json")
