@@ -179,7 +179,7 @@ To fetch and check the ISO yourself, use a hash that you saved independently:
 
 ```sh
 gh run download RUN -R tuna-os/iso-builder -n iso-skipjack-gnome-runRUN-aATTEMPT -D dl
-python3 scripts/retain-iso-artifact.py verify --dir dl \
+python3 scripts/retain-iso-artifact.py verify --dir dl --diagnostic-unqualified true \
   --expected-sha256 sha256:INDEPENDENT_ISO_HASH --output skipjack-gnome.iso
 ```
 

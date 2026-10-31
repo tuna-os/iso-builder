@@ -40,7 +40,7 @@ function app() {
     document: { createElement: () => ({ click: () => { trace.downloads++; } }) },
     navigator: {}, $: element, currentOp: op, buildResultRevision: 0,
     observedResetFunctions: new WeakSet(), pendingEngineResets: new Set(), activeBusyPhase: null,
-    selectedDdi: null, operationSeq: 0, facts: null, tboxCurrentOperation: op, nextRequest: request, wasmNativeBuildIso: null, wasmNativeBuildIsoWithResult: null,
+    selectedDdi: null, operationSeq: 0, facts: null, tboxCurrentOperation: op, nextRequest: request, wasmNativeBuildIso: null, wasmNativeBuildIsoWithResult: null, wasmEngineDigest: null,
     updateShim() {}, askNotify() {},
     buildRequestFromForm() { return { request: structuredClone(context.nextRequest) }; },
     isOperationBusy() { return false; }, operationMatchesForm: () => true,

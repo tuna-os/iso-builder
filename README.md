@@ -96,6 +96,41 @@ cd e2e && npm ci && npx playwright install --with-deps chromium
 npx playwright test --grep-invert @full        # Runs UI & inspect network flow
 ```
 
+### Retained same-byte strict guest observations
+
+CI's opt-in `strict_roundtrip_test` route is limited to `only=skipjack-gnome`,
+`run_full=true`, `retain_iso_artifact=true`, `keep_iso=false`,
+`retain_candidate=false`, `benchmark=false` and `pair=false`. Its
+`strict_install_mode` choice applies **only** to this route:
+
+| Strict install mode | `diagnostic_unqualified` | Evidence scope |
+|---|---|---|
+| `plain` (default) | `false` | Observed plain install; `not-assessed`, not full qualification |
+| `luks` | `true` | Diagnostic LUKS install; `diagnostic-unqualified`, never qualification |
+
+For example, dispatch an observed plain run with:
+
+```sh
+gh workflow run ci.yml \
+  -f run_full=true -f only=skipjack-gnome -f retain_iso_artifact=true \
+  -f strict_roundtrip_test=true -f strict_install_mode=plain \
+  -f diagnostic_unqualified=false -f keep_iso=false \
+  -f retain_candidate=false -f benchmark=false -f pair=false
+```
+
+For diagnostic LUKS, use `strict_install_mode=luks` and
+`diagnostic_unqualified=true` together. The catalog/source admission guards
+still apply; a non-diagnostic run does not bypass them.
+
+Both routes retain the browser-built ISO and discard the local original.
+They download the chunks again, reconstruct the ISO, and verify its hash against
+the browser measurement **before** the guest starts. The helper checks that the
+receipt agrees with the source, browser, `GITHUB_RUN_ID`, `GITHUB_RUN_ATTEMPT`,
+and artifact identities for the strict invocation. Only LUKS with diagnostics
+sets `TUNAOS_INSTALLED_BOOT_DIAGNOSTIC=1`. Neither single-mode result is full
+qualification evidence. Other full runs still need both modes for full
+qualification.
+
 ### Brand assets and primary configuration
 
 The wide header uses `/wordmark.svg`, copied without modification from
