@@ -151,7 +151,7 @@ cd worker && npx wrangler deploy   # Deploys to Workers (relay.tunaos.org)
 
 *Note: You need `CLOUDFLARE_API_TOKEN` in your environment, with the Workers and Pages deployment scope.*
 
-Normally this is automatic: the `deploy` job in `.github/workflows/ci.yml` deploys both surfaces on every push to `main`. CI does not check production after the deploy. Thus, do a manual check: `curl -sS https://relay.tunaos.org/healthz` (expects `{"status":"ok"}`) and `curl -sSI https://iso.tunaos.org/tbox.wasm`. For the rollback steps and the full checklist, see [`runbooks/deploy-and-rollback.md`](runbooks/deploy-and-rollback.md).
+Normally this is automatic: the `deploy` job in `.github/workflows/ci.yml` deploys both surfaces on every push to `main`. Its final step checks the app response, compares the served engine digest with the tested artifact, and checks relay `/healthz`. A failed check stops the run; rollback remains manual. For checks after a manual deploy and rollback steps, see [`runbooks/deploy-and-rollback.md`](runbooks/deploy-and-rollback.md).
 
 ---
 
