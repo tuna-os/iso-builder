@@ -156,7 +156,10 @@ same-runner memory and free-disk measurements, through `sudo`. It removes
 `TBOX_E2E_IMAGE` and `FISHERMAN_OVERRIDE` from the environment. If an identity is
 missing or inconsistent, the workflow stops before guest execution.
 
-The sidecar and output directory use the diagnostic-unqualified label. This
+The sidecar uses the diagnostic-unqualified label. The guest output directory is
+`luks-verify-<slug>-diag`; the name stays short because the harness binds Unix
+sockets inside it and `sun_path` holds 107 bytes. The recipe stops before guest
+execution if `strict-plain-warm-serial.sock` there would exceed that. This
 test does not authenticate the producer or frontend. It does not turn a failed
 browser identity into a pass, qualify the target, publish an ISO, or change
 catalog or download status. The sidecar records `baseAnnotationMatched` as

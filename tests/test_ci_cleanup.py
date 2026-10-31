@@ -45,7 +45,7 @@ def job(tmp_path):
         touch(temp / 'pw-profile-777-2/tmp/pw-prof-0/Default/Cache'),
         touch(ws / 'luks-verify-yellowfin-gnome/disk.qcow2', b'q' * 4096),
         touch(ws / 'luks-verify-yellowfin-gnome/swtpm/swtpm.pid'),
-        touch(ws / 'luks-verify-yellowfin-gnome-same-byte-diagnostic-unqualified/serial.log'),
+        touch(ws / 'luks-verify-yellowfin-gnome-diag/serial.log'),
         touch(ws / 'e2e/test-results/qual-evidence.json'),
         touch(ws / 'e2e/playwright-report/index.html'),
         touch(ws / 'e2e/iso-builder-e2e-output.iso'),

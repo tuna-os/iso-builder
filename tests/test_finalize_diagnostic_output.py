@@ -10,7 +10,7 @@ SCRIPT = ROOT / "scripts/finalize-diagnostic-output.py"
 
 
 def test_nested_qualification_receipts_are_renamed_and_output_is_marked(tmp_path):
-    output = tmp_path / "luks-verify-skipjack-gnome-same-byte-diagnostic-unqualified"
+    output = tmp_path / "luks-verify-skipjack-gnome-diag"
     nested = output / "strict-diagnostics" / "receipts"
     nested.mkdir(parents=True)
     receipt = {"schema": "QualificationEvidence/v1", "qualifiedAt": "2026-10-27T00:00:00Z"}

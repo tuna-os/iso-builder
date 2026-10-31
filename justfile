@@ -293,6 +293,14 @@ full-strict-inputs:
 full-guest-verify-strict:
     #!/usr/bin/env bash
     set -euo pipefail
+    # The harness binds monitor/vnc/swtpm/serial sockets under OUTPUT; the
+    # longest is strict-plain-warm-serial.sock, and sun_path holds 107 bytes.
+    OUT="luks-verify-${SLUG}-diag"
+    SOCK="$PWD/$OUT/strict-plain-warm-serial.sock"
+    if [ "${#SOCK}" -ge 108 ]; then
+      echo "::error::Harness socket path is ${#SOCK} bytes, over the 107-byte sun_path limit: $SOCK"
+      exit 1
+    fi
     ISO="$RUNNER_TEMP/${SLUG}-roundtrip.iso"
     if [ ! -f "$ISO" ]; then
       echo "::error::Verified round-trip ISO is missing: $ISO"
@@ -320,7 +328,7 @@ full-guest-verify-strict:
       TUNAOS_QUAL_BROWSER_MEMORY_GIB="$TUNAOS_QUAL_BROWSER_MEMORY_GIB" \
       TUNAOS_QUAL_BROWSER_FREE_DISK_GIB="$TUNAOS_QUAL_BROWSER_FREE_DISK_GIB" \
       "$GITHUB_WORKSPACE/tunaos-e2e-current/scripts/iso-e2e.sh" "$ISO" --strict-offline-gui \
-      --output "luks-verify-${SLUG}-same-byte-diagnostic-unqualified" --timeout 900
+      --output "$OUT" --timeout 900
     {
       echo "### Same-byte strict guest test completed (diagnostic, not qualified)"
       echo "- ISO: \`${TUNAOS_QUAL_MEDIA_DIGEST}\`"
@@ -336,7 +344,7 @@ full-label-output:
     set -euo pipefail
     if [ "$STRICT_ROUNDTRIP_TEST" = "true" ]; then
       sudo python3 scripts/finalize-diagnostic-output.py \
-        "luks-verify-${SLUG}-same-byte-diagnostic-unqualified"
+        "luks-verify-${SLUG}-diag"
     fi
     shopt -s nullglob
     dirs=(luks-verify-*/)
