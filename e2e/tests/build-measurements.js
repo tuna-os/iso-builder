@@ -151,4 +151,106 @@ function diagnosticRecord({ iso, wasm, browser, phasesMs, buildResult = null, di
   };
 }
 
-module.exports = { observeLoadedWasm, loadedWasmMeasurement, hashSavedIso, buildOperationIdentity, completedBuildResult, diagnosticRecord };
+// Registry transfers as the browser itself saw them (page and worker fetches,
+// via the context's network events). A blob is named by its registry URL
+// `/v2/<repo>/blobs/<digest>`; redirects are followed back to that URL so a
+// CDN hop is still attributed. Layer-cache hits are synthetic Responses and
+// never appear here.
+const BLOB_URL = /\/v2\/(.+)\/blobs\/(sha256:[0-9a-f]{64})(?:[?#]|$)/;
+const MANIFEST_URL = /\/v2\/(.+)\/manifests\/([^/?#]+)(?:[?#]|$)/;
+
+function registryOrigin(request, pattern) {
+  for (let r = request; r; r = r.redirectedFrom()) {
+    const m = pattern.exec(r.url());
+    if (m) return { repository: m[1], ref: m[2] };
+  }
+  return null;
+}
+
+// A complete blob transfer is a finished GET answered 200 without a Range
+// header; HEAD, redirect hops, 206 resumes and failed streams are not.
+// Config blobs (named by an observed manifest) are not layers. Any other
+// complete blob counts as a layer, so a missed manifest errs strict.
+function summarizeRegistryTransfers(transfers, configDigests, inFlight = 0) {
+  const complete = (t) => t.method === "GET" && t.status === 200 && !t.range && !t.failure;
+  const layers = transfers.filter((t) => complete(t) && !configDigests.has(t.digest));
+  const sum = (list) => list.reduce((n, t) => n + (Number.isSafeInteger(t.bytes) && t.bytes > 0 ? t.bytes : 0), 0);
+  return {
+    blobRequests: transfers.length,
+    blobBytes: sum(transfers),
+    completeLayerBlobs: layers.length,
+    completeLayerBytes: sum(layers),
+    completeConfigBlobs: transfers.filter((t) => complete(t) && configDigests.has(t.digest)).length,
+    incompleteBlobRequests: transfers.filter((t) => !complete(t)).length,
+    inFlightBlobRequests: inFlight,
+    completeLayers: layers.map((t) => ({ repository: t.repository, digest: t.digest, bytes: t.bytes })),
+    transfers,
+    bytesNote: "Encoded response body bytes from the browser's own network observation (Playwright request.sizes()).",
+  };
+}
+
+function observeRegistryTransfers(context) {
+  const transfers = [];
+  const manifests = [];
+  const configDigests = new Set();
+  const started = new Set();
+  const pending = new Set();
+  const track = (p) => { pending.add(p); p.finally(() => pending.delete(p)); };
+  const record = async (request, failed) => {
+    const origin = registryOrigin(request, BLOB_URL);
+    if (!origin) return;
+    started.delete(request);
+    const response = failed ? null : await request.response().catch(() => null);
+    const sizes = await request.sizes().catch(() => null);
+    transfers.push({
+      repository: origin.repository, digest: origin.ref, method: request.method(),
+      status: response ? response.status() : null,
+      range: (await request.headerValue("range").catch(() => null)) || null,
+      redirected: Boolean(request.redirectedFrom()),
+      bytes: sizes ? sizes.responseBodySize : null,
+      failure: failed ? (request.failure()?.errorText || "failed") : null,
+    });
+  };
+  const onRequest = (request) => {
+    // A redirect hop may finish without its own event; its successor carries on.
+    started.delete(request.redirectedFrom());
+    if (registryOrigin(request, BLOB_URL)) started.add(request);
+  };
+  const onFinished = (request) => track(record(request, false));
+  const onFailed = (request) => track(record(request, true));
+  const onResponse = (response) => {
+    const request = response.request();
+    const origin = registryOrigin(request, MANIFEST_URL);
+    if (!origin || request.method() !== "GET" || response.status() !== 200) return;
+    track((async () => {
+      const body = await response.body();
+      const manifest = JSON.parse(body.toString("utf8"));
+      if (/^sha256:[0-9a-f]{64}$/.test(manifest?.config?.digest || "")) configDigests.add(manifest.config.digest);
+      manifests.push({
+        repository: origin.repository, ref: origin.ref, mediaType: manifest?.mediaType ?? null,
+        digest: "sha256:" + crypto.createHash("sha256").update(body).digest("hex"),
+      });
+    })().catch(() => {}));
+  };
+  context.on("request", onRequest);
+  context.on("requestfinished", onFinished);
+  context.on("requestfailed", onFailed);
+  context.on("response", onResponse);
+  return {
+    async summary() {
+      while (pending.size) await Promise.allSettled([...pending]);
+      return { ...summarizeRegistryTransfers(transfers, configDigests, started.size), manifests: [...manifests] };
+    },
+    stop() {
+      context.off("request", onRequest);
+      context.off("requestfinished", onFinished);
+      context.off("requestfailed", onFailed);
+      context.off("response", onResponse);
+    },
+  };
+}
+
+module.exports = {
+  observeLoadedWasm, loadedWasmMeasurement, hashSavedIso, buildOperationIdentity, completedBuildResult, diagnosticRecord,
+  observeRegistryTransfers, summarizeRegistryTransfers,
+};

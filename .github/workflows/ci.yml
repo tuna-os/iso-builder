@@ -80,7 +80,11 @@ on:
         type: boolean
         default: false
       benchmark:
-        description: "Run each @full build three times and attach median/range evidence"
+        description: "Run each @full build three times (cold profiles) and attach median/range evidence"
+        type: boolean
+        default: false
+      pair:
+        description: "Run three cold/warm @full pairs per cell (warm reuses the cold profile and OPFS layer cache; fails if warm fetches any complete layer blob). Requires run_full; no benchmark, keep_iso, retain_* or strict_roundtrip_test."
         type: boolean
         default: false
       diagnostic_unqualified:
@@ -446,6 +450,7 @@ jobs:
           RETAIN_CANDIDATE: ${{ github.event.inputs.retain_candidate }}
           RUN_FULL: ${{ github.event.inputs.run_full }}
           BENCHMARK: ${{ github.event.inputs.benchmark }}
+          PAIR: ${{ github.event.inputs.pair }}
           KEEP_ISO: ${{ github.event.inputs.keep_iso }}
           DIAGNOSTIC_UNQUALIFIED: ${{ github.event.inputs.diagnostic_unqualified }}
           RETAIN_ISO_ARTIFACT: ${{ github.event.inputs.retain_iso_artifact }}
@@ -493,8 +498,9 @@ jobs:
     # The strict route therefore needs the GitHub maximum of 360 min.
     # Without the strict guest test, retained-ISO runs need 330 min for the
     # same setup, browser, 25-minute guest check, artifact transfer, and uploads.
-    # Candidate retention keeps its existing 130-minute cap.
-    timeout-minutes: ${{ github.event.inputs.strict_roundtrip_test == 'true' && 360 || github.event.inputs.retain_iso_artifact == 'true' && 330 || github.event.inputs.retain_candidate == 'true' && 130 || 105 }}
+    # Candidate retention keeps its existing 130-minute cap. Cold/warm pairs
+    # run six browser builds (300-minute build step) plus the default 30 min.
+    timeout-minutes: ${{ github.event.inputs.strict_roundtrip_test == 'true' && 360 || github.event.inputs.pair == 'true' && 330 || github.event.inputs.retain_iso_artifact == 'true' && 330 || github.event.inputs.retain_candidate == 'true' && 130 || 105 }}
     strategy:
       # A coverage sweep is worthless if the first red cell cancels the
       # rest — the whole point is learning which bases are broken.
@@ -593,7 +599,7 @@ jobs:
 
       - name: build ${{ matrix.edition.ref }} (${{ matrix.edition.base }})
         id: browser-build
-        timeout-minutes: 75
+        timeout-minutes: ${{ github.event.inputs.pair == 'true' && 300 || 75 }}
         env:
           TBOX_E2E_FULL: "1"
           # TunaOS editions are stored unqualified (yellowfin:gnome) and get
@@ -614,9 +620,12 @@ jobs:
           DIAGNOSTIC_ALLOW_UNQUALIFIED: ${{ github.event.inputs.diagnostic_unqualified == 'true' && github.event.inputs.only != '' && '1' || '' }}
           DIAGNOSTIC_TARGET: ${{ contains(matrix.edition.ref, '/') && matrix.edition.ref || format('tuna-os/{0}', matrix.edition.ref) }}
           # Fresh Playwright profile per sample, so every sample is cold.
+          # PAIR=true overrides this per sample: `just full-build` runs each
+          # warm sample in the preceding cold sample's profile.
           TBOX_E2E_CACHE_MODE: "cold"
           SLUG: ${{ matrix.edition.slug }}
           BENCHMARK: ${{ github.event.inputs.benchmark }}
+          PAIR: ${{ github.event.inputs.pair }}
         # The config's 900s per-test cap was sized against sailfin:base
         # (2.5 GB, 4.2 min). Desktop editions are several times that, so
         # the default would time out on payload size rather than on a bug.
@@ -916,6 +925,7 @@ jobs:
         env:
           SLUG: ${{ matrix.edition.slug }}
           BENCHMARK: ${{ github.event.inputs.benchmark }}
+          PAIR: ${{ github.event.inputs.pair }}
         run: just full-validate-evidence
 
       - name: upload qualification evidence

@@ -122,3 +122,111 @@ def test_benchmark_merges_three_samples_into_median_and_range(tmp_path):
 def test_benchmark_needs_exactly_three_samples(tmp_path):
     r = validate(tmp_path, {'qual-evidence-x-s1.json': evidence()}, BENCHMARK='true')
     assert r.returncode != 0 and 'benchmark mode needs 3 samples' in r.stderr
+
+
+def pair_samples(over=None):
+    over = over or {}
+    files = {}
+    for n in range(1, 7):
+        cold = n % 2 == 1
+        rt = {'completeLayerBlobs': 3 if cold else 0, 'completeLayerBytes': 300 if cold else 0, 'blobRequests': 4 if cold else 1,
+              'blobBytes': 310 if cold else 10, 'incompleteBlobRequests': 0, 'inFlightBlobRequests': 0,
+              'completeLayers': [{'digest': 'sha256:' + 'a' * 64, 'bytes': 100}] * (3 if cold else 0),
+              'manifests': [{'digest': 'sha256:' + 'b' * 64}]}
+        rt.update(over.get(n, {}))
+        files[f'qual-evidence-x-s{n}.json'] = evidence(
+            run={'sample': n, 'pair': (n + 1) // 2, 'cacheMode': 'cold' if cold else 'warm'},
+            phasesMs={'inspect': 10, 'build': 20, 'save': 30, 'wall': 70}, registryTransfers=rt)
+        files[f'build-measurements-qual-evidence-x-s{n}.json'] = {'iso': {'sha256': 'sha256:' + 'c' * 64, 'sizeBytes': 1000},
+                                                                  'loadedWasm': None, 'engineBuildResult': None}
+    return files
+
+
+def test_pair_summarizes_three_cold_warm_pairs_with_identities(tmp_path):
+    r = validate(tmp_path, pair_samples(), PAIR='true')
+    assert r.returncode == 0, r.stderr
+    merged = json.loads((tmp_path / 'test-results/qual-evidence-x-pairs.json').read_text())
+    assert [p['pair'] for p in merged['pairs']] == [1, 2, 3]
+    warm = merged['pairs'][0]['warm']
+    assert warm['sample'] == 2 and warm['transfer']['completeLayerBlobs'] == 0 and warm['wallMs'] == 70
+    assert warm['identity']['iso']['sha256'] == 'sha256:' + 'c' * 64
+
+
+def test_pair_rejects_warm_layer_fetch_and_changed_inputs(tmp_path):
+    fetched = {4: {'completeLayerBlobs': 1, 'completeLayers': [{'digest': 'sha256:' + 'd' * 64, 'bytes': 9}]}}
+    r = validate(tmp_path, pair_samples(fetched), PAIR='true')
+    assert r.returncode != 0 and 'pair 2: warm sample fetched complete layer blobs' in r.stderr and 'd' * 64 in r.stderr
+    (tmp_path / 'b').mkdir()
+    r = validate(tmp_path / 'b', pair_samples({6: {'manifests': [{'digest': 'sha256:' + 'e' * 64}]}}), PAIR='true')
+    assert r.returncode != 0 and 'pair 3: inputs changed' in r.stderr
+    (tmp_path / 'c').mkdir()
+    r = validate(tmp_path / 'c', pair_samples({1: {'completeLayerBlobs': 0}}), PAIR='true')
+    assert r.returncode != 0 and 'pair 1: cold sample observed no complete layer downloads' in r.stderr
+
+
+def test_pair_needs_six_samples(tmp_path):
+    files = {k: v for k, v in pair_samples().items() if not k.endswith('-s6.json')}
+    r = validate(tmp_path, files, PAIR='true')
+    assert r.returncode != 0 and 'pair mode needs samples 1-6' in r.stderr
+
+
+# --- scripts/plan-full-matrix.py: pair=true --------------------------------------------------
+
+def plan(**env):
+    base = dict(RUN_FULL='true', ONLY='yellowfin-gnome', BENCHMARK='false', KEEP_ISO='false', RETAIN_CANDIDATE='false',
+                RETAIN_ISO_ARTIFACT='false', STRICT_ROUNDTRIP_TEST='false', DIAGNOSTIC_UNQUALIFIED='false', PAIR='true')
+    return subprocess.run([sys.executable, 'scripts/plan-full-matrix.py'], cwd=ROOT,
+                          env={**os.environ, **base, **env}, text=True, capture_output=True)
+
+
+def test_plan_accepts_pair_mode():
+    r = plan()
+    assert r.returncode == 0, r.stderr
+    assert 'count=1' in r.stdout and '"slug": "yellowfin-gnome"' in r.stdout
+    assert plan(ONLY='').returncode == 0
+
+
+@pytest.mark.parametrize('key,value', [('RUN_FULL', 'false'), ('BENCHMARK', 'true'), ('KEEP_ISO', 'true'),
+                                       ('RETAIN_CANDIDATE', 'true'), ('RETAIN_ISO_ARTIFACT', 'true'),
+                                       ('STRICT_ROUNDTRIP_TEST', 'true')])
+def test_plan_rejects_pair_with_exclusive_inputs(key, value):
+    r = plan(**{key: value})
+    assert r.returncode != 0 and 'pair=true requires' in r.stderr
+
+
+def test_plan_default_is_unchanged_by_pair_input():
+    r = plan(PAIR='false', BENCHMARK='true')
+    assert r.returncode == 0, r.stderr
+
+
+# --- full-build: the pair protocol as the recipe runs it ------------------------------------
+
+@needs_just
+@pytest.mark.parametrize('mode,expected', [
+    ({}, ['1 cold - -']),
+    ({'BENCHMARK': 'true'}, ['1 cold - -', '2 cold - -', '3 cold - -']),
+    ({'PAIR': 'true'}, ['1 cold 1 1', '2 warm 1 -', '3 cold 2 1', '4 warm 2 -', '5 cold 3 1', '6 warm 3 -']),
+])
+def test_full_build_sequences_samples(tmp_path, mode, expected):
+    """A fake npx records each sample's env; real profile reuse is the spec fixture's job."""
+    bin_dir = tmp_path / 'bin'
+    bin_dir.mkdir()
+    log = tmp_path / 'samples.log'
+    (bin_dir / 'npx').write_text(
+        '#!/usr/bin/env bash\n'
+        f'echo "$TBOX_E2E_SAMPLE $TBOX_E2E_CACHE_MODE ${{TBOX_E2E_PAIR:--}} ${{TBOX_E2E_PROFILE_KEEP:--}}" >> {log}\n'
+        ': > "$TBOX_E2E_ISO_COPY"\n')
+    (bin_dir / 'npx').chmod(0o755)
+    env = {k: v for k, v in os.environ.items() if not k.startswith(('TBOX_E2E_', 'GITHUB_'))}
+    env.update(PATH=f'{bin_dir}:{env["PATH"]}', SLUG='x', RUNNER_TEMP=str(tmp_path), TBOX_E2E_CACHE_MODE='cold', **mode)
+    r = subprocess.run(['just', 'full-build'], cwd=ROOT, env=env, text=True, capture_output=True)
+    assert r.returncode == 0, r.stderr
+    assert log.read_text().splitlines() == expected
+    assert sorted(p.name for p in tmp_path.glob('*.iso')) == ['x-s%s.iso' % len(expected), 'x.iso']
+
+
+@needs_just
+def test_full_build_refuses_pair_with_benchmark(tmp_path):
+    env = {**os.environ, 'SLUG': 'x', 'RUNNER_TEMP': str(tmp_path), 'PAIR': 'true', 'BENCHMARK': 'true'}
+    r = subprocess.run(['just', 'full-build'], cwd=ROOT, env=env, text=True, capture_output=True)
+    assert r.returncode != 0 and 'mutually exclusive' in r.stderr

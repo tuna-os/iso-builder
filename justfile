@@ -119,8 +119,12 @@ full-plan:
     python3 scripts/plan-full-matrix.py
 
 # Build the edition in the browser (@full). Benchmark mode (BENCHMARK=true)
-# takes three paired samples. The guest-verify step expects ${SLUG}.iso: the
-# last sample is kept there and the others are dropped (multi-GB, never
+# takes three cold samples. Pair mode (PAIR=true) takes three cold/warm pairs:
+# samples 1, 3, 5 are cold (fresh profile, kept on disk) and 2, 4, 6 are warm
+# (the preceding cold sample's profile and OPFS layer cache, identical inputs;
+# the spec fails a warm sample that fetches any complete layer blob). The
+# guest-verify step expects ${SLUG}.iso: the last sample is kept there and the
+# others are dropped as soon as their sample passes (multi-GB, never
 # retained). Needs SLUG and RUNNER_TEMP; the TBOX_E2E_* build env comes from
 # the workflow step.
 # Build the edition's ISO in the browser (@full).
@@ -131,24 +135,31 @@ full-build:
       export TBOX_E2E_PROFILE_ROOT="${TBOX_E2E_PROFILE_ROOT:-${RUNNER_TEMP}/pw-profile-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT:-1}}"
     fi
     cd e2e
-    # Benchmark mode: three paired @full samples per edition; the
-    # spec writes one QualificationEvidence v1 file per sample and
-    # the evidence step below merges median/range.
-    if [ "${BENCHMARK:-}" = "true" ]; then SAMPLES="1 2 3"; else SAMPLES="1"; fi
+    # The spec writes one QualificationEvidence v1 file per sample; the
+    # evidence step merges benchmark median/range or the pair summary.
+    if [ "${PAIR:-}" = "true" ] && [ "${BENCHMARK:-}" = "true" ]; then
+      echo "PAIR=true and BENCHMARK=true are mutually exclusive" >&2; exit 1
+    fi
+    if [ "${PAIR:-}" = "true" ]; then SAMPLES="1 2 3 4 5 6"
+    elif [ "${BENCHMARK:-}" = "true" ]; then SAMPLES="1 2 3"
+    else SAMPLES="1"; fi
+    last="${SAMPLES##* }"
     for s in $SAMPLES; do
       echo "=== @full sample ${s} ==="
+      if [ "${PAIR:-}" = "true" ]; then
+        pair=$(( (s + 1) / 2 ))
+        if [ $(( s % 2 )) -eq 1 ]; then mode=cold keep=1; else mode=warm keep=; fi
+        echo "=== pair ${pair}: ${mode} ==="
+        export TBOX_E2E_PAIR="${pair}" TBOX_E2E_CACHE_MODE="${mode}" TBOX_E2E_PROFILE_KEEP="${keep}"
+      fi
       TBOX_E2E_SAMPLE="${s}" \
         TBOX_E2E_ISO_COPY="${RUNNER_TEMP}/${SLUG}-s${s}.iso" \
         TBOX_E2E_EVIDENCE="test-results/qual-evidence-${SLUG}-s${s}.json" \
         npx playwright test --grep @full --timeout=4500000
-    done
-    # The guest-verify step below expects ${SLUG}.iso: keep the last
-    # sample there and drop the rest (multi-GB; never retained).
-    last="${SAMPLES##* }"
-    cp "${RUNNER_TEMP}/${SLUG}-s${last}.iso" "${RUNNER_TEMP}/${SLUG}.iso"
-    for s in $SAMPLES; do
       if [ "${s}" != "${last}" ]; then rm -f "${RUNNER_TEMP}/${SLUG}-s${s}.iso"; fi
     done
+    # The guest-verify step below expects ${SLUG}.iso: keep the last sample there.
+    cp "${RUNNER_TEMP}/${SLUG}-s${last}.iso" "${RUNNER_TEMP}/${SLUG}.iso"
 
 # Install the built ISO under QEMU with LUKS and verify the installed system
 # reboots (tunaOS scripts/iso-e2e.sh from the pinned tunaos-e2e checkout).
@@ -345,7 +356,8 @@ full-label-output:
     fi
 
 # Validate the browser QualificationEvidence v1 files (and merge the three
-# benchmark samples). Env: SLUG, BENCHMARK.
+# benchmark samples, or summarize the three cold/warm pairs). Env: SLUG,
+# BENCHMARK, PAIR.
 # Validate browser qualification evidence; merge benchmark samples.
 full-validate-evidence:
     #!/usr/bin/env bash
