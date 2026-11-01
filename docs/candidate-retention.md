@@ -189,9 +189,9 @@ The workflow adds no cross-repository artifact credential and writes nothing to 
 Before guest execution, the workflow reads `live-source.json` and
 `live-installer-info` from the ISO payloads. These use SquashFS or the EROFS live
 root that the browser engine writes. The strict harness uses commit
-`062e3d6da935d33b03f29e1ef1086ab6b3cf2edf`. It cross-checks a fragmented
-welcome heading against one exact, original-pixel OCR crop and the complete
-Install action; it does not relax confidence, phase, geometry, or duplicate guards.
+`062e3d6da935d33b03f29e1ef1086ab6b3cf2edf`. It checks a fragmented welcome
+heading against one exact, original-pixel OCR crop and the complete Install action.
+It does not relax confidence, phase, geometry, or duplicate guards.
 
 The published overlay carries the installer identity. At build time, the engine
 completes `live-source.json` with the base and overlay manifest digests it applied.
