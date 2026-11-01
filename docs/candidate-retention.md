@@ -189,9 +189,21 @@ The workflow adds no cross-repository artifact credential and writes nothing to 
 Before guest execution, the workflow reads `live-source.json` and
 `live-installer-info` from the ISO payloads. These use SquashFS or the EROFS live
 root that the browser engine writes. The strict harness uses commit
-`062e3d6da935d33b03f29e1ef1086ab6b3cf2edf`. It checks a fragmented welcome
+`c1dfc3ddf08ea6152b2be716dfe8674b57116c5a`. It checks a fragmented welcome
 heading against one exact, original-pixel OCR crop and the complete Install action.
 It does not relax confidence, phase, geometry, or duplicate guards.
+
+Runs `41262519173` and `41262520834` reached the current summary but stopped before submission.
+The old harness expected a different layout and a purple action.
+The pinned harness reads Target disk, Filesystem, Encryption, and Image from the same verified frame.
+Image must exactly match the browser's source reference from its receipt for the media.
+
+The cards retain their measured OCR pipeline: threefold enlargement and grayscale.
+The warning and final action use bounded crops of original pixels.
+The final action must read exactly `Install`.
+It must match the measured GTK state for an enabled destructive action, in both fill and dark-red text.
+Disabled red-tinted pills do not pass.
+Refuse clipped, moved, duplicate, uncertain, or contradictory observations.
 
 The published overlay carries the installer identity. At build time, the engine
 completes `live-source.json` with the base and overlay manifest digests it applied.
