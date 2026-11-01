@@ -45,7 +45,7 @@ test:
 
 # Node unit tests that run offline (builder config, guided catalog, relay shim).
 test-node:
-    node --test tests/ worker/
+    node --test tests/*.test.cjs worker/*.test.js
 
 # Everything that runs offline.
 check: test test-node
