@@ -189,7 +189,7 @@ The workflow adds no cross-repository artifact credential and writes nothing to 
 Before guest execution, the workflow reads `live-source.json` and
 `live-installer-info` from the ISO payloads. These use SquashFS or the EROFS live
 root that the browser engine writes. The strict harness uses commit
-`c1dfc3ddf08ea6152b2be716dfe8674b57116c5a`. It checks a fragmented welcome
+`9dabdc783e68b120ca5ef1bc8db6ccaa8c91d79b`. It checks a fragmented welcome
 heading against one exact, original-pixel OCR crop and the complete Install action.
 It does not relax confidence, phase, geometry, or duplicate guards.
 
@@ -204,6 +204,25 @@ The final action must read exactly `Install`.
 It must match the measured GTK state for an enabled destructive action, in both fill and dark-red text.
 Disabled red-tinted pills do not pass.
 Refuse clipped, moved, duplicate, uncertain, or contradictory observations.
+
+Runs `41270163456` and `41270164971` passed those checks and submitted through
+the real GUI. The installer then refused `bound blob size mismatch`.
+The ISO retained from the run had the correct manifest (10,834 bytes).
+Its OCI index entry had no `size`. The engine must put the manifest's
+measured length in that entry. Keep the installer's size, hash and read-only checks.
+
+A submitted request does not prove a completed install or a boot.
+
+Runs `41388681015` and `41388683676` exercised the engine's size fix.
+In both runs, media passed upload and download checks. The real installer reached 22–24%.
+The old observer still expected progress at the lower left and stopped both legs.
+
+The pinned harness verifies the published centered title, bar, elapsed clock
+and warning with exact original-pixel crops and strict OCR confidence.
+Product titles must match the verified welcome; generic stage titles stay distinct.
+Reject duplicate, dimmed, editable or contradictory pages.
+After accepted progress, send no input. Progress is not completion.
+The actual installed page and receipts for detached cold and warm boots are still needed.
 
 The published overlay carries the installer identity. At build time, the engine
 completes `live-source.json` with the base and overlay manifest digests it applied.

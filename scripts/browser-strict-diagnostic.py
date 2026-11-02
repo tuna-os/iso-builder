@@ -18,7 +18,7 @@ import sys
 import threading
 import time
 
-HARNESS_SHA = 'c1dfc3ddf08ea6152b2be716dfe8674b57116c5a'
+HARNESS_SHA = '9dabdc783e68b120ca5ef1bc8db6ccaa8c91d79b'
 IDENTITIES = ('source', 'overlay', 'installer', 'engine', 'media')
 PROFILE = ('PLATFORM', 'CPU_BASELINE', 'HARDWARE_SCOPE', 'BROWSER_NAME',
            'BROWSER_VERSION', 'BROWSER_MEMORY_GIB', 'BROWSER_FREE_DISK_GIB')
