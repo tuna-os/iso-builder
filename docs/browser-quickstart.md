@@ -86,10 +86,13 @@ installation to validate this guide.
 
 ### Interpreting output delivery
 
-`ISO saved` means the file writer closed successfully. `Download started`
-means the browser accepted a download request; the page cannot confirm its
-completion or persistence. Check the browser download list before writing media.
-Cancellation or a failed write must not show the installation card. Neither
-message is a checksum of the saved file, publisher authentication, or an
-installation test. Unknown browser quota is reported as unknown, not unlimited.
-App selections remain requests and are not applied to the resulting system.
+`ISO saved` means the writer closed the file without an error.
+`Download started` means the browser accepted a download request.
+The page cannot confirm that the download finished or that the file persists.
+Check the download list in your browser before you write media.
+
+If a user cancels a save, or a write fails, the page must hide the installation card.
+Neither message proves a checksum match, publisher identity, or a successful installation.
+
+The page must show unknown quota as unknown.
+App choices are requests; the engine does not apply them to the system.
