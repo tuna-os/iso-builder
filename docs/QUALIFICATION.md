@@ -82,80 +82,106 @@ The plan refuses `pair` with `benchmark`, `keep_iso`, `retain_candidate`,
 no installation guest, retained ISO copy, registry fallback, or qualification
 promotion. It does not change production admission or catalog authority.
 
-`just full-build` runs six samples. Odd samples 1, 3 and 5 each wipe their
-Chromium profile and keep it after the cold build; the next even sample reopens
-that exact profile and its OPFS layer cache after Chromium has exited.
-The cold cache must have zero layers before the build; warm must have layers.
-The real-Chromium `pair-protocol.spec.js` regression writes OPFS bytes, exits
-Chromium, reopens warm and reads them, then verifies a fresh cold reset.
+`just full-build` runs six samples. Cold samples 1, 3 and 5 each wipe their
+Chromium profile and keep it after the build. The next warm sample reopens
+that exact profile and its OPFS cache after Chromium exits.
+Cold must start with zero layers; warm must start with layers.
+The Chromium test in `pair-protocol.spec.js` writes OPFS bytes, exits,
+reopens warm and reads them. It then verifies a cold reset.
 
-Pair mode freezes the first sample's source index/platform/config and overlay
-index/platform/config digests, build-request SHA-256, frontend revision and
-served-source file hashes, exact engine Go module/go.sum, Playwright lock,
-loaded-WASM hash and Chromium product/user-agent. A changed value aborts the
-campaign, not a new successful baseline. The diagnostic copy pins the overlay
-manifest without inventing a base annotation; engine-observed applied overlay
-and `baseAnnotationMatched=true` are required independently. The resource
-declaration includes host memory, CPU count, cgroup memory/swap/CPU limits,
-profile filesystem capacity/type, Chromium arguments and viewport.
+Pair mode freezes these values from the first sample:
 
-Every sample's JSON and exit status are archived outside Playwright's cleared
-output directory and restored on success or failure. Stop at the first failure;
-retain that failed attempt, never silently replace it or count it as a pair.
-The real CLI regression exercises both six successful tiny public JSON samples
-and failure in sample two. These are retention tests, not ISO build proof.
-An early preflight, inspect, build or save error also writes
-`failed-build-qual-evidence-<slug>-s<N>.json`: original bounded error,
-failed phase/elapsed time, completed phase timings, available frozen input
-identities and an immediate partial observer snapshot. Pending/in-flight
-observations stay explicit; the error path never waits for a stalled response
-body or invents completed media/ISO identities. Failure receipt or owned-output
-cleanup errors are logged without replacing the original build error. A
-preflight failure before observer installation records that absence. The
-real full-spec admission-refusal regression checks this failure path against
-the served frontend; a separate real TCP stalled-manifest test checks that
-partial snapshots return without waiting for network completion.
+- Digests of the source index, platform manifest and config.
+- Digests of the overlay index, platform manifest and config.
+- SHA-256 of the build request.
+- Frontend revision and hashes of its source files.
+- Engine module, `go.sum` and Playwright lock.
+- Chromium version and user agent.
+- SHA-256 of loaded WASM.
+- Resources and limits.
 
-Each sample's `qual-evidence-<slug>-s<N>.json` records `run.pair`,
-`run.cacheMode`, `phasesMs.wall` (navigation to `Done`, in ms) and
-`registryTransfers`. The browser's own network events (page and layer worker)
-produce that record. It holds every `/v2/<repo>/blobs/<digest>` response with
-method, status, Range header, encoded body bytes and failure, plus the observed
-manifest digests and metadata bytes. A complete layer blob is a finished `GET`
-that returned `200` without Range, has a known positive encoded body byte count,
-and is not a manifest's config. HEAD, redirect hops, `206` resumes, zero-byte
-cached responses and failed streams do not count. Config bytes, range bytes,
-unknown byte counts and in-flight requests are separate. Unknown byte counts,
-in-flight requests and manifest-observer errors prevent successful pair proof.
+A changed value aborts the campaign; it does not create a new baseline.
+The diagnostic copy pins the overlay manifest. It does not invent a base
+annotation. The engine must observe the applied overlay and
+`baseAnnotationMatched=true`.
 
-A warm sample fails on any complete layer blob; cold fails if none were seen.
-The validator requires all six successful attempt outcomes, unchanged inputs
-across the entire campaign (not just inside a pair), the same cold/warm profile,
-complete transfer observations, sampled memory/storage/phase measurements and
-independently hashed media/WASM bytes joined to the engine's output count.
-It writes `qual-evidence-<slug>-pairs.json`, explicitly marked
-`diagnostic-unqualified` or `not-assessed`; it does not establish install, boot,
-parity or performance qualification.
+The resource declaration includes host memory, CPU count and cgroup limits
+for memory, swap and CPU. It also records the filesystem's capacity/type,
+Chromium arguments and viewport.
 
-Wall time is navigation through saved ISO validation/Done, in milliseconds.
-Inspect/build/save boundaries and OPFS usage/quota/cache bytes are separate;
-ISO bytes and SHA-256 cover the saved file. WASM and JS heap hooks are sampled
-at phase boundaries and every 30 seconds, reported in hook MB: estimates, not
-process RSS or exact peaks. The request observer reads manifest bodies but
-never layer bodies. Its elapsed duration includes the build and **is not**
-isolated overhead. The bounded real-network test alternates three observer-off
-and observer-on batches of eight 1 MiB public loopback responses and retains
-individual wall times/deltas in `observer-overhead.json`. This validates the
-request path and measures that fixture, not production ISO performance. The
-WASM response clone/hash remains an additional unisolated overhead; do not
-turn diagnostic timings into a performance qualification claim.
+The recipe archives JSON and exit status outside Playwright's output directory.
+It restores them on success or failure. Stop at the first failure.
+Retain each failed try; never replace it or count it as a successful pair.
+
+The CLI test uses six samples of JSON. It also tests a failure in sample two.
+These tests check retention, not ISO builds.
+
+An early error writes `failed-build-qual-evidence-<slug>-s<N>.json`.
+The receipt records:
+
+- The original error, with a bound on message length.
+- The failed phase and elapsed time.
+- Timings of completed phases.
+- Available identities of fixed inputs.
+- A partial snapshot from the observer.
+
+The snapshot shows requests and observations that did not finish.
+It does not wait for a stalled body or invent completed media.
+The harness logs receipt and cleanup errors but rethrows the original error.
+A failure before observer installation records that absence.
+
+A test runs the full spec against the served frontend and checks its admission
+refusal. Another test stalls a manifest over TCP and checks that a partial
+snapshot returns without a wait for network completion.
+
+Each `qual-evidence-<slug>-s<N>.json` records `run.pair`, `run.cacheMode`,
+`phasesMs.wall` and `registryTransfers`. Events from the browser and its layer
+worker provide request methods, status, Range headers, bytes and failures.
+The observer also records manifest digests and metadata bytes.
+
+A complete layer blob is a finished `GET` with status `200` and no Range.
+It must have a positive byte count and must not be a manifest's config.
+HEAD, redirects, `206` responses, zero-byte cache responses and failed
+streams do not count.
+
+Config bytes, range bytes, unknown sizes and in-flight requests stay separate.
+Unknown sizes, incomplete requests or errors from the manifest observer
+prevent successful pair proof.
+Warm fails on any complete layer blob. Cold fails if the observer sees none.
+
+The validator needs six successful outcomes and unchanged inputs across the
+whole campaign. Each pair must use the same profile. It also needs complete
+transfer observations and measurements of memory, storage and phases.
+Media sizes must match the engine's output count.
+The validator also needs independent SHA-256 values for media and WASM.
+
+The summary `qual-evidence-<slug>-pairs.json` declares `diagnostic-unqualified`
+or `not-assessed`. It does not qualify install, boot, parity or performance.
+
+Wall time is navigation through validation of the saved ISO and Done, in milliseconds.
+The report separates inspect/build/save durations, OPFS usage/quota and cache bytes.
+ISO size and SHA-256 cover the saved file.
+The harness samples WASM and JS heap hooks at phase boundaries and every
+30 seconds. Hook MB values are estimates, not process RSS or exact peaks.
+
+The request observer reads manifest bodies, never layer bodies.
+Its elapsed duration includes the build and **is not** isolated overhead.
+
+A test uses three pairs of batches over loopback TCP.
+One batch has the observer off; the next has it on.
+Each batch gets eight responses of 1 MiB from a public fixture.
+It saves times and deltas in `observer-overhead.json`.
+This measures the fixture, not ISO performance.
+
+The WASM response clone/hash adds overhead that the test does not isolate.
+Do not turn diagnostic timings into a performance qualification claim.
 
 ### Existing diagnostic campaign: retained proof boundary
 
-[Run 41163294577 attempt 1](https://github.com/tuna-os/iso-builder/actions/runs/41163294577)
+[Run 41163294577, try 1](https://github.com/tuna-os/iso-builder/actions/runs/41163294577)
 used main `b000857eae1bdb531ab1c25617f5f77789262b4a`, not frozen tacklebox
-#423. Logs show all six browser samples passed before a later installation
-guest failed; no new guest is needed to measure the browser pairs. However,
+#423. Logs show success for six browser samples. Installation then failed
+in the guest. Browser measurements do not need another guest.
 Playwright cleared samples 1–5 before the uploads. The browser artifact
 `13035668450` (`sha256:e546a78be5235aefd4bff45dfa9f327fab75a66eb839e9738a2dd9241aa9afd0`)
 and diagnostics `13035244904`
@@ -185,9 +211,9 @@ OPFS `5492091620` usage / `16229509860` quota bytes; inspect `55.682 ms`,
 build `1823444.904 ms`, save `168256.765 ms`. Its target digest field was stale
 catalog data; engine-observed source was
 `sha256:33f37e1ebea489b4de3104f8a937f9d91fd1362d928b4915c16d2c52b2fb9619`.
-This remains useful observed warm-cache evidence, **not** a complete #4091 receipt.
-[Run 41150669858](https://github.com/tuna-os/iso-builder/actions/runs/41150669858)
-was refused by admission before build; it was not a cache failure.
+This is evidence of the warm cache, **not** a complete #4091 receipt.
+Admission refused [run 41150669858](https://github.com/tuna-os/iso-builder/actions/runs/41150669858)
+before build. That was not a cache failure.
 
 
 ## Browser build diagnostic measurements
