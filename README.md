@@ -194,6 +194,21 @@ Normally this is automatic: the `deploy` job in `.github/workflows/ci.yml` deplo
 
 ## Updating the WASM Engine
 
+Update the tacklebox module pin in `native/go.mod` and its checksums in
+`native/go.sum`. CI resolves that pin to a full commit, builds the WASM,
+tests it, and deploys the same artifact. A source fix in tacklebox alone
+does not change the engine served by ISO Builder.
+
+For example, browser install run
+[`41270163456`](https://github.com/tuna-os/iso-builder/actions/runs/41270163456)
+reached the installer but failed with `bound blob size mismatch`: the
+index in `/OCI/index.json` omitted the retained manifest's size. The engine repair
+in [tacklebox#437](https://github.com/tuna-os/tacklebox/pull/437) supplies
+that exact byte count and preserves the manifest bytes and installer
+validation. The new pin needs a fresh browser-built ISO; retained
+media from the old engine still contains the defect. Build and source checks
+do not prove an offline installation through the GUI or detached cold and warm login.
+
 `app/public/tbox.wasm` is built from the [tacklebox](https://github.com/tuna-os/tacklebox) repository:
 
 ```sh

@@ -21,6 +21,11 @@ Never post account credentials or API keys in issues or pull requests.
 
 Before you open a pull request, test your changes locally in each affected component.
 
+Run the offline Python and JavaScript checks from the repository root with
+`just check`, or run only JavaScript with `just test-node`. That recipe gives
+the test filenames to Node: `node --test tests/ worker/` fails with
+`MODULE_NOT_FOUND` on Node 24.19 before it runs the tests.
+
 ### 1. Web Application (`app/public`)
 - Put `tbox.wasm` and `wasm_exec.js` in place, as [README.md](README.md#develop) describes.
 - Serve locally:
