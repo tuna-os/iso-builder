@@ -172,7 +172,8 @@ function registryOrigin(request, pattern) {
 // Config blobs (named by an observed manifest) are not layers. Any other
 // complete blob counts as a layer, so a missed manifest errs strict.
 function summarizeRegistryTransfers(transfers, configDigests, inFlight = 0) {
-  const complete = (t) => t.method === "GET" && t.status === 200 && !t.range && !t.failure;
+  const complete = (t) => t.method === "GET" && t.status === 200 && !t.range && !t.failure &&
+    Number.isSafeInteger(t.bytes) && t.bytes > 0;
   const layers = transfers.filter((t) => complete(t) && !configDigests.has(t.digest));
   const sum = (list) => list.reduce((n, t) => n + (Number.isSafeInteger(t.bytes) && t.bytes > 0 ? t.bytes : 0), 0);
   return {
@@ -181,6 +182,10 @@ function summarizeRegistryTransfers(transfers, configDigests, inFlight = 0) {
     completeLayerBlobs: layers.length,
     completeLayerBytes: sum(layers),
     completeConfigBlobs: transfers.filter((t) => complete(t) && configDigests.has(t.digest)).length,
+    rangeRequests: transfers.filter((t) => t.range || t.status === 206).length,
+    rangeBytes: sum(transfers.filter((t) => t.range || t.status === 206)),
+    configBytes: sum(transfers.filter((t) => configDigests.has(t.digest))),
+    unknownSizeRequests: transfers.filter((t) => !Number.isSafeInteger(t.bytes) || t.bytes < 0).length,
     incompleteBlobRequests: transfers.filter((t) => !complete(t)).length,
     inFlightBlobRequests: inFlight,
     completeLayers: layers.map((t) => ({ repository: t.repository, digest: t.digest, bytes: t.bytes })),
@@ -195,6 +200,10 @@ function observeRegistryTransfers(context) {
   const configDigests = new Set();
   const started = new Set();
   const pending = new Set();
+  const errors = [];
+  let manifestBytesRead = 0;
+  const observerStartedAt = performance.now();
+  let networkRequestsSeen = 0;
   const track = (p) => { pending.add(p); p.finally(() => pending.delete(p)); };
   const record = async (request, failed) => {
     const origin = registryOrigin(request, BLOB_URL);
@@ -212,6 +221,7 @@ function observeRegistryTransfers(context) {
     });
   };
   const onRequest = (request) => {
+    networkRequestsSeen++;
     // A redirect hop may finish without its own event; its successor carries on.
     started.delete(request.redirectedFrom());
     if (registryOrigin(request, BLOB_URL)) started.add(request);
@@ -224,22 +234,34 @@ function observeRegistryTransfers(context) {
     if (!origin || request.method() !== "GET" || response.status() !== 200) return;
     track((async () => {
       const body = await response.body();
+      manifestBytesRead += body.length;
       const manifest = JSON.parse(body.toString("utf8"));
       if (/^sha256:[0-9a-f]{64}$/.test(manifest?.config?.digest || "")) configDigests.add(manifest.config.digest);
+      const sizes = await request.sizes();
       manifests.push({
         repository: origin.repository, ref: origin.ref, mediaType: manifest?.mediaType ?? null,
         digest: "sha256:" + crypto.createHash("sha256").update(body).digest("hex"),
+        bytes: sizes.responseBodySize,
       });
-    })().catch(() => {}));
+    })().catch((error) => errors.push(String(error))));
   };
   context.on("request", onRequest);
   context.on("requestfinished", onFinished);
   context.on("requestfailed", onFailed);
   context.on("response", onResponse);
+  const snapshot = () => ({
+    ...summarizeRegistryTransfers([...transfers], configDigests, started.size), manifests: [...manifests],
+    metadataRequests: manifests.length, metadataBytes: manifests.reduce((n, m) => n + m.bytes, 0),
+    observer: { method: "Playwright context network events; request.sizes; manifest bodies only",
+      blobBodyBytesRead: 0, manifestBytesRead, errors: [...errors], pendingObservations: pending.size, networkRequestsSeen,
+      elapsedMs: performance.now() - observerStartedAt,
+      overhead: "Not isolated: elapsedMs includes the build. Validate observer on/off separately; no performance qualification." },
+  });
   return {
+    snapshot,
     async summary() {
       while (pending.size) await Promise.allSettled([...pending]);
-      return { ...summarizeRegistryTransfers(transfers, configDigests, started.size), manifests: [...manifests] };
+      return snapshot();
     },
     stop() {
       context.off("request", onRequest);

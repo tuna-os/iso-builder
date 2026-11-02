@@ -664,7 +664,7 @@ jobs:
       # still being the branch tip at clone time — same convention the wasm
       # job above uses to pin tacklebox. Bump deliberately through review.
       - name: checkout tunaOS test scripts (pinned)
-        if: github.event.inputs.strict_roundtrip_test != 'true'
+        if: github.event.inputs.strict_roundtrip_test != 'true' && github.event.inputs.pair != 'true'
         uses: actions/checkout@v7
         timeout-minutes: 5
         with:
@@ -681,7 +681,7 @@ jobs:
           path: tunaos-e2e-current
 
       - name: verify guest under QEMU (${{ matrix.edition.slug }})
-        if: github.event.inputs.strict_roundtrip_test != 'true'
+        if: github.event.inputs.strict_roundtrip_test != 'true' && github.event.inputs.pair != 'true'
         timeout-minutes: 25
         env:
           QUALIFY: ${{ matrix.edition.qualify }}
