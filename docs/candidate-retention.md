@@ -207,20 +207,22 @@ Refuse clipped, moved, duplicate, uncertain, or contradictory observations.
 
 Runs `41270163456` and `41270164971` passed those checks and submitted through
 the real GUI. The installer then refused `bound blob size mismatch`.
-The exact retained ISO held the correct 10,834-byte manifest, but its OCI
-index entry had no `size`. The engine must write the exact retained byte
-count in that entry. The installer's size, hash, and read-only checks stay
-in place. A submitted request does not prove a completed install or a boot.
+The ISO retained from the run had the correct manifest (10,834 bytes).
+Its OCI index entry had no `size`. The engine must put the manifest's
+measured length in that entry. Keep the installer's size, hash and read-only checks.
 
-Runs `41388681015` and `41388683676` exercised the engine's size fix:
-both retained-media round trips passed and the real installer reached 22–24%.
+A submitted request does not prove a completed install or a boot.
+
+Runs `41388681015` and `41388683676` exercised the engine's size fix.
+In both runs, media passed upload and download checks. The real installer reached 22–24%.
 The old observer still expected progress at the lower left and stopped both legs.
+
 The pinned harness verifies the published centered title, bar, elapsed clock
 and warning with exact original-pixel crops and strict OCR confidence.
 Product titles must match the verified welcome; generic stage titles stay distinct.
-Duplicate, dimmed, editable and contradictory pages do not pass.
-Progress is never completion. No input follows accepted progress; the actual
-installed page and detached cold and warm boot receipts are still required.
+Reject duplicate, dimmed, editable or contradictory pages.
+After accepted progress, send no input. Progress is not completion.
+The actual installed page and receipts for detached cold and warm boots are still needed.
 
 The published overlay carries the installer identity. At build time, the engine
 completes `live-source.json` with the base and overlay manifest digests it applied.
