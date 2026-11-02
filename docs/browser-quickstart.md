@@ -65,6 +65,16 @@ After **ISO build complete**, confirm that you have the `.iso` file on disk.
 The page then shows options to write it to a USB drive.
 This guide does not write or select a USB device.
 
+Back up the USB drive and check the target before you write media.
+The drive must have more space than the ISO file.
+With normal installation, [Ventoy](https://www.ventoy.net/en/doc_start.html)
+formats the selected drive and erases its data.
+
+If Ventoy is already installed, copy the ISO to its data partition; do not
+reinstall Ventoy to add a file.
+Check that the partition has enough free space.
+Follow the selected edition's official media instructions.
+
 ## Report a failure
 
 [Open an iso-builder issue](https://github.com/tuna-os/iso-builder/issues/new)
