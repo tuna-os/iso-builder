@@ -272,7 +272,7 @@
     <div class="facts hidden" id="facts"></div>
   </section>
   <section class="card" aria-labelledby="apps-heading">
-    <h2 id="apps-heading">Add your apps <span class="optional">Optional</span></h2>
+    <h2 id="apps-heading">Plan your apps <span class="optional">Optional</span></h2>
     <p class="helper">Choose optional apps from Flathub. Your choices are saved as an app request list. These requests are not yet applied to the live image or installed system.</p>
     <details id="apps-options"><summary>Choose apps <span id="fpcount">0 selected</span></summary>
       <p id="fpempty" class="helper">No extra apps selected. Check the image to load its suggested defaults.</p>
@@ -371,9 +371,11 @@
 
 
   <div class="card hidden" id="postcard">
-    <h3 style="margin-top:0">ISO build complete</h3>
-    <p class="sub" style="margin-top:-.4rem;margin-bottom:1rem">Your custom ISO is ready. Now you need to write it to a USB drive to make it bootable.</p>
+    <h3 style="margin-top:0">Save, verify, and install</h3>
+    <p class="sub" style="margin-top:-.4rem;margin-bottom:1rem">Creating an ISO does not write a USB drive or test an installation. Confirm the file has saved before continuing.</p>
     
+    <p id="delivery-status" role="status"></p>
+    <p class="helper">Saving does not independently verify the saved file. Input digest checks establish byte integrity, not publisher authentication. A successful build does not establish that this ISO boots or installs on your computer.</p>
     <div class="tabs">
       <button class="tab-btn active" onclick="switchTab(event, 'etcher')">BalenaEtcher</button>
       <button class="tab-btn" onclick="switchTab(event, 'ventoy')">Ventoy</button>

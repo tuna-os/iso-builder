@@ -83,3 +83,16 @@ We compared control labels and save/storage behavior with
 [`builder-config.json`](../app/public/builder-config.json) at `d2521c7`.
 We checked relative links. We did not run a full ISO build, USB write or
 installation to validate this guide.
+
+### Interpreting output delivery
+
+`ISO saved` means the writer closed the file without an error.
+`Download started` means the browser accepted a download request.
+The page cannot confirm that the download finished or that the file persists.
+Check the download list in your browser before you write media.
+
+If a user cancels a save, or a write fails, the page must hide the installation card.
+Neither message proves a checksum match, publisher identity, or a successful installation.
+
+The page must show unknown quota as unknown.
+App choices are requests; the engine does not apply them to the system.
