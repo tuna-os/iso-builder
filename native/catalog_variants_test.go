@@ -65,7 +65,7 @@ func TestWebAndNativeCatalogLoadersPreserveVariantFlavorPlatformCoverage(t *test
 	}
 
 	var configPrefix []byte
-	for _, file := range []string{"builder-config.js", "builder-config-data.js", "flatpak-defaults.js"} {
+	for _, file := range []string{"builder-config.js", "builder-config-data.js", "flatpak-defaults.js", "setup-safety.js"} {
 		configJS, err := os.ReadFile("../app/public/" + file)
 		if err != nil {
 			t.Fatalf("read builder configuration: %v", err)
