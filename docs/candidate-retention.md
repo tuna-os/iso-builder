@@ -189,7 +189,7 @@ The workflow adds no cross-repository artifact credential and writes nothing to 
 Before guest execution, the workflow reads `live-source.json` and
 `live-installer-info` from the ISO payloads. These use SquashFS or the EROFS live
 root that the browser engine writes. The strict harness uses commit
-`9dabdc783e68b120ca5ef1bc8db6ccaa8c91d79b`. It checks a fragmented welcome
+`bc781aba33272c2a3ba4467465ade7d6125a805f`. It checks a fragmented welcome
 heading against one exact, original-pixel OCR crop and the complete Install action.
 It does not relax confidence, phase, geometry, or duplicate guards.
 
@@ -222,7 +222,11 @@ and warning with exact original-pixel crops and strict OCR confidence.
 Product titles must match the verified welcome; generic stage titles stay distinct.
 Reject duplicate, dimmed, editable or contradictory pages.
 After accepted progress, send no input. Progress is not completion.
-The actual installed page and receipts for detached cold and warm boots are still needed.
+
+Runs `41453729044` and `41453732735` showed the installed page after accepted progress.
+The observer sampled the title and media row 44 pixels above their actual positions.
+The current pin uses the measured Done geometry from that same run.
+Both modes still need accepted completion and detached cold and warm boots.
 
 The published overlay carries the installer identity. At build time, the engine
 completes `live-source.json` with the base and overlay manifest digests it applied.
