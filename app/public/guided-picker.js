@@ -4,6 +4,7 @@
   function mount(container, options) {
     const api=root.TboxGuidedCatalog;
     let model=options.model, state=api.initialState(model), step=0, conflict=null, suspended=false, busy=false;
+    let choosing = !options.simpleStart;
     const acknowledgements=new Map();
     const el=(tag,text,className)=>{const node=document.createElement(tag);if(text!==undefined)node.textContent=text;if(className)node.className=className;return node;};
     const button=(text,action,className='secondary')=>{const node=el('button',text,className);node.type='button';node.addEventListener('click',action);return node;};
@@ -54,6 +55,21 @@
     }
     function render(focusId,message) {
       container.replaceChildren();
+      if (!choosing && model.recommendations.length) {
+        const heading=el('h3','A starting point for your installation');
+        heading.id='guided-start'; heading.tabIndex=-1; container.append(heading);
+        for (const rec of model.recommendations.slice(0,1)) {
+          const leaf=model.leaves.find(item=>item.id===rec.leaf_id);
+          container.append(el('p',rec.reason,'helper'));
+          if (leaf) container.append(leafCard(leaf));
+          else container.append(el('p','The maintained starting point is unavailable. No substitute has been selected.','note'));
+        }
+        container.append(el('p','Choose for the computer you will install on. It may be different from the computer running this browser. A starting point is not an installation or compatibility guarantee.','helper'));
+        container.append(button('Help me choose / browse all setups',()=>{choosing=true;render('guided-question');}));
+        if(busy) for(const control of container.querySelectorAll('button,input')) control.disabled=true;
+        if(focusId)(container.querySelector(`#${focusId}`)||heading).focus();
+        return;
+      }
       const paths=el('div',undefined,'guided-paths');paths.setAttribute('role','group');paths.setAttribute('aria-label','How would you like to choose?');
       for(const path of model.paths){const choose=button(path.label,()=>{step=0;transition(api.changePath(model,state,path.id),'guided-question');});choose.setAttribute('aria-pressed',String(path.id===state.pathId));paths.append(choose);}if(model.paths.length>1)container.append(paths);
       if(state.unavailable){const warning=el('p',`${state.origin==='default'?'The recommended image is unavailable. ':''}${state.unavailable.reason} Choose another image below.`,'note');warning.id='guided-unavailable';warning.setAttribute('role','status');container.append(warning);}
@@ -98,7 +114,7 @@
       getState:()=>state,
       getSelection:()=>suspended?null:selection(),
       refresh(nextModel){model=nextModel;state=api.refreshState(model,state);publish();render();},
-      select(id){transition(api.selectLeaf(model,state,id),'guided-selection-summary');},
+      select(id){choosing=true;transition(api.selectLeaf(model,state,id),'guided-selection-summary');},
       suspend(){suspended=true;render();},
       setBusy(value){busy=Boolean(value);render();},
     });

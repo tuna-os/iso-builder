@@ -93,3 +93,15 @@ Cancellation or a failed write must not show the installation card. Neither
 message is a checksum of the saved file, publisher authentication, or an
 installation test. Unknown browser quota is reported as unknown, not unlimited.
 App selections remain requests and are not applied to the resulting system.
+
+### Starting point and review
+
+The first screen uses the deployment's maintained recommendation, never the
+first catalog entry. Qualification remains separate and unavailable targets
+are not replaced. Use “Help me choose / browse all setups” for the existing
+base-first and desktop-first paths. Check the architecture of the installation
+target, not the browser host. Before creating media, review the target, temporary
+storage needs, and application-request limitations. Back or Escape preserves
+the form. On phones, use the existing setup link for supported choices on a
+desktop; it is not cloud storage. Unsaved refresh recovery and importing complete
+TOML setups are not implemented by this stage.

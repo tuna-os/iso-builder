@@ -258,6 +258,7 @@ test.describe("iso builder", () => {
     });
 
     await page.locator("#build").click();
+    await page.locator("#review-create").click();
 
     await expect(page.locator("#stage")).toContainText(/Build failed — sink write error/i);
     await expect(page.locator("#stage")).not.toContainText(/ISO saved|download started/);
@@ -324,6 +325,7 @@ test.describe("iso builder", () => {
     });
 
     await page.locator("#build").click();
+    await page.locator("#review-create").click();
     await expect(page.locator("#stage")).toContainText("Authoring EROFS");
     await expect(page.locator("#bar")).toHaveJSProperty("value", 1);
     await expect(page.locator("#postcard")).toBeHidden();
@@ -605,6 +607,7 @@ test.describe("iso builder", () => {
       const download = page.waitForEvent("download", { timeout: BUILD_WAIT_MS });
       const buildClickedAt = performance.now();
       await page.locator("#build").click();
+    await page.locator("#review-create").click();
       buildIdentity = await buildOperationIdentity(page);
       await shot(page, "05-building.png");
       dl = await Promise.race([download, buildWatch.promise]);

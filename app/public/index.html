@@ -121,6 +121,10 @@
 
   pre { background: var(--bg); border-radius: 6px; }
 
+  dialog { background:var(--panel); color:var(--fg); border:1px solid var(--accent); border-radius:14px; max-width: min(650px, calc(100% - 2rem)); overflow-wrap:anywhere; }
+  dialog::backdrop { background:#000a; }
+  .mobile-planning { display:none; }
+  @media(max-width:600px) { .mobile-planning { display:block; } }
   :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 
   @media (prefers-reduced-motion: reduce) {
@@ -234,8 +238,9 @@
   <h1>Make your own image</h1>
   <p id="builder-intro" class="sub"></p>
   <p id="builder-disclaimer" class="note" hidden></p>
-  <ol class="journey" aria-label="Build steps"><li>1. Choose an image</li><li>2. Add apps <span>(optional)</span></li><li>3. Check &amp; build</li></ol>
+  <ol class="journey" aria-label="Build steps"><li>1. Choose your system</li><li>2. Check the target computer</li><li>3. Personalize <span>(optional)</span></li><li>4. Review &amp; create</li><li>5. Save &amp; install</li></ol>
 
+  <p class="helper mobile-planning">Planning on a phone? Choose a setup here, then use the setup link below to continue on a desktop. The link carries supported choices; it does not upload files or create a cloud account.</p>
   <section class="card" aria-labelledby="choose-heading">
     <h2 id="choose-heading">Choose your desktop</h2>
     <p id="desktop-help" class="helper">The desktop is how your computer looks and feels. Choose the layout you prefer. Your selection does not guarantee that a browser build is available.</p>
@@ -341,6 +346,15 @@
     <div class="next-action"><button id="introspect">Check image &amp; continue</button><p id="preview-note" class="helper">No ISO download starts yet.</p></div>
   </section>
 
+  <dialog id="build-review" aria-labelledby="build-review-heading">
+    <h2 id="build-review-heading">Before you create your ISO</h2>
+    <p id="review-target" class="helper"></p>
+    <p>This creates a multi-GB ISO file on this computer. Keep this tab open and allow time for downloads and temporary browser storage. The final size and space required depend on the image; available space is not guaranteed.</p>
+    <p>Check the selected architecture against your target computer’s specifications. This browser cannot establish its hardware compatibility. Browser build eligibility does not mean this exact output has passed an installation test.</p>
+    <p id="review-apps" class="note"></p>
+    <p>The browser does not flash a USB drive. After saving, use a separate writer and follow the system’s installation guide.</p>
+    <div class="row"><button id="review-back" class="secondary">Back to setup</button><button id="review-create">Create ISO file</button></div>
+  </dialog>
   <div class="card hidden" id="buildcard">
     <div class="row">
       <div>
