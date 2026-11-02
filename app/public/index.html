@@ -384,17 +384,19 @@
     <div id="tab-etcher" class="tab-content" style="margin-top:1rem">
       <ol style="padding-left:1.2rem;margin:0">
         <li>Download and install <a href="https://etcher.balena.io/" target="_blank" rel="noopener">BalenaEtcher</a> (supports Windows, macOS, and Linux).</li>
-        <li>Plug in your USB flash drive (minimum 4GB).</li>
+        <li>Use a USB drive with capacity larger than the downloaded ISO file. Back up its files and verify the selected drive before flashing; flashing erases its contents.</li>
         <li>Open Etcher, click <b>Flash from file</b> and select your downloaded ISO.</li>
         <li>Select your USB target and click <b>Flash!</b>.</li>
       </ol>
     </div>
     
     <div id="tab-ventoy" class="tab-content hidden" style="margin-top:1rem">
+      <p style="margin:0 0 .5rem;font-size:.85rem;color:var(--warn)"><strong>Warning:</strong> Normal Ventoy installation reformats the selected USB drive and erases all its data. Back up its files and verify the target drive before you install.</p>
+      <p class="sub">Check your edition's USB-writing instructions first. <a href="https://docs.projectbluefin.io/installation/" target="_blank" rel="noopener">Bluefin recommends Fedora Media Writer and does not support Ventoy.</a></p>
       <ol style="padding-left:1.2rem;margin:0">
-        <li>Install <a href="https://www.ventoy.net/" target="_blank" rel="noopener">Ventoy</a> onto your USB flash drive (non-destructive; you only do this once).</li>
-        <li>Once Ventoy is installed, your USB drive will show up as a normal partition named <code>Ventoy</code>.</li>
-        <li>Simply <b>drag and drop</b> your downloaded ISO file directly onto the USB partition.</li>
+        <li>If Ventoy is already installed, do not reinstall it to add this ISO. Otherwise, follow the <a href="https://www.ventoy.net/en/doc_start.html" target="_blank" rel="noopener">Ventoy installation instructions</a> after the backup and target check above.</li>
+        <li>Open the USB drive's Ventoy data partition, normally named <code>Ventoy</code>, and check that its free space exceeds the ISO file size.</li>
+        <li>Copy your downloaded ISO file onto that data partition.</li>
         <li>Reboot your PC, boot from the USB drive, and choose the ISO from the Ventoy menu.</li>
       </ol>
     </div>
