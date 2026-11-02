@@ -209,14 +209,30 @@ def pair_samples(over=None):
         cold = n % 2 == 1
         rt = {'completeLayerBlobs': 3 if cold else 0, 'completeLayerBytes': 300 if cold else 0, 'blobRequests': 4 if cold else 1,
               'blobBytes': 310 if cold else 10, 'incompleteBlobRequests': 0, 'inFlightBlobRequests': 0,
+              'unknownSizeRequests': 0, 'observer': {'errors': [], 'blobBodyBytesRead': 0},
               'completeLayers': [{'digest': 'sha256:' + 'a' * 64, 'bytes': 100}] * (3 if cold else 0),
               'manifests': [{'digest': 'sha256:' + 'b' * 64}]}
         rt.update(over.get(n, {}))
         files[f'qual-evidence-x-s{n}.json'] = evidence(
             run={'sample': n, 'pair': (n + 1) // 2, 'cacheMode': 'cold' if cold else 'warm'},
+            qualification='diagnostic-unqualified',
+            resources={'isoBytes': 1000, 'peakTboxWasmMB': 5, 'peakTboxJsHeapMB': 6, 'opfsUsage': 400, 'opfsQuota': 10000,
+                       'cacheLayersBefore': 0 if cold else 3},
+            pairProtocol={'environment': {'frontendRevision': 'f' * 40, 'frontend': {'app.js': 'sha256:' + 'a' * 64},
+                          'engineModule': 'github.com/tuna-os/tacklebox public-fixture', 'resources': {'totalMemoryBytes': 10000},
+                          'memoryMethod': 'public fixture', 'registryFallback': False, 'goSumSha256': 'sha256:' + 'a' * 64,
+                          'playwrightLockSha256': 'sha256:' + 'a' * 64}, 'source': {'platformManifestDigest': 'sha256:' + 'b' * 64,
+                          'indexDigest': 'sha256:' + 'e' * 64, 'configDigest': 'sha256:' + 'f' * 64},
+                          'overlay': {'platformManifestDigest': 'sha256:' + 'd' * 64}, 'requestSha256': 'sha256:' + 'a' * 64, 'profile': '/public-fixture/profile'},
             phasesMs={'inspect': 10, 'build': 20, 'save': 30, 'wall': 70}, registryTransfers=rt)
-        files[f'build-measurements-qual-evidence-x-s{n}.json'] = {'iso': {'sha256': 'sha256:' + 'c' * 64, 'sizeBytes': 1000},
-                                                                  'loadedWasm': None, 'engineBuildResult': None}
+        files[f'build-attempt-x-s{n}.json'] = {'sample': n, 'exitCode': 0}
+        files[f'build-measurements-qual-evidence-x-s{n}.json'] = {
+            'iso': {'sha256': 'sha256:' + 'c' * 64, 'sizeBytes': 1000},
+            'loadedWasm': {'sha256': 'sha256:' + 'a' * 64, 'sizeBytes': 8}, 'browser': {'product': 'Chrome/1.2.3.4', 'userAgent': 'public-fixture'},
+            'engineBuildResult': {'bytesWritten': 1000, 'observedInputs': {
+                'source': {'manifestDigest': 'sha256:' + 'b' * 64, 'indexDigest': 'sha256:' + 'e' * 64,
+                           'config': {'descriptor': {'digest': 'sha256:' + 'f' * 64}, 'bytesVerified': True}},
+                'overlay': {'manifestDigest': 'sha256:' + 'd' * 64, 'baseAnnotationMatched': True, 'layersApplied': True}}}}
     return files
 
 
@@ -228,6 +244,8 @@ def test_pair_summarizes_three_cold_warm_pairs_with_identities(tmp_path):
     warm = merged['pairs'][0]['warm']
     assert warm['sample'] == 2 and warm['transfer']['completeLayerBlobs'] == 0 and warm['wallMs'] == 70
     assert warm['identity']['iso']['sha256'] == 'sha256:' + 'c' * 64
+    assert merged['qualification'] == 'diagnostic-unqualified'
+    assert 'no install' in merged['qualificationScope']
 
 
 def test_pair_rejects_warm_layer_fetch_and_changed_inputs(tmp_path):
@@ -238,7 +256,7 @@ def test_pair_rejects_warm_layer_fetch_and_changed_inputs(tmp_path):
     r = validate(tmp_path / 'b', pair_samples({6: {'manifests': [{'digest': 'sha256:' + 'e' * 64}]}}), PAIR='true')
     assert r.returncode != 0 and 'pair 3: inputs changed' in r.stderr
     (tmp_path / 'c').mkdir()
-    r = validate(tmp_path / 'c', pair_samples({1: {'completeLayerBlobs': 0}}), PAIR='true')
+    r = validate(tmp_path / 'c', pair_samples({1: {'completeLayerBlobs': 0, 'completeLayers': []}}), PAIR='true')
     assert r.returncode != 0 and 'pair 1: cold sample observed no complete layer downloads' in r.stderr
 
 
@@ -293,14 +311,14 @@ def test_full_build_sequences_samples(tmp_path, mode, expected):
     (bin_dir / 'npx').write_text(
         '#!/usr/bin/env bash\n'
         f'echo "$TBOX_E2E_SAMPLE $TBOX_E2E_CACHE_MODE ${{TBOX_E2E_PAIR:--}} ${{TBOX_E2E_PROFILE_KEEP:--}}" >> {log}\n'
-        ': > "$TBOX_E2E_ISO_COPY"\n')
+        'if [ -n "$TBOX_E2E_ISO_COPY" ]; then : > "$TBOX_E2E_ISO_COPY"; fi\n')
     (bin_dir / 'npx').chmod(0o755)
     env = {k: v for k, v in os.environ.items() if not k.startswith(('TBOX_E2E_', 'GITHUB_'))}
     env.update(PATH=f'{bin_dir}:{env["PATH"]}', SLUG='x', RUNNER_TEMP=str(tmp_path), TBOX_E2E_CACHE_MODE='cold', **mode)
     r = subprocess.run(['just', 'full-build'], cwd=ROOT, env=env, text=True, capture_output=True)
     assert r.returncode == 0, r.stderr
     assert log.read_text().splitlines() == expected
-    assert sorted(p.name for p in tmp_path.glob('*.iso')) == ['x-s%s.iso' % len(expected), 'x.iso']
+    assert sorted(p.name for p in tmp_path.glob('*.iso')) == ([] if mode.get('PAIR') == 'true' else ['x-s%s.iso' % len(expected), 'x.iso'])
 
 
 @needs_just
@@ -308,3 +326,90 @@ def test_full_build_refuses_pair_with_benchmark(tmp_path):
     env = {**os.environ, 'SLUG': 'x', 'RUNNER_TEMP': str(tmp_path), 'PAIR': 'true', 'BENCHMARK': 'true'}
     r = subprocess.run(['just', 'full-build'], cwd=ROOT, env=env, text=True, capture_output=True)
     assert r.returncode != 0 and 'mutually exclusive' in r.stderr
+
+
+@pytest.mark.parametrize('mutation,message', [
+    ('failed', 'missing successful attempt outcome'),
+    ('missing-iso', 'missing measured iso integrity'),
+    ('inflight', 'incomplete registry observation'),
+    ('unknown-bytes', 'incomplete registry observation'),
+    ('observer-error', 'incomplete registry observation'),
+    ('profile', 'changed persistent profile'),
+    ('frontend', 'changed fixed environment'),
+    ('request', 'changed fixed requestSha256'),
+    ('wasm', 'changed measured loadedWasm'),
+    ('browser', 'changed measured browser'),
+    ('source', 'engine/media integrity or fixed input mismatch'),
+    ('bytes', 'engine/media integrity or fixed input mismatch'),
+    ('cold-cache', 'OPFS cache preconditions'),
+    ('memory', 'missing resource'),
+])
+def test_pair_rejects_incomplete_or_changed_measurements(tmp_path, mutation, message):
+    files = pair_samples()
+    ev = files['qual-evidence-x-s2.json']
+    measurement = files['build-measurements-qual-evidence-x-s2.json']
+    if mutation == 'failed':
+        files['build-attempt-x-s2.json']['exitCode'] = 1
+    elif mutation == 'missing-iso':
+        measurement['iso'] = None
+    elif mutation in ('inflight', 'unknown-bytes'):
+        ev['registryTransfers']['inFlightBlobRequests' if mutation == 'inflight' else 'unknownSizeRequests'] = 1
+    elif mutation == 'observer-error':
+        ev['registryTransfers']['observer']['errors'] = ['manifest unavailable']
+    elif mutation == 'profile':
+        ev['pairProtocol']['profile'] += '-other'
+    elif mutation == 'frontend':
+        ev['pairProtocol']['environment']['frontendRevision'] = '0' * 40
+    elif mutation == 'request':
+        ev['pairProtocol']['requestSha256'] = 'sha256:' + '0' * 64
+    elif mutation == 'wasm':
+        measurement['loadedWasm']['sha256'] = 'sha256:' + '0' * 64
+    elif mutation == 'browser':
+        measurement['browser']['product'] = 'Chrome/9.8.7.6'
+    elif mutation == 'source':
+        measurement['engineBuildResult']['observedInputs']['source']['manifestDigest'] = 'sha256:' + '0' * 64
+    elif mutation == 'bytes':
+        measurement['iso']['sizeBytes'] += 1
+    elif mutation == 'cold-cache':
+        files['qual-evidence-x-s1.json']['resources']['cacheLayersBefore'] = 3
+    elif mutation == 'memory':
+        ev['resources']['peakTboxWasmMB'] = -1
+    r = validate(tmp_path, files, PAIR='true')
+    assert r.returncode != 0 and message in r.stderr
+
+
+@needs_just
+@pytest.mark.parametrize('fail_at', [0, 2])
+def test_pair_retains_receipts_across_real_playwright_output_cleanup(tmp_path, fail_at):
+    """Exercise the real CLI's output cleanup with tiny public JSON, no ISO build."""
+    modules = ROOT / 'e2e/node_modules'
+    if not (modules / '@playwright/test').exists():
+        pytest.skip('npm ci in e2e is required')
+    work = tmp_path / 'e2e'
+    work.mkdir()
+    (work / 'node_modules').symlink_to(modules, target_is_directory=True)
+    (work / 'playwright.config.js').write_text(
+        'module.exports = { testDir: ".", workers: 1, retries: 0, reporter: "line" };')
+    (work / 'receipt.spec.js').write_text(
+        'const { test, expect } = require("@playwright/test"); const fs = require("node:fs");\n'
+        'test("public receipt fixture @full", () => {\n'
+        ' const n = Number(process.env.TBOX_E2E_SAMPLE); const file = process.env.TBOX_E2E_EVIDENCE;\n'
+        ' fs.mkdirSync("test-results", { recursive: true });\n'
+        ' fs.writeFileSync(file, JSON.stringify({ sample: n, fixture: true }));\n'
+        ' fs.writeFileSync(file.replace("qual-evidence-", "build-measurements-qual-evidence-"), JSON.stringify({ sample: n, fixture: true }));\n'
+        ' expect(n).not.toBe(Number(process.env.PUBLIC_FIXTURE_FAIL_AT));\n'
+        '});')
+    env = {k: v for k, v in os.environ.items() if not k.startswith(('TBOX_E2E_', 'GITHUB_'))}
+    env.update(SLUG='x', RUNNER_TEMP=str(tmp_path), PAIR='true', BENCHMARK='false',
+               PUBLIC_FIXTURE_FAIL_AT=str(fail_at))
+    r = subprocess.run(['just', '--justfile', str(ROOT / 'justfile'), '--working-directory', str(tmp_path),
+                        'full-build'], env=env, text=True, capture_output=True)
+    assert (r.returncode == 0) == (fail_at == 0), r.stderr + r.stdout
+    count = fail_at or 6
+    for n in range(1, count + 1):
+        assert json.loads((work / f'test-results/qual-evidence-x-s{n}.json').read_text())['sample'] == n
+        assert (work / f'test-results/build-measurements-qual-evidence-x-s{n}.json').exists()
+        outcome = json.loads((work / f'test-results/build-attempt-x-s{n}.json').read_text())
+        assert outcome == {'sample': n, 'exitCode': int(n == fail_at)}
+    assert not (work / f'test-results/build-attempt-x-s{count + 1}.json').exists()
+    assert not list(tmp_path.glob('*.iso'))

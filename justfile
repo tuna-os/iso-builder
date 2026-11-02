@@ -132,11 +132,10 @@ full-plan:
 # takes three cold samples. Pair mode (PAIR=true) takes three cold/warm pairs:
 # samples 1, 3, 5 are cold (fresh profile, kept on disk) and 2, 4, 6 are warm
 # (the preceding cold sample's profile and OPFS layer cache, identical inputs;
-# the spec fails a warm sample that fetches any complete layer blob). The
-# guest-verify step expects ${SLUG}.iso: the last sample is kept there and the
-# others are dropped as soon as their sample passes (multi-GB, never
-# retained). Needs SLUG and RUNNER_TEMP; the TBOX_E2E_* build env comes from
-# the workflow step.
+# the spec fails a warm sample that fetches any complete layer blob).
+# Pair measurements are build-only; they do not retain an ISO or start a guest.
+# JSON receipts and attempt outcomes are preserved outside Playwright's output
+# directory between invocations, including the first failing attempt.
 # Build the edition's ISO in the browser (@full).
 full-build:
     #!/usr/bin/env bash
@@ -154,6 +153,16 @@ full-build:
     elif [ "${BENCHMARK:-}" = "true" ]; then SAMPLES="1 2 3"
     else SAMPLES="1"; fi
     last="${SAMPLES##* }"
+    evidence_dir="${RUNNER_TEMP}/browser-samples-${SLUG}-${GITHUB_RUN_ID:-local}-${GITHUB_RUN_ATTEMPT:-1}"
+    mkdir "${evidence_dir}"
+    export TBOX_E2E_PAIR_STATE="${evidence_dir}/pair-inputs.json"
+    restore_evidence() {
+      mkdir -p test-results
+      shopt -s nullglob
+      saved=("${evidence_dir}/"*.json)
+      if [ "${#saved[@]}" -gt 0 ]; then cp "${saved[@]}" test-results/; fi
+    }
+    trap restore_evidence EXIT
     for s in $SAMPLES; do
       echo "=== @full sample ${s} ==="
       if [ "${PAIR:-}" = "true" ]; then
@@ -162,14 +171,23 @@ full-build:
         echo "=== pair ${pair}: ${mode} ==="
         export TBOX_E2E_PAIR="${pair}" TBOX_E2E_CACHE_MODE="${mode}" TBOX_E2E_PROFILE_KEEP="${keep}"
       fi
+      copy="${RUNNER_TEMP}/${SLUG}-s${s}.iso"
+      if [ "${PAIR:-}" = "true" ]; then copy=""; fi
+      status=0
       TBOX_E2E_SAMPLE="${s}" \
-        TBOX_E2E_ISO_COPY="${RUNNER_TEMP}/${SLUG}-s${s}.iso" \
+        TBOX_E2E_ISO_COPY="${copy}" \
         TBOX_E2E_EVIDENCE="test-results/qual-evidence-${SLUG}-s${s}.json" \
-        npx playwright test --grep @full --timeout=4500000
-      if [ "${s}" != "${last}" ]; then rm -f "${RUNNER_TEMP}/${SLUG}-s${s}.iso"; fi
+        npx playwright test --grep @full --timeout=4500000 || status=$?
+      printf '{"sample":%s,"exitCode":%s}\n' "${s}" "${status}" > "${evidence_dir}/build-attempt-${SLUG}-s${s}.json"
+      shopt -s nullglob
+      receipts=(test-results/*"qual-evidence-${SLUG}-s${s}.json")
+      if [ "${#receipts[@]}" -gt 0 ]; then cp "${receipts[@]}" "${evidence_dir}/"; fi
+      if [ "${status}" -ne 0 ]; then exit "${status}"; fi
+      if [ "${s}" != "${last}" ] && [ -n "${copy}" ]; then rm -f "${copy}"; fi
     done
-    # The guest-verify step below expects ${SLUG}.iso: keep the last sample there.
-    cp "${RUNNER_TEMP}/${SLUG}-s${last}.iso" "${RUNNER_TEMP}/${SLUG}.iso"
+    if [ "${PAIR:-}" != "true" ]; then
+      cp "${RUNNER_TEMP}/${SLUG}-s${last}.iso" "${RUNNER_TEMP}/${SLUG}.iso"
+    fi
 
 # Install the built ISO under QEMU with LUKS and verify the installed system
 # reboots (tunaOS scripts/iso-e2e.sh from the pinned tunaos-e2e checkout).
