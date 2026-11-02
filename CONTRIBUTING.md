@@ -42,6 +42,8 @@ the test filenames to Node: `node --test tests/ worker/` fails with
   npx playwright test --grep-invert @full
   ```
 
+Test user actions in the browser. Do not test the exact text in HTML.
+
 ### 3. Native Application (`native/`)
 - Run tests (see [`native/README.md`](native/README.md) for platform build prerequisites):
   ```sh
