@@ -1581,13 +1581,16 @@ async function build() {
     const extraRun = req.options.extraRun.slice();
     const withResult = typeof window.tboxBuildIsoWithResult === "function";
     const buildIso = withResult ? window.tboxBuildIsoWithResult : window.tboxBuildIso;
+    const nativeBuild = buildIso === wasmNativeBuildIso || buildIso === wasmNativeBuildIsoWithResult;
+    if (nativeBuild && !wasmEngineDigest) {
+      throw new Error("loaded WASM digest unavailable; refusing receipt-less browser build");
+    }
     let writtenBytes = 0;
     const result = await buildIso(
       // engineDigest only ever names the module this page instantiated; a
       // replaced build function is not that module.
       { label, initrd, flatpaks, packages, extraRun, request: req,
-        ...(wasmEngineDigest && (buildIso === wasmNativeBuildIso || buildIso === wasmNativeBuildIsoWithResult)
-          ? { engineDigest: wasmEngineDigest } : {}) },
+        ...(nativeBuild ? { engineDigest: wasmEngineDigest } : {}) },
       async (u8) => {
         if (!(u8 instanceof Uint8Array) || !Number.isSafeInteger(writtenBytes + u8.byteLength)) {
           throw new Error("invalid ISO sink byte count");
