@@ -53,6 +53,13 @@ function applyBuilderBranding() {
   }
   document.querySelector("h1").textContent = config.presentation.headline;
   document.querySelector("#builder-intro").textContent = config.presentation.intro;
+  const guide=document.querySelector("#installation-guide");
+  guide.href=brand.documentation_url || brand.homepage_url;
+  guide.textContent=`${brand.name} installation documentation`;
+  if (globalThis.TboxExperiences?.id === "bluefin") {
+    guide.href="https://docs.projectbluefin.io/installation/";
+    document.querySelector("#writer-policy").textContent="Bluefin recommends Fedora Media Writer; Ventoy is unsupported. This experience is a preview and does not create Bluefin installation media.";
+  }
   const disclaimer=document.querySelector("#builder-disclaimer");
   disclaimer.textContent=brand.disclaimer || ""; disclaimer.hidden=!brand.disclaimer;
   document.querySelector("#label").value=config.output.volume_label;
@@ -81,7 +88,7 @@ function applyBuilderBranding() {
 applyBuilderBranding();
 if(document.querySelector && globalThis.TboxExperiences) {
   const picker=document.querySelector("#experience");
-  for(const item of globalThis.TboxExperiences.entries) {const option=document.createElement("option");option.value=item.id;option.textContent=item.name;picker.appendChild(option);}
+  for(const item of globalThis.TboxExperiences.entries) {const option=document.createElement("option");option.value=item.id;option.textContent=item.name + (item.previewOnly ? " — preview only" : "");picker.appendChild(option);}
   picker.value=globalThis.TboxExperiences.id;
   picker.addEventListener("change",()=>{
     if(isOperationBusy()){picker.value=globalThis.TboxExperiences.id;return;}
@@ -535,6 +542,7 @@ function repoRender() {
     const label = document.createElement("label");
     const rm = Object.assign(document.createElement("button"), { type: "button", textContent: "✕" });
     rm.className = "secondary";
+    rm.setAttribute("aria-label", `Remove setup command ${i + 1}`);
     rm.style.cssText = "padding:0 .4rem;font-size:.75rem";
     rm.onclick = () => { repoCmds.splice(i, 1); repoRender(); };
     label.appendChild(rm);
@@ -550,6 +558,18 @@ function addRepo() {
   const kind = $("repokind").value;
   const ref = $("reporef").value.trim();
   if (!ref) return;
+  const error = $("repo-error");
+  if (!$("repo-trust").checked) {
+    error.textContent = "Confirm you trust this source and have reviewed the command before adding it.";
+    $("repo-trust").focus(); return;
+  }
+  try { globalThis.TboxSetupSafety.assertPortable(ref); }
+  catch (e) { error.textContent=e.message; $("reporef").focus(); return; }
+  if (kind !== "raw" && !/^[A-Za-z0-9][A-Za-z0-9._:/+-]*$/.test(ref)) {
+    error.textContent="Use a repository identifier without spaces or shell syntax.";
+    $("reporef").focus(); return;
+  }
+  error.textContent="";
   let cmd;
   switch (kind) {
     case "copr": cmd = `dnf -y copr enable ${ref}`; break;
@@ -558,6 +578,7 @@ function addRepo() {
     default: cmd = ref;
   }
   repoCmds.push(cmd);
+  $("repo-trust").checked=false;
   $("reporef").value = "";
   repoRender();
 }
@@ -619,7 +640,9 @@ globalThis.tboxOnProgress = (stage, i, n) => {
     esp: "Authoring EFI system partition…",
     iso: "Streaming ISO…",
   }[stage] || stage;
-  $("bar").max = n; $("bar").value = i;
+  if (Number.isFinite(n) && n > 0 && Number.isFinite(i) && i >= 0) {
+    $("bar").max = n; $("bar").value = i;
+  } else $("bar").removeAttribute("value");
   lastProgressAt = Date.now();
 };
 
@@ -1067,7 +1090,11 @@ globalThis.tboxGetBuildRequest = () => {
   return currentOp.request;
 };
 
-globalThis.tboxExportBuildRequestJSON = () => JSON.stringify(globalThis.tboxGetBuildRequest(), null, 2);
+globalThis.tboxExportBuildRequestJSON = () => {
+  const request=globalThis.tboxGetBuildRequest();
+  globalThis.TboxSetupSafety.assertPortable(request);
+  return JSON.stringify(request, null, 2);
+};
 
 function renderFactsBadges(fObj, op) {
   const f = $("facts");
@@ -1340,9 +1367,10 @@ async function isoSink(name) {
 
 const MIN_FREE_GB = 9.5;
 async function checkStorageQuota(op = currentOp) {
-  if (!navigator.storage?.estimate) return { freeGB: Infinity, blocked: false };
+  if (!navigator.storage?.estimate) return { freeGB: null, blocked: false };
   try {
     const { quota, usage } = await navigator.storage.estimate();
+    if (!Number.isFinite(quota) || !Number.isFinite(usage)) return { freeGB: null, blocked: false };
     const freeGB = (quota - usage) / 1e9;
     if (freeGB < MIN_FREE_GB) {
       log(`warning: only ${freeGB.toFixed(1)} GB free of ${(quota / 1e9).toFixed(1)} GB quota — some editions may not fit`);
@@ -1354,7 +1382,7 @@ async function checkStorageQuota(op = currentOp) {
     }
     return { freeGB, blocked: false };
   } catch {
-    return { freeGB: Infinity, blocked: false };
+    return { freeGB: null, blocked: false };
   }
 }
 
@@ -1388,6 +1416,17 @@ async function finishIsoSink(s, name) {
   // The page cannot observe persistence of an <a download>. The diagnostic
   // collector independently saves and hashes its download before joining it.
   return { kind: "download", status: "initiated" };
+}
+
+function showDeliveryStatus(delivery, bytes, seconds) {
+  const saved = delivery.kind === "picker" && delivery.status === "stream-closed";
+  const title = saved ? "ISO saved" : "ISO created — download started";
+  const detail = saved
+    ? "The file writer closed successfully."
+    : "Check your browser downloads and wait for the file to finish saving. This page cannot confirm that it was saved.";
+  $("stage").textContent = `${title} — ${(bytes / 1e9).toFixed(2)} GB created in ${seconds}s. ${detail}`;
+  $("delivery-status").textContent = detail;
+  notify(title, detail);
 }
 
 function prepareDdi(ch) {
@@ -1437,11 +1476,10 @@ async function buildDdi(ch) {
     }
     const t0 = performance.now();
     const bytes = await tboxBuildDdiIso({ base, stem: ch.stem, label, sdboot }, (u8) => s.w.write(u8));
-    await finishIsoSink(s, name);
+    const outputDelivery = await finishIsoSink(s, name);
     updatePostcardFilename(name);
     const dt = ((performance.now() - t0) / 1000).toFixed(1);
-    $("stage").textContent = `Done — ${(bytes / 1e9).toFixed(2)} GB in ${dt}s.`;
-    notify("ISO ready 🐟", `${(bytes / 1e9).toFixed(2)} GB written in ${dt}s`);
+    showDeliveryStatus(outputDelivery, bytes, dt);
     log(`iso written: ${bytes} bytes`);
     $("postcard").classList.remove("hidden");
   } catch (e) {
@@ -1452,12 +1490,14 @@ async function buildDdi(ch) {
     log("error: " + e);
     if (/QuotaExceededError|quota exceeded/i.test(String(e))) {
       $("stage").textContent = "Build failed — storage quota exceeded.";
+    } else if (e.name === "AbortError") {
+      $("stage").textContent = "Save cancelled — no completed save confirmed. Your setup is preserved; retry when ready.";
     } else if (/download stalled/i.test(String(e))) {
       $("stage").textContent = "Build failed — layer download stalled (try again; the browser may recover on a fresh page load).";
     } else {
       $("stage").textContent = "Build failed.";
     }
-    notify("ISO build failed", String(e).slice(0, 120));
+    notify(e.name === "AbortError" ? "Save cancelled" : "ISO build failed", String(e).slice(0, 120));
   } finally {
     stopWatch();
     releaseLease();
@@ -1574,8 +1614,7 @@ async function build() {
     op.buildResult = pendingResult;
     op.outputDelivery = deepFreeze(outputDelivery);
     const dt = ((performance.now() - t0) / 1000).toFixed(1);
-    $("stage").textContent = `Done — ${(bytes / 1e9).toFixed(2)} GB in ${dt}s.`;
-    notify("ISO ready 🐟", `${(bytes / 1e9).toFixed(2)} GB written in ${dt}s`);
+    showDeliveryStatus(outputDelivery, bytes, dt);
     log(`iso written: ${bytes} bytes`);
     $("postcard").classList.remove("hidden");
   } catch (e) {
@@ -1591,6 +1630,8 @@ async function build() {
     if (/digest mismatch/.test(String(e))) log("a downloaded layer does not match its digest — clear it under Advanced → Clear downloaded layers, then try again");
     if (/QuotaExceededError|quota exceeded/i.test(String(e))) {
       $("stage").textContent = "Build failed — storage quota exceeded.";
+    } else if (e.name === "AbortError") {
+      $("stage").textContent = "Save cancelled — no completed save confirmed. Your setup is preserved; retry when ready.";
     } else if (/download stalled/i.test(String(e))) {
       $("stage").textContent = "Build failed — layer download stalled (try again; the browser may recover on a fresh page load).";
     } else if (/sink write/i.test(String(e))) {
@@ -1599,7 +1640,7 @@ async function build() {
       $("stage").textContent = "Build failed.";
     }
     renderFallbackCard(op, `Browser build failed (${String(e)}). Build this exact target locally with tacklebox purebuild:`);
-    notify("ISO build failed", String(e).slice(0, 120));
+    notify(e.name === "AbortError" ? "Save cancelled" : "ISO build failed", String(e).slice(0, 120));
   } finally {
     stopWatch();
     releaseLease();
@@ -1624,11 +1665,18 @@ function updateShare() {
   const pk = pkgCollect();
   if (pk.length) p.set("packages", pk.join(","));
   if ($("label").value && $("label").value !== BUILDER_CONFIG.output.volume_label) p.set("label", $("label").value);
-  if ($("initrdurl").value) p.set("initrd", $("initrdurl").value);
-  if ($("shimurl").value && $("shimurl").value !== "https://relay.tunaos.org") p.set("shim", $("shimurl").value);
+  // Trust-sensitive overrides are intentionally not portable URL inputs.
   const qs = "?" + p.toString();
   $("share").textContent = qs;
-  $("sharelink").href = location.origin + location.pathname + qs;
+  try {
+    globalThis.TboxSetupSafety.assertPortable(Object.fromEntries(p));
+    $("sharelink").href = location.origin + location.pathname + qs;
+    $("copyshare").disabled=false;
+  } catch (error) {
+    $("share").textContent=error.message;
+    $("sharelink").removeAttribute("href");
+    $("copyshare").disabled=true;
+  }
 }
 
 $("introspect").onclick = async () => {
@@ -1647,10 +1695,21 @@ $("apps-options")?.addEventListener("toggle", () => {
     fpHydrateSelected();
   }
 });
-$("build").onclick = build;
+$("build").onclick = () => {
+  const review = $("build-review");
+  $("review-target").textContent = `${$("image").value || selectedDdi?.name || "Selected image"} · ${currentPlatform()}`;
+  $("review-apps").textContent = `${fpCollect().length} app requests. These are not applied to the ISO or installed system.`;
+  review.showModal();
+  $("review-back").focus();
+};
+$("review-back").onclick = () => $("build-review").close();
+$("review-create").onclick = () => { $("build-review").close(); build(); };
 $("curated").onclick = loadCuratedSet;
 renderCuratedSets(null);
 $("addrepo").onclick = addRepo;
+for (const id of ["reporef", "repokind"]) $(id).addEventListener("input", () => {
+  $("repo-trust").checked=false; $("repo-error").textContent="";
+});
 $("pkgsearch").addEventListener("input", (e) => {
   clearTimeout(pkgTimer);
   pkgTimer = setTimeout(() => pkgSearch(e.target.value.trim()), 350);
@@ -1662,7 +1721,10 @@ $("copyshare").onclick = async () => {
 };
 if ($("downloadrequest")) {
   $("downloadrequest").onclick = () => {
-    const json = globalThis.tboxExportBuildRequestJSON();
+    let json;
+    try { json=globalThis.tboxExportBuildRequestJSON(); }
+    catch(error) { $("export-error").textContent=error.message; return; }
+    $("export-error").textContent="";
     const blob = new Blob([json + "\n"], { type: "application/json" });
     const url = URL.createObjectURL(blob);
     const a = Object.assign(document.createElement("a"), { href: url, download: "build-request.json" });
@@ -1672,6 +1734,9 @@ if ($("downloadrequest")) {
 }
 if ($("copyfallback")) {
   $("copyfallback").onclick = async () => {
+    try { globalThis.tboxExportBuildRequestJSON(); }
+    catch(error) { $("export-error").textContent=error.message; return; }
+    $("export-error").textContent="";
     const payload = `cat <<'EOF' > build-request.json\n${globalThis.tboxExportBuildRequestJSON()}\nEOF\ntacklebox purebuild --request build-request.json`;
     await navigator.clipboard.writeText(payload);
     $("copyfallback").textContent = "Copied!";
@@ -1750,7 +1815,7 @@ function refreshGuidedPicker() {
     });
     guidedError=null; guidedModel=model;
     if(guidedPicker) guidedPicker.refresh(model);
-    else guidedPicker=globalThis.TboxGuidedPicker.mount(container,{model,onSelection:(leaf,state)=>{
+    else guidedPicker=globalThis.TboxGuidedPicker.mount(container,{model,projectName:BUILDER_CONFIG.brand.name,simpleStart:!new URLSearchParams(location.search).has("image") && !new URLSearchParams(location.search).has("variant"),onSelection:(leaf,state)=>{
       if(isOperationBusy()) return;
       selectedDdi=null; manualImageMode=false; selectionWasExplicit=state.origin==="explicit";
       const previous=$("image").value;
@@ -2067,3 +2132,50 @@ globalThis.switchTab = (e, id) => {
     content.classList.toggle("hidden", content.id !== `tab-${id}`);
   }
 };
+
+// Deliberate, tab-local recovery; never save arbitrary form values on change.
+if (document.querySelector) {
+  const planKey = `tbox-planning-v1:${globalThis.TboxExperiences.id}`;
+  const planContext = () => {
+    if (!guidedModel || !guidedPicker) throw new Error("Planning recovery needs the current guided catalog. Your setup has not changed.");
+    return {model:guidedModel,experience:globalThis.TboxExperiences.id,catalog:globalThis.TboxGuidedCatalog,validFlatpakId};
+  };
+  const noOverrides = () => {
+    if (manualImageMode || selectedDdi || repoCmds.length || $("initrdurl").value.trim() || ($("shimurl").value.trim() && $("shimurl").value.trim() !== "https://relay.tunaos.org")) {
+      throw new Error("This setup has advanced values that cannot be saved or replaced by a planning draft. Keep your original configuration; clear those overrides explicitly before using recovery.");
+    }
+  };
+  const planningAction = action => {
+    if (isOperationBusy()) { $("plan-status").textContent="Finish the current operation before changing saved plans."; return; }
+    try { action(); } catch(error) { $("plan-status").textContent=error.message; }
+  };
+  $("save-plan").onclick=()=>planningAction(()=>{
+    noOverrides();const context=planContext();const state=guidedPicker.getState();
+    const value={version:1,experience:context.experience,catalogId:guidedModel.catalogId,snapshotDigest:guidedModel.snapshotDigest,pathId:state.pathId,filters:state.filters,leafId:state.selectedLeafId,flatpaks:fpCollect(),packages:pkgCollect(),label:$("label").value};
+    globalThis.TboxSetupDraft.validate(value,context);globalThis.TboxSetupSafety.assertPortable(value);
+    sessionStorage.setItem(planKey,JSON.stringify(value));
+    $("plan-status").textContent="Planning choices saved in this tab. Restore them after a refresh; no build or save result is stored.";
+  });
+  $("restore-plan").onclick=()=>planningAction(()=>{
+    noOverrides();const text=sessionStorage.getItem(planKey);if(text===null)throw new Error("No saved plan in this tab.");
+    const {value,state}=globalThis.TboxSetupDraft.parse(text,planContext());
+    globalThis.TboxSetupSafety.assertPortable(value);
+    guidedPicker.restoreValidatedState(state);
+    fpItems.clear();for(const id of value.flatpaks)fpItems.set(id,{checked:true,...fpMetadata()});fpDefaults.edit(value.flatpaks);fpRender();
+    pkgItems.clear();for(const id of value.packages)pkgItems.set(id,{checked:true,summary:""});pkgRender();
+    $("label").value=value.label;
+    invalidateOperation("planning-draft-restored");updateShare();
+    $("plan-status").textContent="Planning choices restored. Review your target and any notices, then check the image again. Nothing has been built.";
+  });
+  $("forget-plan").onclick=()=>planningAction(()=>{
+    sessionStorage.removeItem(planKey);$("plan-status").textContent="Saved plan forgotten. Your current form is unchanged.";
+  });
+  try {
+    if(sessionStorage.getItem(planKey)!==null){$("planning-recovery").open=true;$("plan-status").textContent="A saved plan is available in this tab. Restore it explicitly or forget it; the current setup is unchanged.";}
+  } catch { $("plan-status").textContent="Session storage is unavailable. Use the setup link for supported choices instead."; }
+  $("choose-architecture").onclick=()=>{
+    if(isOperationBusy())return;
+    if(!guidedPicker||!guidedModel?.facetPresentation.platform){$("hardware-help-status").textContent="This experience does not offer an architecture question. Check its installation documentation before selecting an image.";return;}
+    guidedPicker.openQuestion("platform");$("guided-picker").scrollIntoView({block:"start"});
+  };
+}

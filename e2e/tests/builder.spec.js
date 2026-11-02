@@ -259,9 +259,10 @@ test.describe("iso builder", () => {
     });
 
     await page.locator("#build").click();
+    await page.locator("#review-create").click();
 
     await expect(page.locator("#stage")).toContainText(/Build failed — sink write error/i);
-    await expect(page.locator("#stage")).not.toContainText(/Done/);
+    await expect(page.locator("#stage")).not.toContainText(/ISO saved|download started/);
     await expect(page.locator("#postcard")).toBeHidden();
     await expect(page.locator("#fallbackcard")).toBeVisible();
     expect(await page.evaluate(() => Boolean(window.__sinkAborted))).toBe(true);
@@ -325,6 +326,7 @@ test.describe("iso builder", () => {
     });
 
     await page.locator("#build").click();
+    await page.locator("#review-create").click();
     await expect(page.locator("#stage")).toContainText("Authoring EROFS");
     await expect(page.locator("#bar")).toHaveJSProperty("value", 1);
     await expect(page.locator("#postcard")).toBeHidden();
@@ -334,7 +336,7 @@ test.describe("iso builder", () => {
     expect(await page.evaluate(() => window.tboxLayerCache.hasActiveLease())).toBe(true);
     await page.evaluate(() => window.__continueBuild());
 
-    await expect(page.locator("#stage")).toContainText(/Done/);
+    await expect(page.locator("#stage")).toContainText(/ISO saved|download started/);
     await expect(page.locator("#postcard")).toBeVisible();
     await expect(page.locator("#tab-etcher")).toContainText("USB");
     await page.getByRole("button", { name: "Terminal (dd)", exact: true }).click();
@@ -638,6 +640,7 @@ test.describe("iso builder", () => {
       const download = page.waitForEvent("download", { timeout: BUILD_WAIT_MS });
       const buildClickedAt = performance.now();
       await page.locator("#build").click();
+    await page.locator("#review-create").click();
       buildIdentity = await buildOperationIdentity(page);
       await shot(page, "05-building.png");
       dl = await Promise.race([download, buildWatch.promise]);
@@ -673,7 +676,7 @@ test.describe("iso builder", () => {
     fs.readSync(fd, buf, 0, 6, 16 * 2048);
     fs.closeSync(fd);
     expect(buf.toString("latin1", 1, 6)).toBe("CD001");
-    await expect(page.locator("#stage")).toContainText(/Done/, { timeout: 120_000 });
+    await expect(page.locator("#stage")).toContainText(/ISO saved|download started/, { timeout: 120_000 });
     const buildResult = await completedBuildResult(page, buildIdentity);
     const wallMs = performance.now() - wallStartedAt;
     const transfers = await registry.summary();

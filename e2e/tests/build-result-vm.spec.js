@@ -64,11 +64,11 @@ function app() {
   ].join("\n"), context);
   return { c: context, op, sink, trace, element };
 }
-function expectFailed({ op, element }) {
+function expectFailed({ op, element }, cancelled = false) {
   expect(op.state).toBe("failed");
   expect(op.buildResult).toBeNull();
   expect(op.outputDelivery).toBeNull();
-  expect(element("stage").textContent).toContain("Build failed");
+  expect(element("stage").textContent).toContain(cancelled ? "Save cancelled" : "Build failed");
   expect(element("postcard").classList.hidden).toBe(true);
 }
 
@@ -227,7 +227,7 @@ test.describe("app result lifecycle VM", () => {
           close() { throw new Error("export close failed"); },
         }) };
       };
-      await a.c.build(); expectFailed(a); expect(a.trace.downloads).toBe(0);
+      await a.c.build(); expectFailed(a, failure === "cancel"); expect(a.trace.downloads).toBe(0);
     });
   }
   test("unavailable picker retains a successful download-initiation fallback", async () => {
@@ -236,6 +236,9 @@ test.describe("app result lifecycle VM", () => {
     a.c.showSaveFilePicker = async () => { const e = new Error("picker unavailable"); e.name = "SecurityError"; throw e; };
     await a.c.build(); expect(a.op.state).toBe("completed");
     expect(a.op.outputDelivery).toEqual({ kind: "download", status: "initiated" });
+    expect(a.element("stage").textContent).toContain("download started");
+    expect(a.element("stage").textContent).not.toContain("ISO saved");
+    expect(a.element("delivery-status").textContent).toContain("cannot confirm");
     expect(a.trace.downloads).toBe(1); expect(a.op.buildResult).toEqual(observedBuildFixture());
   });
 });
