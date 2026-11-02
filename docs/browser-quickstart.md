@@ -120,3 +120,18 @@ The Bluefin preview links to its official
 [installation runbook](https://docs.projectbluefin.io/installation/).
 On 2026-11-02, that guide recommended `Fedora Media Writer` and did not support `Ventoy`.
 Use that guide for upstream media. This preview cannot create an installable Bluefin ISO.
+
+### Recovering a plan after refresh
+
+Use `Save planning choices for a refresh` to save a plan in this tab's session storage.
+You must select the restore action explicitly.
+The action checks the version, experience, catalog identity, selected leaf and each filter against the current catalog.
+It keeps only catalog choices, app requests, package names and an uppercase ISO label.
+
+The restore action does not restore build readiness, receipts or notice acknowledgements.
+Advanced images, commands and overrides for boot or connections prevent a save or restore.
+The action does not silently drop these values.
+Use `Forget saved plan` to clear stored data. It does not clear the current form.
+
+If storage fails, the form stays unchanged.
+This temporary UI state is not a separate configuration source or a portable TOML format.

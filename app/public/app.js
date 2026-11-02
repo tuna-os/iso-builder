@@ -1815,7 +1815,7 @@ function refreshGuidedPicker() {
     });
     guidedError=null; guidedModel=model;
     if(guidedPicker) guidedPicker.refresh(model);
-    else guidedPicker=globalThis.TboxGuidedPicker.mount(container,{model,simpleStart:!new URLSearchParams(location.search).has("image") && !new URLSearchParams(location.search).has("variant"),onSelection:(leaf,state)=>{
+    else guidedPicker=globalThis.TboxGuidedPicker.mount(container,{model,projectName:BUILDER_CONFIG.brand.name,simpleStart:!new URLSearchParams(location.search).has("image") && !new URLSearchParams(location.search).has("variant"),onSelection:(leaf,state)=>{
       if(isOperationBusy()) return;
       selectedDdi=null; manualImageMode=false; selectionWasExplicit=state.origin==="explicit";
       const previous=$("image").value;
@@ -2132,3 +2132,50 @@ globalThis.switchTab = (e, id) => {
     content.classList.toggle("hidden", content.id !== `tab-${id}`);
   }
 };
+
+// Deliberate, tab-local recovery; never save arbitrary form values on change.
+if (document.querySelector) {
+  const planKey = `tbox-planning-v1:${globalThis.TboxExperiences.id}`;
+  const planContext = () => {
+    if (!guidedModel || !guidedPicker) throw new Error("Planning recovery needs the current guided catalog. Your setup has not changed.");
+    return {model:guidedModel,experience:globalThis.TboxExperiences.id,catalog:globalThis.TboxGuidedCatalog,validFlatpakId};
+  };
+  const noOverrides = () => {
+    if (manualImageMode || selectedDdi || repoCmds.length || $("initrdurl").value.trim() || ($("shimurl").value.trim() && $("shimurl").value.trim() !== "https://relay.tunaos.org")) {
+      throw new Error("This setup has advanced values that cannot be saved or replaced by a planning draft. Keep your original configuration; clear those overrides explicitly before using recovery.");
+    }
+  };
+  const planningAction = action => {
+    if (isOperationBusy()) { $("plan-status").textContent="Finish the current operation before changing saved plans."; return; }
+    try { action(); } catch(error) { $("plan-status").textContent=error.message; }
+  };
+  $("save-plan").onclick=()=>planningAction(()=>{
+    noOverrides();const context=planContext();const state=guidedPicker.getState();
+    const value={version:1,experience:context.experience,catalogId:guidedModel.catalogId,snapshotDigest:guidedModel.snapshotDigest,pathId:state.pathId,filters:state.filters,leafId:state.selectedLeafId,flatpaks:fpCollect(),packages:pkgCollect(),label:$("label").value};
+    globalThis.TboxSetupDraft.validate(value,context);globalThis.TboxSetupSafety.assertPortable(value);
+    sessionStorage.setItem(planKey,JSON.stringify(value));
+    $("plan-status").textContent="Planning choices saved in this tab. Restore them after a refresh; no build or save result is stored.";
+  });
+  $("restore-plan").onclick=()=>planningAction(()=>{
+    noOverrides();const text=sessionStorage.getItem(planKey);if(text===null)throw new Error("No saved plan in this tab.");
+    const {value,state}=globalThis.TboxSetupDraft.parse(text,planContext());
+    globalThis.TboxSetupSafety.assertPortable(value);
+    guidedPicker.restoreValidatedState(state);
+    fpItems.clear();for(const id of value.flatpaks)fpItems.set(id,{checked:true,...fpMetadata()});fpDefaults.edit(value.flatpaks);fpRender();
+    pkgItems.clear();for(const id of value.packages)pkgItems.set(id,{checked:true,summary:""});pkgRender();
+    $("label").value=value.label;
+    invalidateOperation("planning-draft-restored");updateShare();
+    $("plan-status").textContent="Planning choices restored. Review your target and any notices, then check the image again. Nothing has been built.";
+  });
+  $("forget-plan").onclick=()=>planningAction(()=>{
+    sessionStorage.removeItem(planKey);$("plan-status").textContent="Saved plan forgotten. Your current form is unchanged.";
+  });
+  try {
+    if(sessionStorage.getItem(planKey)!==null){$("planning-recovery").open=true;$("plan-status").textContent="A saved plan is available in this tab. Restore it explicitly or forget it; the current setup is unchanged.";}
+  } catch { $("plan-status").textContent="Session storage is unavailable. Use the setup link for supported choices instead."; }
+  $("choose-architecture").onclick=()=>{
+    if(isOperationBusy())return;
+    if(!guidedPicker||!guidedModel?.facetPresentation.platform){$("hardware-help-status").textContent="This experience does not offer an architecture question. Check its installation documentation before selecting an image.";return;}
+    guidedPicker.openQuestion("platform");$("guided-picker").scrollIntoView({block:"start"});
+  };
+}

@@ -38,16 +38,34 @@
       for(const facet of currentPath().facets){if(state.filters[facet])continue;const values=[...new Set(candidates.flatMap(l=>l.facets[facet]||[]))];if(values.length===1 && candidates.every(leaf=>leaf.facets[facet]?.length===1 && leaf.facets[facet][0]===values[0]))facts.append(el('li',`${model.facetPresentation[facet].label}: ${label(facet,values[0])}`));}
       if(facts.children.length)parent.append(facts);
     }
-    function leafCard(leaf) {
+    function previewImage(card, parent, className) {
+      const image=el('img');image.src=card.image_url;image.alt=card.image_alt;image.loading='lazy';
+      if(className)image.className=className;
+      image.addEventListener('error',()=>{
+        image.hidden=true;parent.classList.add('artwork-unavailable');
+        const note=el('p','Preview image unavailable. You can still review the text and choose a setup.','preview-unavailable');
+        parent.append(note);
+      },{once:true});
+      parent.append(image);return image;
+    }
+    function leafCard(leaf, compact = false) {
       const card=el('article',undefined,'guided-leaf');card.dataset.leafId=leaf.id;
       const names=['family','base','desktop','edition','hardware','platform'].flatMap(f=>leaf.facets[f]?.map(v=>label(f,v))||[]);
-      card.append(el('h3',names.join(' · ')));
+      card.append(el('h3',compact ? `${options.projectName || 'Your system'} · ${(leaf.facets.desktop || []).map(value=>label('desktop',value)).join(' / ')}` : names.join(' · ')));
+      for(const desktop of leaf.facets.desktop||[]) {
+        const presentation=model.facetPresentation.desktop?.values.find(value=>value.id===desktop);
+        if(presentation?.description)card.append(el('p',presentation.description,'helper'));
+        if(presentation?.card){
+          const figure=el('figure',undefined,'desktop-preview');previewImage(presentation.card,figure);
+          figure.append(el('figcaption','Desktop preview supplied by this deployment. It is not evidence that this image was built or tested.','helper'));card.append(figure);
+        }
+      }
       const qualification=leaf.source.kind==='preview'?{text:'Preview only — no inspection or ISO creation.'}:options.qualification?.(leaf.entry)||{text:'Browser build not yet verified.'};
       card.append(el('p',qualification.text,'helper'));
       const required=leaf.notices.filter(n=>n.requiresAcknowledgement);
       const accepted=()=>required.every(n=>acknowledgements.get(leaf.evidenceKey)?.has(n.code));
       for(const notice of leaf.notices){const p=el('p',notice.text,'note');if(notice.sourceUrl){p.append(' ',Object.assign(el('a','Details'),{href:notice.sourceUrl,target:'_blank',rel:'noopener'}));}card.append(p);}
-      const details=el('details');details.append(el('summary','Image details'));details.append(el('code',leaf.entry?.publication?.ref||leaf.source.ref));card.append(details);
+      const details=el('details');details.append(el('summary','Image details'));if(compact)details.append(el('p',names.join(' · ')));details.append(el('code',leaf.entry?.publication?.ref||leaf.source.ref));card.append(details);
       const use=button(state.selectedLeafId===leaf.id?'Selected image':'Use this image',()=>transition(api.selectLeaf(model,state,leaf.id),'guided-selection-summary'),'guided-use');use.disabled=!leaf.selectable||!accepted();use.setAttribute('aria-pressed',String(state.selectedLeafId===leaf.id));card.append(use);
       for(const notice of required){const row=el('label',undefined,'guided-ack');const check=el('input');check.type='checkbox';check.id='guided-ack-'+leaf.id.replace(/[^a-z0-9-]/g,'-')+'-'+notice.code;check.checked=acknowledgements.get(leaf.evidenceKey)?.has(notice.code)||false;check.addEventListener('change',()=>{const set=acknowledgements.get(leaf.evidenceKey)||new Set();check.checked?set.add(notice.code):set.delete(notice.code);acknowledgements.set(leaf.evidenceKey,set);use.disabled=!leaf.selectable||!accepted();publish();render(check.id);});row.append(check,document.createTextNode('I understand: '+notice.text));card.insertBefore(row,use);}
       if(!leaf.selectable)card.append(el('p',leaf.unavailableReason,'note'));
@@ -61,7 +79,7 @@
         for (const rec of model.recommendations.slice(0,1)) {
           const leaf=model.leaves.find(item=>item.id===rec.leaf_id);
           container.append(el('p',rec.reason,'helper'));
-          if (leaf) container.append(leafCard(leaf));
+          if (leaf) container.append(leafCard(leaf,true));
           else container.append(el('p','The maintained starting point is unavailable. No substitute has been selected.','note'));
         }
         container.append(el('p','Choose for the computer you will install on. It may be different from the computer running this browser. A starting point is not an installation or compatibility guarantee.','helper'));
@@ -92,7 +110,7 @@
           const row=el('div',undefined,'guided-choice-wrap');const card=el('label',undefined,`guided-choice${choice.card?' guided-art-card':''}`);card.classList.toggle('is-selected',choice.selected);card.classList.toggle('is-disabled',choice.disabled);
           const input=el('input');input.type='radio';input.name=`guided-${facet}`;input.value=choice.id;input.checked=choice.selected;input.disabled=choice.disabled;input.id=`guided-choice-${step}-${index}`;
           input.addEventListener('change',()=>transition(api.chooseFacet(model,state,facet,choice.id),input.id));card.append(input);
-          if(choice.card){const img=el('img');img.src=choice.card.image_url;img.alt=choice.card.image_alt;img.loading='lazy';card.append(img);if(choice.card.badge)card.append(el('span',choice.card.badge,'guided-card-badge'));}
+          if(choice.card){previewImage(choice.card,card);if(choice.card.badge)card.append(el('span',choice.card.badge,'guided-card-badge'));}
           const copy=el('span',undefined,'guided-choice-copy');copy.append(el('strong',choice.label));if(choice.description)copy.append(el('span',choice.description));copy.append(el('small',choice.disabled?choice.reason:`${choice.count} matching ${choice.count===1?'image':'images'}`));card.append(copy);row.append(card);
           if(choice.disabled){const result=api.chooseFacet(model,state,facet,choice.id);if(result.conflict)row.append(button('Change related choices…',()=>transition(result,'guided-question')));}
           grid.append(row);
@@ -114,6 +132,15 @@
       getState:()=>state,
       getSelection:()=>suspended?null:selection(),
       refresh(nextModel){model=nextModel;state=api.refreshState(model,state);publish();render();},
+      restoreValidatedState(next){
+        if(busy)return;
+        state=next;step=0;conflict=null;suspended=false;choosing=true;
+        acknowledgements.clear();publish();render('guided-question');
+      },
+      openQuestion(facet){
+        if(busy)return;
+        choosing=true;step=Math.max(0,questions().indexOf(facet));render('guided-question');
+      },
       select(id){choosing=true;transition(api.selectLeaf(model,state,id),'guided-selection-summary');},
       suspend(){suspended=true;render();},
       setBusy(value){busy=Boolean(value);render();},
