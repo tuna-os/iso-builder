@@ -166,5 +166,6 @@ The same fixture passed at `aa70af0` and failed at `551c3f0` and `5112421`.
 Load the real module in `native/catalog_variants_test.go`; do not bypass the safety check or mock its result.
 The Go test compares the actual web output with the native loader.
 Run that test through the native suite; do not copy its fixture with source-pattern extraction.
-Likewise, exercise storage limits through the loaded app rather than slicing a function out of `app.js`.
+
+Test storage limits with the loaded app. Do not extract private functions from `app.js`.
 Source layout is not a consumer contract.
