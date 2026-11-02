@@ -154,3 +154,15 @@ Before the UI can promise installed apps, tacklebox and the primary configuratio
 
 The browser must show request-only status until that engine contract and its validation exist.
 Custom remote configuration must not silently become a shell command or expand registry/relay access.
+
+### Native catalog fixture fails before comparison
+
+The native test uses a Node VM to evaluate `app.js`.
+Its dependency list must include `setup-safety.js`.
+Without this module, `updateShare` throws `TypeError: $(...).removeAttribute is not a function` in the minimal DOM fixture.
+The fixture then exits before it compares catalog coverage.
+
+The same fixture passed at `aa70af0` and failed at `551c3f0` and `5112421`.
+Load the real module in `native/catalog_variants_test.go`; do not bypass the safety check or mock its result.
+The Node test `tests/native-catalog-harness.test.cjs` runs this exact fixture without a GUI toolchain.
+The Go test still compares the web output with the native loader.
