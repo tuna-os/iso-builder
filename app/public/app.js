@@ -1340,9 +1340,10 @@ async function isoSink(name) {
 
 const MIN_FREE_GB = 9.5;
 async function checkStorageQuota(op = currentOp) {
-  if (!navigator.storage?.estimate) return { freeGB: Infinity, blocked: false };
+  if (!navigator.storage?.estimate) return { freeGB: null, blocked: false };
   try {
     const { quota, usage } = await navigator.storage.estimate();
+    if (!Number.isFinite(quota) || !Number.isFinite(usage)) return { freeGB: null, blocked: false };
     const freeGB = (quota - usage) / 1e9;
     if (freeGB < MIN_FREE_GB) {
       log(`warning: only ${freeGB.toFixed(1)} GB free of ${(quota / 1e9).toFixed(1)} GB quota — some editions may not fit`);
@@ -1354,7 +1355,7 @@ async function checkStorageQuota(op = currentOp) {
     }
     return { freeGB, blocked: false };
   } catch {
-    return { freeGB: Infinity, blocked: false };
+    return { freeGB: null, blocked: false };
   }
 }
 
@@ -1388,6 +1389,17 @@ async function finishIsoSink(s, name) {
   // The page cannot observe persistence of an <a download>. The diagnostic
   // collector independently saves and hashes its download before joining it.
   return { kind: "download", status: "initiated" };
+}
+
+function showDeliveryStatus(delivery, bytes, seconds) {
+  const saved = delivery.kind === "picker" && delivery.status === "stream-closed";
+  const title = saved ? "ISO saved" : "ISO created — download started";
+  const detail = saved
+    ? "The file writer closed successfully."
+    : "Check your browser downloads and wait for the file to finish saving. This page cannot confirm that it was saved.";
+  $("stage").textContent = `${title} — ${(bytes / 1e9).toFixed(2)} GB created in ${seconds}s. ${detail}`;
+  $("delivery-status").textContent = detail;
+  notify(title, detail);
 }
 
 function prepareDdi(ch) {
@@ -1437,11 +1449,10 @@ async function buildDdi(ch) {
     }
     const t0 = performance.now();
     const bytes = await tboxBuildDdiIso({ base, stem: ch.stem, label, sdboot }, (u8) => s.w.write(u8));
-    await finishIsoSink(s, name);
+    const outputDelivery = await finishIsoSink(s, name);
     updatePostcardFilename(name);
     const dt = ((performance.now() - t0) / 1000).toFixed(1);
-    $("stage").textContent = `Done — ${(bytes / 1e9).toFixed(2)} GB in ${dt}s.`;
-    notify("ISO ready 🐟", `${(bytes / 1e9).toFixed(2)} GB written in ${dt}s`);
+    showDeliveryStatus(outputDelivery, bytes, dt);
     log(`iso written: ${bytes} bytes`);
     $("postcard").classList.remove("hidden");
   } catch (e) {
@@ -1452,6 +1463,8 @@ async function buildDdi(ch) {
     log("error: " + e);
     if (/QuotaExceededError|quota exceeded/i.test(String(e))) {
       $("stage").textContent = "Build failed — storage quota exceeded.";
+    } else if (e.name === "AbortError") {
+      $("stage").textContent = "Save cancelled — no completed save confirmed. Your setup is preserved; retry when ready.";
     } else if (/download stalled/i.test(String(e))) {
       $("stage").textContent = "Build failed — layer download stalled (try again; the browser may recover on a fresh page load).";
     } else {
@@ -1574,8 +1587,7 @@ async function build() {
     op.buildResult = pendingResult;
     op.outputDelivery = deepFreeze(outputDelivery);
     const dt = ((performance.now() - t0) / 1000).toFixed(1);
-    $("stage").textContent = `Done — ${(bytes / 1e9).toFixed(2)} GB in ${dt}s.`;
-    notify("ISO ready 🐟", `${(bytes / 1e9).toFixed(2)} GB written in ${dt}s`);
+    showDeliveryStatus(outputDelivery, bytes, dt);
     log(`iso written: ${bytes} bytes`);
     $("postcard").classList.remove("hidden");
   } catch (e) {
@@ -1591,6 +1603,8 @@ async function build() {
     if (/digest mismatch/.test(String(e))) log("a downloaded layer does not match its digest — clear it under Advanced → Clear downloaded layers, then try again");
     if (/QuotaExceededError|quota exceeded/i.test(String(e))) {
       $("stage").textContent = "Build failed — storage quota exceeded.";
+    } else if (e.name === "AbortError") {
+      $("stage").textContent = "Save cancelled — no completed save confirmed. Your setup is preserved; retry when ready.";
     } else if (/download stalled/i.test(String(e))) {
       $("stage").textContent = "Build failed — layer download stalled (try again; the browser may recover on a fresh page load).";
     } else if (/sink write/i.test(String(e))) {

@@ -119,13 +119,13 @@ async function readyPage(page, { autodl = false } = {}) {
     window.tboxResetAsync = async () => null;
   }, observedBuildFixture());
 }
-async function success(page) {
+async function success(page, download = false) {
   await page.locator("#build").click();
-  await expect(page.locator("#stage")).toContainText("Done");
+  await expect(page.locator("#stage")).toContainText(download ? "download started" : "ISO saved");
   expect(await completedBuildResult(page)).toEqual(observedBuildFixture());
 }
-async function failed(page) {
-  await expect(page.locator("#stage")).toContainText("Build failed");
+async function failed(page, cancelled = false) {
+  await expect(page.locator("#stage")).toContainText(cancelled ? "Save cancelled" : "Build failed");
   await expect(page.locator("#postcard")).toBeHidden();
   expect(await page.evaluate(() => window.tboxCurrentOperation.buildResult)).toBeNull();
   expect(await page.evaluate(() => window.tboxCurrentOperation.state)).toBe("failed");
@@ -144,7 +144,7 @@ test.describe("browser result lifecycle", () => {
       window.__fixture.observedInputs.source.manifestDigest = "mutated after return";
       window.__resumeClose();
     });
-    await expect(page.locator("#stage")).toContainText("Done");
+    await expect(page.locator("#stage")).toContainText("ISO saved");
     expect(await completedBuildResult(page)).toEqual(observedBuildFixture());
     expect(await page.evaluate(() => window.tboxCurrentOperation.outputDelivery)).toEqual({ kind: "picker", status: "stream-closed" });
     expect(await page.evaluate(() => ({ legacy: window.__legacyCalls, result: window.__resultCalls,
@@ -159,7 +159,7 @@ test.describe("browser result lifecycle", () => {
         else window.tboxBuildIsoWithResult = {};
       }, absent);
       await page.locator("#build").click();
-      await expect(page.locator("#stage")).toContainText("Done");
+      await expect(page.locator("#stage")).toContainText("ISO saved");
       expect(await completedBuildResult(page)).toBeNull();
       expect(await page.evaluate(() => window.__legacyCalls)).toBe(1);
     });
@@ -255,14 +255,14 @@ test.describe("browser result lifecycle", () => {
         };
       }, failure);
       await page.locator("#build").click();
-      await failed(page);
+      await failed(page, failure === "cancel");
     });
   }
   test("unavailable OPFS export picker falls back to download initiation, without a saved-file claim", async ({ page }) => {
     await readyPage(page, { autodl: true });
     await page.evaluate(() => { window.showSaveFilePicker = async () => { throw new DOMException("unavailable", "SecurityError"); }; });
     const downloading = page.waitForEvent("download");
-    await success(page);
+    await success(page, true);
     const download = await downloading;
     expect(await page.evaluate(() => window.tboxCurrentOperation.outputDelivery))
       .toEqual({ kind: "download", status: "initiated" });
@@ -272,7 +272,7 @@ test.describe("browser result lifecycle", () => {
     await readyPage(page, { autodl: true });
     await page.evaluate(() => { delete window.showSaveFilePicker; });
     const downloading = page.waitForEvent("download");
-    await success(page);
+    await success(page, true);
     const download = await downloading;
     expect(await page.evaluate(() => window.tboxCurrentOperation.outputDelivery)).toEqual({ kind: "download", status: "initiated" });
     const filename = testInfo.outputPath("tiny-synthetic.iso");
