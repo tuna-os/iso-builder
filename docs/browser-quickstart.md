@@ -96,3 +96,21 @@ Neither message proves a checksum match, publisher identity, or a successful ins
 
 The page must show unknown quota as unknown.
 App choices are requests; the engine does not apply them to the system.
+
+### Starting point and review
+
+The first screen uses the recommendation in the deployment configuration.
+It never selects the first catalog entry as a substitute.
+Qualification remains separate. The page does not replace unavailable targets.
+
+Use `Help me choose / browse all setups` to open catalog choices.
+The base-first and desktop-first paths use the same catalog.
+Check the architecture of the installation target, not the browser host.
+
+Before you create media, review the target, temporary storage needs, and limits for app requests.
+Back or Escape keeps the form unchanged.
+On phones, use the setup link to move supported choices to a desktop.
+The link does not use cloud storage.
+
+This stage does not restore unsaved changes after refresh.
+It does not import TOML setups.

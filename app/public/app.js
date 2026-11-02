@@ -81,7 +81,7 @@ function applyBuilderBranding() {
 applyBuilderBranding();
 if(document.querySelector && globalThis.TboxExperiences) {
   const picker=document.querySelector("#experience");
-  for(const item of globalThis.TboxExperiences.entries) {const option=document.createElement("option");option.value=item.id;option.textContent=item.name;picker.appendChild(option);}
+  for(const item of globalThis.TboxExperiences.entries) {const option=document.createElement("option");option.value=item.id;option.textContent=item.name + (item.previewOnly ? " — preview only" : "");picker.appendChild(option);}
   picker.value=globalThis.TboxExperiences.id;
   picker.addEventListener("change",()=>{
     if(isOperationBusy()){picker.value=globalThis.TboxExperiences.id;return;}
@@ -619,7 +619,9 @@ globalThis.tboxOnProgress = (stage, i, n) => {
     esp: "Authoring EFI system partition…",
     iso: "Streaming ISO…",
   }[stage] || stage;
-  $("bar").max = n; $("bar").value = i;
+  if (Number.isFinite(n) && n > 0 && Number.isFinite(i) && i >= 0) {
+    $("bar").max = n; $("bar").value = i;
+  } else $("bar").removeAttribute("value");
   lastProgressAt = Date.now();
 };
 
@@ -1661,7 +1663,15 @@ $("apps-options")?.addEventListener("toggle", () => {
     fpHydrateSelected();
   }
 });
-$("build").onclick = build;
+$("build").onclick = () => {
+  const review = $("build-review");
+  $("review-target").textContent = `${$("image").value || selectedDdi?.name || "Selected image"} · ${currentPlatform()}`;
+  $("review-apps").textContent = `${fpCollect().length} app requests. These are not applied to the ISO or installed system.`;
+  review.showModal();
+  $("review-back").focus();
+};
+$("review-back").onclick = () => $("build-review").close();
+$("review-create").onclick = () => { $("build-review").close(); build(); };
 $("curated").onclick = loadCuratedSet;
 renderCuratedSets(null);
 $("addrepo").onclick = addRepo;
@@ -1764,7 +1774,7 @@ function refreshGuidedPicker() {
     });
     guidedError=null; guidedModel=model;
     if(guidedPicker) guidedPicker.refresh(model);
-    else guidedPicker=globalThis.TboxGuidedPicker.mount(container,{model,onSelection:(leaf,state)=>{
+    else guidedPicker=globalThis.TboxGuidedPicker.mount(container,{model,simpleStart:!new URLSearchParams(location.search).has("image") && !new URLSearchParams(location.search).has("variant"),onSelection:(leaf,state)=>{
       if(isOperationBusy()) return;
       selectedDdi=null; manualImageMode=false; selectionWasExplicit=state.origin==="explicit";
       const previous=$("image").value;
