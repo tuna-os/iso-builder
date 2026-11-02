@@ -86,40 +86,52 @@ installation to validate this guide.
 
 ### Interpreting output delivery
 
-`ISO saved` means the file writer closed successfully. `Download started`
-means the browser accepted a download request; the page cannot confirm its
-completion or persistence. Check the browser download list before writing media.
-Cancellation or a failed write must not show the installation card. Neither
-message is a checksum of the saved file, publisher authentication, or an
-installation test. Unknown browser quota is reported as unknown, not unlimited.
-App selections remain requests and are not applied to the resulting system.
+`ISO saved` means the writer closed the file without an error.
+`Download started` means the browser accepted a download request.
+The page cannot confirm that the download finished or that the file persists.
+Check the download list in your browser before you write media.
+
+If a user cancels a save, or a write fails, the page must hide the installation card.
+Neither message proves a checksum match, publisher identity, or a successful installation.
+
+The page must show unknown quota as unknown.
+App choices are requests; the engine does not apply them to the system.
 
 ### Starting point and review
 
-The first screen uses the deployment's maintained recommendation, never the
-first catalog entry. Qualification remains separate and unavailable targets
-are not replaced. Use “Help me choose / browse all setups” for the existing
-base-first and desktop-first paths. Check the architecture of the installation
-target, not the browser host. Before creating media, review the target, temporary
-storage needs, and application-request limitations. Back or Escape preserves
-the form. On phones, use the existing setup link for supported choices on a
-desktop; it is not cloud storage. Unsaved refresh recovery and importing complete
-TOML setups are not implemented by this stage.
+The first screen uses the recommendation in the deployment configuration.
+It never selects the first catalog entry as a substitute.
+Qualification remains separate. The page does not replace unavailable targets.
 
-Writer guidance is experience-specific. The Bluefin preview links its official
-[installation runbook](https://docs.projectbluefin.io/installation/), which on
-2026-11-02 recommends Fedora Media Writer and marks Ventoy unsupported. This
-is guidance for obtaining and writing upstream media, not a claim that this
-preview can create an installable Bluefin ISO.
+Use `Help me choose / browse all setups` to open catalog choices.
+The base-first and desktop-first paths use the same catalog.
+Check the architecture of the installation target, not the browser host.
+
+Before you create media, review the target, temporary storage needs, and limits for app requests.
+Back or Escape keeps the form unchanged.
+On phones, use the setup link to move supported choices to a desktop.
+The link does not use cloud storage.
+
+This stage does not restore unsaved changes after refresh.
+It does not import TOML setups.
+
+The guidance for USB writers depends on the experience.
+The Bluefin preview links to its official
+[installation runbook](https://docs.projectbluefin.io/installation/).
+On 2026-11-02, that guide recommended `Fedora Media Writer` and did not support `Ventoy`.
+Use that guide for upstream media. This preview cannot create an installable Bluefin ISO.
 
 ### Recovering a plan after refresh
 
-Use “Save planning choices for a refresh” to save a plan in this tab's session
-storage. Restoration is explicit and validates the version, experience, catalog
-identity, selected leaf and every filter against the current catalog. It keeps
-only catalog choices, app requests, package names and an uppercase ISO label.
-Build readiness, receipts and notice acknowledgements are never restored.
-Advanced images, commands and boot/connection overrides block saving or restoring
-rather than being silently dropped. “Forget saved plan” clears only stored data,
-not the current form. Storage failures leave the form untouched. This temporary
-UI state is not an additional configuration source or a portable TOML format.
+Use `Save planning choices for a refresh` to save a plan in this tab's session storage.
+You must select the restore action explicitly.
+The action checks the version, experience, catalog identity, selected leaf and each filter against the current catalog.
+It keeps only catalog choices, app requests, package names and an uppercase ISO label.
+
+The restore action does not restore build readiness, receipts or notice acknowledgements.
+Advanced images, commands and overrides for boot or connections prevent a save or restore.
+The action does not silently drop these values.
+Use `Forget saved plan` to clear stored data. It does not clear the current form.
+
+If storage fails, the form stays unchanged.
+This temporary UI state is not a separate configuration source or a portable TOML format.
