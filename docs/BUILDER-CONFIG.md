@@ -70,3 +70,24 @@ local files with OFL notices; the browser makes no external request for fonts.
 
 Flatpak search uses real Flathub metadata. Configuration does not add arbitrary
 remotes. Transport trust and operation receipts remain engine concerns.
+
+## Customization boundaries in the browser
+
+The advanced form edits BuildRequest options, not the complete primary TOML.
+It has no TOML parser or lossless document model. Do not add a partial TOML
+importer that silently drops unknown or advanced fields. A future editor needs
+the primary schema/validator, preservation of unsupported values and comments,
+explicit trust decisions for remotes, and negative round-trip fixtures before
+it can claim parity with the form. Generated deployment assets remain read-only.
+
+Adding a repository or raw setup command requires acknowledgement for each
+entry; changing the input resets it. Repository identifiers reject shell syntax.
+Raw commands remain explicit advanced inputs, never imported from shared links.
+The portable-value check rejects private-key headers, common credential
+assignments and URLs containing user information, queries or fragments. This is
+not a general secret detector; users must still keep secrets out of configuration.
+Share links intentionally omit commands and trust-sensitive connection overrides.
+BuildRequest export preserves supported advanced options and refuses detected
+credentials rather than silently deleting them. It is engine transport, not a
+new configuration source of truth. Custom Flatpak remotes and full TOML editing
+remain unimplemented; the app picker still records requests only.

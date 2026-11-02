@@ -53,6 +53,13 @@ function applyBuilderBranding() {
   }
   document.querySelector("h1").textContent = config.presentation.headline;
   document.querySelector("#builder-intro").textContent = config.presentation.intro;
+  const guide=document.querySelector("#installation-guide");
+  guide.href=brand.documentation_url || brand.homepage_url;
+  guide.textContent=`${brand.name} installation documentation`;
+  if (globalThis.TboxExperiences?.id === "bluefin") {
+    guide.href="https://docs.projectbluefin.io/installation/";
+    document.querySelector("#writer-policy").textContent="Bluefin recommends Fedora Media Writer; Ventoy is unsupported. This experience is a preview and does not create Bluefin installation media.";
+  }
   const disclaimer=document.querySelector("#builder-disclaimer");
   disclaimer.textContent=brand.disclaimer || ""; disclaimer.hidden=!brand.disclaimer;
   document.querySelector("#label").value=config.output.volume_label;
@@ -535,6 +542,7 @@ function repoRender() {
     const label = document.createElement("label");
     const rm = Object.assign(document.createElement("button"), { type: "button", textContent: "✕" });
     rm.className = "secondary";
+    rm.setAttribute("aria-label", `Remove setup command ${i + 1}`);
     rm.style.cssText = "padding:0 .4rem;font-size:.75rem";
     rm.onclick = () => { repoCmds.splice(i, 1); repoRender(); };
     label.appendChild(rm);
@@ -550,6 +558,18 @@ function addRepo() {
   const kind = $("repokind").value;
   const ref = $("reporef").value.trim();
   if (!ref) return;
+  const error = $("repo-error");
+  if (!$("repo-trust").checked) {
+    error.textContent = "Confirm you trust this source and have reviewed the command before adding it.";
+    $("repo-trust").focus(); return;
+  }
+  try { globalThis.TboxSetupSafety.assertPortable(ref); }
+  catch (e) { error.textContent=e.message; $("reporef").focus(); return; }
+  if (kind !== "raw" && !/^[A-Za-z0-9][A-Za-z0-9._:/+-]*$/.test(ref)) {
+    error.textContent="Use a repository identifier without spaces or shell syntax.";
+    $("reporef").focus(); return;
+  }
+  error.textContent="";
   let cmd;
   switch (kind) {
     case "copr": cmd = `dnf -y copr enable ${ref}`; break;
@@ -558,6 +578,7 @@ function addRepo() {
     default: cmd = ref;
   }
   repoCmds.push(cmd);
+  $("repo-trust").checked=false;
   $("reporef").value = "";
   repoRender();
 }
@@ -1069,7 +1090,11 @@ globalThis.tboxGetBuildRequest = () => {
   return currentOp.request;
 };
 
-globalThis.tboxExportBuildRequestJSON = () => JSON.stringify(globalThis.tboxGetBuildRequest(), null, 2);
+globalThis.tboxExportBuildRequestJSON = () => {
+  const request=globalThis.tboxGetBuildRequest();
+  globalThis.TboxSetupSafety.assertPortable(request);
+  return JSON.stringify(request, null, 2);
+};
 
 function renderFactsBadges(fObj, op) {
   const f = $("facts");
@@ -1472,7 +1497,7 @@ async function buildDdi(ch) {
     } else {
       $("stage").textContent = "Build failed.";
     }
-    notify("ISO build failed", String(e).slice(0, 120));
+    notify(e.name === "AbortError" ? "Save cancelled" : "ISO build failed", String(e).slice(0, 120));
   } finally {
     stopWatch();
     releaseLease();
@@ -1615,7 +1640,7 @@ async function build() {
       $("stage").textContent = "Build failed.";
     }
     renderFallbackCard(op, `Browser build failed (${String(e)}). Build this exact target locally with tacklebox purebuild:`);
-    notify("ISO build failed", String(e).slice(0, 120));
+    notify(e.name === "AbortError" ? "Save cancelled" : "ISO build failed", String(e).slice(0, 120));
   } finally {
     stopWatch();
     releaseLease();
@@ -1640,11 +1665,18 @@ function updateShare() {
   const pk = pkgCollect();
   if (pk.length) p.set("packages", pk.join(","));
   if ($("label").value && $("label").value !== BUILDER_CONFIG.output.volume_label) p.set("label", $("label").value);
-  if ($("initrdurl").value) p.set("initrd", $("initrdurl").value);
-  if ($("shimurl").value && $("shimurl").value !== "https://relay.tunaos.org") p.set("shim", $("shimurl").value);
+  // Trust-sensitive overrides are intentionally not portable URL inputs.
   const qs = "?" + p.toString();
   $("share").textContent = qs;
-  $("sharelink").href = location.origin + location.pathname + qs;
+  try {
+    globalThis.TboxSetupSafety.assertPortable(Object.fromEntries(p));
+    $("sharelink").href = location.origin + location.pathname + qs;
+    $("copyshare").disabled=false;
+  } catch (error) {
+    $("share").textContent=error.message;
+    $("sharelink").removeAttribute("href");
+    $("copyshare").disabled=true;
+  }
 }
 
 $("introspect").onclick = async () => {
@@ -1675,6 +1707,9 @@ $("review-create").onclick = () => { $("build-review").close(); build(); };
 $("curated").onclick = loadCuratedSet;
 renderCuratedSets(null);
 $("addrepo").onclick = addRepo;
+for (const id of ["reporef", "repokind"]) $(id).addEventListener("input", () => {
+  $("repo-trust").checked=false; $("repo-error").textContent="";
+});
 $("pkgsearch").addEventListener("input", (e) => {
   clearTimeout(pkgTimer);
   pkgTimer = setTimeout(() => pkgSearch(e.target.value.trim()), 350);
@@ -1686,7 +1721,10 @@ $("copyshare").onclick = async () => {
 };
 if ($("downloadrequest")) {
   $("downloadrequest").onclick = () => {
-    const json = globalThis.tboxExportBuildRequestJSON();
+    let json;
+    try { json=globalThis.tboxExportBuildRequestJSON(); }
+    catch(error) { $("export-error").textContent=error.message; return; }
+    $("export-error").textContent="";
     const blob = new Blob([json + "\n"], { type: "application/json" });
     const url = URL.createObjectURL(blob);
     const a = Object.assign(document.createElement("a"), { href: url, download: "build-request.json" });
@@ -1696,6 +1734,9 @@ if ($("downloadrequest")) {
 }
 if ($("copyfallback")) {
   $("copyfallback").onclick = async () => {
+    try { globalThis.tboxExportBuildRequestJSON(); }
+    catch(error) { $("export-error").textContent=error.message; return; }
+    $("export-error").textContent="";
     const payload = `cat <<'EOF' > build-request.json\n${globalThis.tboxExportBuildRequestJSON()}\nEOF\ntacklebox purebuild --request build-request.json`;
     await navigator.clipboard.writeText(payload);
     $("copyfallback").textContent = "Copied!";

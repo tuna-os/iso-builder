@@ -105,3 +105,9 @@ storage needs, and application-request limitations. Back or Escape preserves
 the form. On phones, use the existing setup link for supported choices on a
 desktop; it is not cloud storage. Unsaved refresh recovery and importing complete
 TOML setups are not implemented by this stage.
+
+Writer guidance is experience-specific. The Bluefin preview links its official
+[installation runbook](https://docs.projectbluefin.io/installation/), which on
+2026-11-02 recommends Fedora Media Writer and marks Ventoy unsupported. This
+is guidance for obtaining and writing upstream media, not a claim that this
+preview can create an installable Bluefin ISO.
