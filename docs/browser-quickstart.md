@@ -114,3 +114,9 @@ The link does not use cloud storage.
 
 This stage does not restore unsaved changes after refresh.
 It does not import TOML setups.
+
+The guidance for USB writers depends on the experience.
+The Bluefin preview links to its official
+[installation runbook](https://docs.projectbluefin.io/installation/).
+On 2026-11-02, that guide recommended `Fedora Media Writer` and did not support `Ventoy`.
+Use that guide for upstream media. This preview cannot create an installable Bluefin ISO.

@@ -214,8 +214,8 @@
   [data-choice-style="thumbnail"] .guided-art-card input {position:absolute;left:12px;top:12px;}
   [data-choice-style="thumbnail"] .guided-choice-copy {text-align:center;align-items:center;padding:0 12px;color:var(--fg);}
   [data-choice-style="thumbnail"] .guided-choice-copy small {color:var(--dim);}
-  .guided-ack {display:flex;align-items:flex-start;gap:.6rem;margin:1rem 0;font-weight:400;}
-  .guided-ack input {width:1.2rem;height:1.2rem;flex:none;margin-top:.2rem;}
+  .guided-ack, .repo-trust-row {display:flex;align-items:flex-start;gap:.6rem;margin:1rem 0;font-weight:400;}
+  .guided-ack input, .repo-trust-row input {width:1.2rem;height:1.2rem;flex:none;margin-top:.2rem;}
   .experience-switcher {margin-bottom:1.5rem;}
   .experience-switcher select {max-width:100%;min-height:44px;font:inherit;color:var(--fg);background:var(--panel);border:1px solid var(--border);border-radius:6px;padding:.5rem;}
   .experience-switcher .helper {font-size:.8rem;margin:.3rem 0;}
@@ -238,6 +238,10 @@
   <h1>Make your own image</h1>
   <p id="builder-intro" class="sub"></p>
   <p id="builder-disclaimer" class="note" hidden></p>
+  <details><summary>Installation and USB writer guidance</summary>
+    <p id="writer-policy" class="helper">Follow the selected system’s writer and hardware guidance. A tool working for one system does not establish support for another.</p>
+    <a id="installation-guide" href="#">Installation documentation</a>
+  </details>
   <ol class="journey" aria-label="Build steps"><li>1. Choose your system</li><li>2. Check the target computer</li><li>3. Personalize <span>(optional)</span></li><li>4. Review &amp; create</li><li>5. Save &amp; install</li></ol>
 
   <p class="helper mobile-planning">Planning on a phone? Choose a setup here, then use the setup link below to continue on a desktop. The link carries supported choices; it does not upload files or create a cloud account.</p>
@@ -301,6 +305,10 @@
     <h2 id="review-heading">Check your image</h2>
     <p class="helper">We’ll check whether this image can be built in your browser before starting a download.</p>
     <details id="advanced-options"><summary>Advanced settings</summary>
+      <details><summary>Configuration source (TOML)</summary>
+        <p class="helper">Branding, catalog choices and defaults come from the primary <code>tunaos.toml</code> configuration and its validated export. This form edits a build request; it is not a complete TOML editor.</p>
+        <p class="helper">TOML import and lossless editing are not available here yet. Keep your original TOML, including advanced fields. Fork maintainers should use the <a href="https://github.com/tuna-os/iso-builder/blob/main/docs/BUILDER-CONFIG.md">configuration export workflow</a>. BuildRequest JSON is engine transport, not a replacement configuration.</p>
+      </details>
       <p class="helper">The defaults work for most people. Only change these if you need a specific system setup.</p>
       <label for="label">USB image name</label>
       <input type="text" id="label" value="" spellcheck="false">
@@ -313,6 +321,9 @@
 
       </details>
       <details><summary>Add a repository or setup command</summary>
+      <p class="helper">These are advanced setup commands, not verified app sources. Review their effects and trust the publisher. Never enter private keys or tokens.</p>
+      <label class="repo-trust-row"><input type="checkbox" id="repo-trust">I trust this source and have reviewed this command.</label>
+      <p id="repo-error" role="alert"></p>
       <div class="repohelp">
         <select id="repokind" aria-label="Repository type">
           <option value="copr">Fedora COPR</option>
@@ -377,6 +388,7 @@
       <button type="button" id="downloadrequest" class="secondary">Download build-request.json</button>
       <button type="button" id="copyfallback" class="secondary">Copy command &amp; request</button>
     </div>
+    <p id="export-error" role="alert"></p>
     <details style="margin-top:.6rem">
       <summary>Inspect BuildRequest v1 JSON</summary>
       <pre style="padding:.6rem;overflow-x:auto;margin:.4rem 0;font:12px var(--mono)"><code id="fallbackjson">{}</code></pre>
@@ -437,7 +449,7 @@
     </div>
   </div>
 
-  <details class="share-options"><summary>Share this setup</summary><p class="sub" style="margin-top:1rem">Share a preset:
+  <details class="share-options"><summary>Share this setup</summary><p class="helper">The link includes the supported image, platform, app requests, packages and label. It excludes setup commands, boot-file and relay overrides, branding and TOML fields. Keep the original configuration for a complete setup. Do not put secrets in shared values.</p><p class="sub" style="margin-top:1rem">Share a preset:
     <a id="sharelink" href="#" style="word-break:break-all"><code id="share">?image=…</code></a>
     <button id="copyshare" class="secondary" style="padding:.2rem .6rem;font-size:.8rem;margin-left:.4rem">Copy</button>
   </p></details>
@@ -453,6 +465,7 @@
 <script src="experience-data.js"></script>
 <script src="experiences.js"></script>
 <script src="flatpak-defaults.js"></script>
+<script src="setup-safety.js"></script>
 <script src="app.js"></script>
 </body>
 </html>
