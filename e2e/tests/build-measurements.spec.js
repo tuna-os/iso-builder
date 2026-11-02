@@ -4,6 +4,7 @@ const path = require("node:path");
 const os = require("node:os");
 const crypto = require("node:crypto");
 const vm = require("node:vm");
+const { execFileSync } = require("node:child_process");
 const { observedBuildFixture } = require("./observed-build-fixture");
 const {
   observeLoadedWasm,
@@ -12,6 +13,13 @@ const {
   buildOperationIdentity,
   completedBuildResult,
   diagnosticRecord,
+  observeConsumedBuildInputs,
+  completedInputMeasurements,
+  observeFrontendResponses,
+  producerEnvironment,
+  browserObservedInputRecord,
+  captureExecutingSource,
+  finalizeExecutingSource,
 } = require("./build-measurements");
 
 // An empty, valid WebAssembly module. It performs no build or network work.
@@ -474,6 +482,635 @@ test.describe("diagnostic record validation", () => {
       expect(() => diagnosticRecord(input)).toThrow(/Chromium version/);
     });
   }
+});
+
+test.describe("consumed request observation fixtures", () => {
+  test("persists only public asset paths and constant failure reasons", async () => {
+    const { EventEmitter } = require("node:events");
+    const page = new EventEmitter();
+    const frame = {};
+    page.mainFrame = () => frame;
+    page.url = () => "https://frontend.invalid/?token=navigation-secret";
+    const observer = observeFrontendResponses(page);
+    const responseBytes = Buffer.from("observed public app bytes");
+    const emit = (url, fail = false) => page.emit("requestfinished", {
+      frame: () => frame, resourceType: () => "script", url: () => url,
+      method: () => "GET", redirectedFrom: () => null, redirectedTo: () => null,
+      response: async () => ({ status: () => 200, body: async () => {
+        if (fail) throw new Error(`request failed: ${url}`);
+        return responseBytes;
+      } }),
+    });
+    emit("https://user:password@frontend.invalid/app.js?signature=signed-secret");
+    emit("https://frontend.invalid/wasm_exec.js?token=failed-secret", true);
+    emit("https://elsewhere.invalid/secret-path.js?token=cross-origin-secret");
+    emit("https://frontend.invalid/private-secret-path.js?token=private-secret");
+    const summary = await observer.summary();
+    observer.stop();
+    expect(summary.files).toEqual([{ path: "/app.js", resourceType: "script",
+      sha256: digest(responseBytes), sizeBytes: responseBytes.length }]);
+    expect(summary.failures).toEqual(expect.arrayContaining([
+      { path: "/wasm_exec.js", reason: "frontend-response-body-unavailable" },
+      { path: null, reason: "non-public-or-cross-origin-frontend-response" },
+    ]));
+    for (const secret of ["password", "signed-secret", "failed-secret", "navigation-secret",
+      "cross-origin-secret", "private-secret", "secret-path", "https://"]) {
+      expect(JSON.stringify(summary)).not.toContain(secret);
+    }
+  });
+
+  function fixture() {
+    const state = {
+      performance: { now: () => 100 },
+      navigator: { deviceMemory: 4, storage: { estimate: async () => ({ quota: 4096, usage: 1024 }) } },
+      tboxCurrentOperation: { id: 7, buildAttempt: 9, state: "building" },
+    };
+    const context = vm.createContext(state);
+    const run = source => vm.runInContext(source, context);
+    run(`(${observeConsumedBuildInputs.toString()})();`);
+    const page = { evaluate: async (fn, arg) => run(`(${fn.toString()})(${JSON.stringify(arg)})`) };
+    return { state, run, page, identity: { operationId: 7, attempt: 9 } };
+  }
+
+  test("captures the exact parser string, not a later request serialization", async () => {
+    const { run, page, identity } = fixture();
+    run(`globalThis.tboxBuildIsoWithResult = opts => {
+      const consumed = { schemaVersion: 1, kind: "build-request", image: opts.request.image };
+      return JSON.stringify(consumed);
+    };
+    globalThis.request = { image: "café", ignoredRequestClaim: "not consumed" };
+    globalThis.consumed = tboxBuildIsoWithResult({request});
+    request.image = "changed after consumption";
+    tboxCurrentOperation.state = "completed";`);
+    const measured = await completedInputMeasurements(page, identity);
+    expect(measured.requestJson).toBe('{"schemaVersion":1,"kind":"build-request","image":"café"}');
+    expect(measured.requestJson).not.toContain("not consumed");
+    expect(measured.requestError).toBeNull();
+  });
+
+  test("preserves the same promise and native rejection object", async () => {
+    const { run } = fixture();
+    expect(run(`globalThis.failure = new Error("native parser failed");
+      globalThis.promise = Promise.reject(failure);
+      promise.catch(() => {});
+      globalThis.tboxBuildIsoWithResult = () => promise;
+      tboxBuildIsoWithResult({}) === promise;`)).toBe(true);
+    expect(run(`globalThis.tboxBuildIso = () => { throw failure; };
+      (() => { try { tboxBuildIso({}); } catch (error) { return error === failure; } })();`)).toBe(true);
+  });
+
+  for (const variant of ["not consumed", "twice serialized", "duplicate invocation", "oversized"]) {
+    test(`does not invent request bytes when ${variant}`, async () => {
+      const { run, page, identity } = fixture();
+      const serialize = `JSON.stringify({schemaVersion:1,kind:"build-request",image:"fixture"})`;
+      run(`globalThis.tboxBuildIsoWithResult = () => {
+        ${variant === "not consumed" ? "" : variant === "oversized"
+          ? `JSON.stringify({schemaVersion:1,kind:"build-request",image:"x".repeat(1024*1024)});`
+          : `${serialize}; ${variant === "twice serialized" ? serialize + ";" : ""}`}
+        return 32;
+      };
+      tboxBuildIsoWithResult({});
+      ${variant === "duplicate invocation" ? "tboxBuildIsoWithResult({});" : ""}
+      tboxCurrentOperation.state = "completed";`);
+      const measured = await completedInputMeasurements(page, identity);
+      expect(measured.requestJson).toBeNull();
+      expect(measured.requestError).toMatch(/observation limit|not observed/);
+    });
+  }
+
+  test("unrelated serializations outside the engine invocation are not consumed requests", async () => {
+    const { run, page, identity } = fixture();
+    run(`JSON.stringify({schemaVersion:1,kind:"build-request",image:"catalog-only"});
+      tboxCurrentOperation.state = "completed";`);
+    expect((await completedInputMeasurements(page, identity)).requestJson).toBeNull();
+  });
+
+  test("rejects operation drift during asynchronous storage measurement", async () => {
+    const { run, page, identity } = fixture();
+    run(`tboxCurrentOperation.state = "completed";
+      navigator.storage.estimate = async () => {
+        tboxCurrentOperation.buildAttempt++;
+        return {quota:4096,usage:1024};
+      };`);
+    await expect(completedInputMeasurements(page, identity)).rejects.toThrow(/operation changed/);
+  });
+
+  test("records environment run and attempt as observations, never authentication", () => {
+    const measured = producerEnvironment({
+      GITHUB_REPOSITORY: "tuna-os/iso-builder", GITHUB_RUN_ID: "41388681015", GITHUB_RUN_ATTEMPT: "1",
+      GITHUB_SHA: "a".repeat(40), GITHUB_WORKFLOW_SHA: "b".repeat(40),
+      ACTIONS_ID_TOKEN_REQUEST_TOKEN: "must never leak",
+    });
+    expect(measured.runId).toBe(41388681015);
+    expect(measured.runAttempt).toBe(1);
+    expect(measured.authenticated).toBe(false);
+    expect(measured.raw.GITHUB_SHA).toBe("a".repeat(40));
+    expect(JSON.stringify(measured)).not.toContain("must never leak");
+    for (const value of ["0", "1.5", "01", "1e2", "9007199254740992", undefined]) {
+      expect(producerEnvironment({ GITHUB_RUN_ID: value }).runId).toBeNull();
+    }
+  });
+
+  test("enumerates missing canonical identities without promoting a verified OCI config descriptor", () => {
+    const base = validRecord();
+    const identity = { operationId: 7, attempt: 9 };
+    const result = observedBuildFixture(base.iso.sizeBytes);
+    result.observedInputs.source.config.bytesVerified = true;
+    const record = browserObservedInputRecord({ ...base, identity, buildResult: result,
+      inputs: { operation: identity, requestJson: null, requestError: "parser bytes unavailable" },
+      frontend: { files: [], failures: [] }, env: {},
+    });
+    expect(record.observed.bytes_written).toBe(base.iso.sizeBytes);
+    expect(record.observed.source_manifest).toBeUndefined();
+    expect(record.observed.config_sha256).toBeUndefined();
+    expect(record.observed.loaded_engine).toBeUndefined();
+    expect(record.observed.producer_run).toBeUndefined();
+    expect(record.observed.resources).toBeUndefined();
+    expect(record.missingFields).toEqual([
+      "build_request_sha256", "config_sha256", "deployed_frontend", "loaded_engine", "overlay",
+      "producer_run", "recipe_sha256", "resources", "source_manifest",
+    ]);
+    expect(record.measurements.source.config.bytesVerified).toBe(true);
+    expect(record.measurements.producerEnvironment.runAttempt).toBeNull();
+    expect(record.measurements.missingReasons.build_request_sha256).toBe("parser bytes unavailable");
+    expect(record.kind).toBe("browser-observed-input");
+    expect(record.qualification).toBe("not-assessed");
+  });
+});
+
+test.describe("measured executing checkout fixtures", () => {
+  test("compares actual bytes with HEAD even when the index hides an edit", async () => {
+    git("update-index", "--assume-unchanged", sourcePaths[0]);
+    await fs.writeFile(path.join(root, sourcePaths[0]), "module.exports = 43;\n");
+    expect(git("status", "--porcelain")).toBe("");
+    const measured = await finalizeExecutingSource(await captureExecutingSource({ root, env }), { env });
+    expect(measured.producerRun).toBeNull();
+    expect(measured.producerRunMissingReason).toBe("harness-source-does-not-match-head-blob");
+  });
+
+  test("refuses ignored source bytes that have no tracked HEAD blob", async () => {
+    git("rm", "--cached", "--", sourcePaths[0]);
+    await fs.writeFile(path.join(root, ".gitignore"), `${sourcePaths[0]}\n`);
+    commit();
+    expect(git("status", "--porcelain")).toBe("");
+    const measured = await finalizeExecutingSource(await captureExecutingSource({ root, env }), { env });
+    expect(measured.producerRun).toBeNull();
+    expect(measured.producerRunMissingReason).toBe("harness-source-not-tracked-at-head");
+  });
+
+  let root, env, revision;
+  const sourcePaths = ["e2e/tests/build-measurements.js", "e2e/tests/builder.spec.js",
+    "e2e/tests/fixtures.js", "e2e/playwright.config.js", ".github/workflows/ci.yml"];
+  const git = (...args) => execFileSync("git", ["-C", root, ...args],
+    { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] }).trim();
+  const commit = () => {
+    git("add", ".");
+    git("-c", "user.name=Observation Fixture", "-c", "user.email=fixture@example.invalid", "commit", "-qm", "fixture source");
+    return git("rev-parse", "HEAD");
+  };
+  const loadSource = async relative => {
+    const Module = require("node:module");
+    const filename = path.join(root, relative);
+    const loaded = new Module(filename);
+    loaded.filename = filename;
+    loaded.paths = Module._nodeModulePaths(path.dirname(filename));
+    // Bypass Playwright's transform hook: this fixture deliberately compiles
+    // actual temporary-file bytes, retaining a function to keep V8 source live.
+    loaded._compile(await fs.readFile(filename, "utf8"), filename);
+    loaded.loaded = true;
+    require.cache[filename] = loaded;
+    return loaded.exports;
+  };
+  test.beforeEach(async () => {
+    root = await fs.mkdtemp(path.join(os.tmpdir(), "measured-checkout-"));
+    git("init", "-q", "--initial-branch=main");
+    for (const filename of [...sourcePaths, "e2e/tests/helper.js"]) {
+      await fs.mkdir(path.dirname(path.join(root, filename)), { recursive: true });
+      await fs.writeFile(path.join(root, filename),
+        filename.endsWith(".js") ? "module.exports = () => 42;\n" : "# measured fixture workflow\n");
+    }
+    revision = commit();
+    env = { GITHUB_REPOSITORY: "tuna-os/iso-builder",
+      GITHUB_WORKFLOW_REF: "tuna-os/iso-builder/.github/workflows/ci.yml@refs/heads/main",
+      GITHUB_RUN_ID: "123", GITHUB_RUN_ATTEMPT: "2",
+      GITHUB_SHA: revision, GITHUB_WORKFLOW_SHA: revision };
+    for (const filename of sourcePaths.filter(filename => filename.endsWith(".js"))) await loadSource(filename);
+  });
+  test.afterEach(async () => {
+    for (const filename of Object.keys(require.cache)) {
+      if (filename.startsWith(`${root}${path.sep}`)) delete require.cache[filename];
+    }
+    await fs.rm(root, { recursive: true, force: true });
+  });
+
+  test("measures tracked HEAD blobs, executing dependencies and matching run context without authentication", async () => {
+    expect((await loadSource("e2e/tests/helper.js"))()).toBe(42);
+    const before = await captureExecutingSource({ root, env });
+    const measured = await finalizeExecutingSource(before, { env });
+    expect(measured.status).toBe("measured");
+    expect(measured.authenticated).toBe(false);
+    expect(measured.sourceRevision).toBe(revision);
+    expect(measured.loadedSource.status).toBe("matched");
+    expect(measured.loadedSource.files.every(file => file.scripts.length === 1 &&
+      ["exact-source", "standard-commonjs-wrapper"].includes(file.scripts[0].comparison))).toBe(true);
+    expect(measured.files.map(file => file.path)).toEqual([...sourcePaths, "e2e/tests/helper.js"].sort());
+    for (const file of measured.files) {
+      const bytes = await fs.readFile(path.join(root, file.path));
+      expect(file.sha256).toBe(digest(bytes));
+      expect(file.sizeBytes).toBe(bytes.length);
+      expect(file.gitBlob).toBe(git("rev-parse", `${revision}:${file.path}`));
+    }
+    expect(measured.producerRun).toEqual({ repository: "tuna-os/iso-builder",
+      workflowPath: ".github/workflows/ci.yml", workflowRevision: revision,
+      sourceRevision: revision, harnessRevision: revision, runId: 123, runAttempt: 2 });
+    expect(JSON.stringify(measured)).not.toContain(root);
+    const identity = { operationId: 1, attempt: 2 };
+    const record = browserObservedInputRecord({ ...validRecord(), buildResult: null, identity,
+      inputs: { operation: identity }, frontend: { files: [], failures: [] },
+      executingSource: measured, env });
+    expect(record.observed.producer_run).toEqual(measured.producerRun);
+    expect(record.missingFields).not.toContain("producer_run");
+    expect(record.qualification).toBe("not-assessed");
+  });
+
+  for (const change of ["tracked edit", "untracked file"]) {
+    test(`refuses a ${change} rather than claiming an environment revision`, async () => {
+      await fs.writeFile(path.join(root, change === "tracked edit" ? sourcePaths[0] : "untracked.js"), "changed\n");
+      const measured = await finalizeExecutingSource(await captureExecutingSource({ root, env }), { env });
+      expect(measured.status).toBe("missing");
+      expect(measured.producerRun).toBeNull();
+      expect(measured.producerRunMissingReason).toBe("checkout-dirty-or-untracked");
+    });
+  }
+
+  test("refuses a no-VCS source directory", async () => {
+    await fs.rm(path.join(root, ".git"), { recursive: true, force: true });
+    const measured = await finalizeExecutingSource(await captureExecutingSource({ root, env }), { env });
+    expect(measured.status).toBe("missing");
+    expect(measured.producerRun).toBeNull();
+    expect(measured.producerRunMissingReason).toBe("git-or-source-measurement-unavailable");
+  });
+
+  test("refuses changed HEAD even when the final checkout is clean", async () => {
+    const before = await captureExecutingSource({ root, env });
+    await fs.writeFile(path.join(root, sourcePaths[0]), "module.exports = 43;\n");
+    const next = commit();
+    const measured = await finalizeExecutingSource(before, { env: { ...env, GITHUB_SHA: next, GITHUB_WORKFLOW_SHA: next } });
+    expect(measured.producerRun).toBeNull();
+    expect(measured.producerRunMissingReason).toBe("executing-source-changed-during-build");
+  });
+
+  test("refuses a same-content rewrite during the build", async () => {
+    const before = await captureExecutingSource({ root, env });
+    const filename = path.join(root, sourcePaths[0]);
+    await fs.writeFile(filename, await fs.readFile(filename));
+    await fs.utimes(filename, new Date(1000), new Date(1000));
+    expect(git("status", "--porcelain")).toBe("");
+    const measured = await finalizeExecutingSource(before, { env });
+    expect(measured.producerRunMissingReason).toBe("executing-source-changed-during-build");
+  });
+
+  test("refuses an executing dependency first loaded after the baseline", async () => {
+    const before = await captureExecutingSource({ root, env });
+    expect((await loadSource("e2e/tests/helper.js"))()).toBe(42);
+    const measured = await finalizeExecutingSource(before, { env });
+    expect(measured.producerRunMissingReason).toBe("executing-source-changed-during-build");
+  });
+
+  for (const field of ["GITHUB_SHA", "GITHUB_WORKFLOW_SHA"]) {
+    test(`does not substitute mismatching ${field} for measured source`, async () => {
+      const before = await captureExecutingSource({ root, env });
+      const measured = await finalizeExecutingSource(before, { env: { ...env, [field]: "a".repeat(40) } });
+      expect(measured.status).toBe("measured");
+      expect(measured.sourceRevision).toBe(revision);
+      expect(measured.producerRun).toBeNull();
+      expect(measured.producerRunMissingReason).toBe("github-source-or-workflow-revision-does-not-match-measured-checkout");
+    });
+  }
+
+  for (const override of [{ GITHUB_RUN_ATTEMPT: "0" }, { GITHUB_RUN_ID: "9007199254740992" },
+    { GITHUB_WORKFLOW_REF: "other/repo/.github/workflows/ci.yml@refs/heads/main" }]) {
+    test(`refuses invalid CI context ${JSON.stringify(override)}`, async () => {
+      const invalid = { ...env, ...override };
+      const measured = await finalizeExecutingSource(await captureExecutingSource({ root, env: invalid }), { env: invalid });
+      expect(measured.status).toBe("measured");
+      expect(measured.producerRun).toBeNull();
+      expect(measured.producerRunMissingReason).toBe("github-run-or-workflow-context-invalid");
+    });
+  }
+
+  test("does not promote a modified loaded module restored to clean HEAD bytes before capture", async () => {
+    const filename = path.join(root, "e2e/tests/helper.js");
+    const original = await fs.readFile(filename);
+    await fs.writeFile(filename, "module.exports = () => 43;\n");
+    expect((await loadSource("e2e/tests/helper.js"))()).toBe(43);
+    await fs.writeFile(filename, original);
+    expect(git("status", "--porcelain")).toBe("");
+    const measured = await finalizeExecutingSource(await captureExecutingSource({ root, env }), { env });
+    expect(measured.status).toBe("measured");
+    expect(measured.sourceRevision).toBe(revision);
+    expect(measured.loadedSource.files.find(file => file.path === "e2e/tests/helper.js").status).toBe("mismatched");
+    expect(measured.producerRun).toBeNull();
+    expect(measured.producerRunMissingReason).toBe("loaded-harness-source-not-bound-to-head");
+    const identity = { operationId: 1, attempt: 2 };
+    const record = browserObservedInputRecord({ ...validRecord(), buildResult: null, identity,
+      inputs: { operation: identity }, frontend: { files: [], failures: [] }, executingSource: measured, env });
+    expect(record.observed.producer_run).toBeUndefined();
+    expect(record.missingFields).toContain("producer_run");
+  });
+
+  test("does not trust source-map sourcesContent instead of actual compiled script bytes", async () => {
+    const filename = path.join(root, "e2e/tests/helper.js");
+    const original = await fs.readFile(filename, "utf8");
+    const map = Buffer.from(JSON.stringify({ version: 3, sources: ["helper.js"],
+      sourcesContent: [original], names: [], mappings: "" })).toString("base64");
+    await fs.writeFile(filename, `${original}// transformed source\n//# sourceMappingURL=data:application/json;base64,${map}\n`);
+    expect((await loadSource("e2e/tests/helper.js"))()).toBe(42);
+    await fs.writeFile(filename, original);
+    const measured = await finalizeExecutingSource(await captureExecutingSource({ root, env }), { env });
+    expect(measured.loadedSource.files.find(file => file.path === "e2e/tests/helper.js").status).toBe("mismatched");
+    expect(measured.producerRun).toBeNull();
+    expect(measured.producerRunMissingReason).toBe("loaded-harness-source-not-bound-to-head");
+  });
+});
+
+test.describe("engine observed source coordinates", () => {
+  test("preserves exact proxy transport and resolve coordinates without inventing an origin", () => {
+    const input = validRecord();
+    input.buildResult = observedBuildFixture(input.iso.sizeBytes);
+    Object.assign(input.buildResult.observedInputs.source, {
+      registryEndpoint: "https://relay.invalid/registry-proxy", repository: "tuna-os/fixture",
+      requestedReference: "observed-tag", origin: "must not survive",
+    });
+    const record = diagnosticRecord(input);
+    expect(record.engineBuildResult.observedInputs.source).toMatchObject({
+      registryEndpoint: "https://relay.invalid/registry-proxy", repository: "tuna-os/fixture",
+      requestedReference: "observed-tag",
+    });
+    expect(record.engineBuildResult.observedInputs.source.origin).toBeUndefined();
+    const identity = { operationId: 1, attempt: 2 };
+    const envelope = browserObservedInputRecord({ ...input, identity, inputs: { operation: identity },
+      frontend: { files: [], failures: [] }, env: {} });
+    expect(envelope.measurements.source.repository).toBe("tuna-os/fixture");
+    expect(envelope.observed.source_manifest).toBeUndefined();
+    expect(envelope.missingFields).toContain("source_manifest");
+  });
+  for (const endpoint of ["https://user:secret@registry.invalid", "https://registry.invalid?token=secret",
+    "https://registry.invalid#secret", "file:///private", "not a URL"]) {
+    test(`rejects unsafe observed transport ${endpoint}`, () => {
+      const input = validRecord();
+      input.buildResult = observedBuildFixture(input.iso.sizeBytes);
+      input.buildResult.observedInputs.source.registryEndpoint = endpoint;
+      expect(() => diagnosticRecord(input)).toThrow(/observed (?:registry endpoint|source coordinates)/);
+    });
+  }
+  for (const field of ["registryEndpoint", "repository", "requestedReference"]) {
+    test(`rejects malformed optional ${field}`, () => {
+      for (const value of ["", " leading-space", "control\u0000character", 42, null]) {
+        const input = validRecord();
+        input.buildResult = observedBuildFixture(input.iso.sizeBytes);
+        input.buildResult.observedInputs.source[field] = value;
+        expect(() => diagnosticRecord(input)).toThrow(/observed source coordinates/);
+      }
+    });
+  }
+});
+
+test.describe("additive measured engine identity", () => {
+  function measuredFixture() {
+    const input = validRecord();
+    input.buildResult = observedBuildFixture(input.iso.sizeBytes);
+    const observed = input.buildResult.observedInputs;
+    observed.source.config.bytesVerified = true;
+    observed.source.config.content = { os: "linux", architecture: "amd64", variant: "v2" };
+    observed.overlay.baseDigest = observed.source.manifestDigest;
+    observed.overlay.baseAnnotationMatched = true;
+    const appId = "org.tunaos.Fisherman";
+    const commit = `sha256:${"7".repeat(64)}`;
+    observed.installer = {
+      sourceStamp: { path: "etc/tunaos/live-source.json", sha256: `sha256:${"6".repeat(64)}`, sizeBytes: 128 },
+      stampClaims: { appId, revision: commit, bundleSha256Claim: `sha256:${"8".repeat(64)}` },
+      deployment: { appId, ref: `app/${appId}/x86_64/stable`, arch: "x86_64",
+        deployedCommit: commit, metadataSha256: `sha256:${"9".repeat(64)}`, sourceStampMatched: true },
+      helper: { path: `var/lib/flatpak/app/${appId}/x86_64/stable/${"7".repeat(64)}/files/bin/fisherman`,
+        sha256: `sha256:${"a".repeat(64)}`, sizeBytes: 256 },
+      shippedRecipe: { path: "etc/bootc-installer/recipe.json", sha256: `sha256:${"b".repeat(64)}`, sizeBytes: 64 },
+    };
+    observed.engine = { module: "github.com/tuna-os/tacklebox", package: "github.com/tuna-os/tacklebox/cmd/tbwasm",
+      goVersion: "go1.26.3", vcsRevision: "c".repeat(40), vcsModified: "false" };
+    const identity = { operationId: 7, attempt: 9 };
+    return { ...input, identity, inputs: { operation: identity, requestJson: '{"kind":"build-request","schemaVersion":1}',
+      deviceMemory: 4, elapsedMs: 100, storage: { quota: 4096, usage: 1024 } },
+      frontend: { files: [{ path: "/wasm_exec.js", sha256: `sha256:${"d".repeat(64)}`, sizeBytes: 128 }],
+        failures: [] }, env: {} };
+  }
+
+  test("promotes only matched measured identities, not bundle claims or shipped-file hash domains", () => {
+    const input = measuredFixture();
+    const record = browserObservedInputRecord(input);
+    const facts = input.buildResult.observedInputs;
+    expect(record.observed.overlay).toEqual({ kind: "oci-platform-manifest",
+      digest: facts.overlay.manifestDigest, baseDigest: facts.source.manifestDigest });
+    expect(record.observed.deployed_frontend).toEqual({ kind: "flatpak-commit",
+      appId: "org.tunaos.Fisherman", ref: "app/org.tunaos.Fisherman/x86_64/stable",
+      arch: "x86_64", deployedCommit: facts.installer.deployment.deployedCommit });
+    expect(record.observed.loaded_engine).toEqual({ kind: "wasm-module", sha256: input.wasm.sha256,
+      sourceRevision: facts.engine.vcsRevision, runtimeShimSha256: input.frontend.files[0].sha256 });
+    expect(record.measurements.source.config.content).toEqual({ os: "linux", architecture: "amd64", variant: "v2" });
+    expect(record.measurements.shippedRecipe).toEqual(facts.installer.shippedRecipe);
+    expect(record.measurements.installer.stampClaims.bundleSha256Claim).toBe(facts.installer.stampClaims.bundleSha256Claim);
+    expect(record.observed.deployed_frontend.bundleSha256).toBeUndefined();
+    expect(record.observed.recipe_sha256).toBeUndefined();
+    expect(record.observed.config_sha256).toBeUndefined();
+    expect(record.observed.source_manifest).toBeUndefined();
+    expect(record.missingFields).toEqual(["config_sha256", "producer_run", "recipe_sha256", "source_manifest"]);
+    expect(record.qualification).toBe("not-assessed");
+  });
+
+  test("copies only known additive observations without retaining mutable aliases", () => {
+    const input = measuredFixture();
+    const facts = input.buildResult.observedInputs;
+    facts.installer.authenticated = true;
+    facts.engine.qualified = true;
+    facts.source.config.content.cpuBaseline = "request-only";
+    const record = diagnosticRecord(input);
+    facts.installer.deployment.ref = "changed";
+    facts.installer.helper.sha256 = `sha256:${"f".repeat(64)}`;
+    facts.engine.vcsRevision = "e".repeat(40);
+    facts.source.config.content.os = "changed";
+    const copied = record.engineBuildResult.observedInputs;
+    expect(copied.installer.deployment.ref).toBe("app/org.tunaos.Fisherman/x86_64/stable");
+    expect(copied.installer.helper.sha256).toBe(`sha256:${"a".repeat(64)}`);
+    expect(copied.engine.vcsRevision).toBe("c".repeat(40));
+    expect(copied.source.config.content.os).toBe("linux");
+    expect(copied.installer.authenticated).toBeUndefined();
+    expect(copied.engine.qualified).toBeUndefined();
+    expect(copied.source.config.content.cpuBaseline).toBeUndefined();
+  });
+
+  for (const mode of ["missing base digest", "different base digest", "unmatched annotation"]) {
+    test(`does not promote overlay with ${mode}`, () => {
+      const input = measuredFixture();
+      const overlay = input.buildResult.observedInputs.overlay;
+      if (mode === "missing base digest") delete overlay.baseDigest;
+      if (mode === "different base digest") overlay.baseDigest = `sha256:${"0".repeat(64)}`;
+      if (mode === "unmatched annotation") overlay.baseAnnotationMatched = false;
+      const record = browserObservedInputRecord(input);
+      expect(record.observed.overlay).toBeUndefined();
+      expect(record.missingFields).toContain("overlay");
+      expect(record.measurements.overlay).toEqual(overlay);
+    });
+  }
+
+  for (const mode of ["stamp only", "deployment mismatch", "missing source-stamp revision"]) {
+    test(`does not turn installer ${mode} into a deployed frontend`, () => {
+      const input = measuredFixture();
+      const installer = input.buildResult.observedInputs.installer;
+      if (mode === "stamp only") {
+        delete installer.deployment; delete installer.helper; delete installer.shippedRecipe;
+        installer.missingReason = "deployment-missing";
+      } else {
+        installer.deployment.sourceStampMatched = false;
+        installer.missingReason = "source-stamp-deployment-mismatch";
+        if (mode === "deployment mismatch") installer.stampClaims.revision = `sha256:${"0".repeat(64)}`;
+        else delete installer.stampClaims.revision;
+      }
+      const record = browserObservedInputRecord(input);
+      expect(record.observed.deployed_frontend).toBeUndefined();
+      expect(record.missingFields).toContain("deployed_frontend");
+      expect(record.measurements.installer.missingReason).toBe(installer.missingReason);
+    });
+  }
+
+  for (const mode of ["dirty", "no revision", "no modified stamp", "native package", "missing shim", "ambiguous shim"]) {
+    test(`does not identify loaded engine from ${mode}`, () => {
+      const input = measuredFixture();
+      const engine = input.buildResult.observedInputs.engine;
+      if (mode === "dirty") engine.vcsModified = "true";
+      if (mode === "no revision") delete engine.vcsRevision;
+      if (mode === "no modified stamp") delete engine.vcsModified;
+      if (mode === "native package") engine.package = "github.com/tuna-os/tacklebox/cmd/purebuild";
+      if (mode === "missing shim") input.frontend.files = [];
+      if (mode === "ambiguous shim") input.frontend.files.push({ ...input.frontend.files[0] });
+      const record = browserObservedInputRecord(input);
+      expect(record.observed.loaded_engine).toBeUndefined();
+      expect(record.missingFields).toContain("loaded_engine");
+      expect(record.measurements.engine).toEqual(engine);
+    });
+  }
+
+  const malformed = [
+    ["unverified config content", o => { o.source.config.bytesVerified = false; }],
+    ["non-object config content", o => { o.source.config.content = []; }],
+    ["non-string config OS", o => { o.source.config.content.os = true; }],
+    ["base digest on absent overlay", o => { o.overlay = { status: "absent", layersApplied: false,
+      baseAnnotationMatched: false, baseDigest: o.source.manifestDigest }; }],
+    ["invalid base digest", o => { o.overlay.baseDigest = "not a digest"; }],
+    ["unsafe source-stamp size", o => { o.installer.sourceStamp.sizeBytes = Number.MAX_SAFE_INTEGER + 1; }],
+    ["different source-stamp path", o => { o.installer.sourceStamp.path = "other/stamp.json"; }],
+    ["path traversal helper", o => { o.installer.helper.path = "../bin/fisherman"; }],
+    ["different recipe path", o => { o.installer.shippedRecipe.path = "unconsumed/recipe.json"; }],
+    ["unmatched ref architecture", o => { o.installer.deployment.arch = "aarch64"; }],
+    ["invalid deployed commit", o => { o.installer.deployment.deployedCommit = "claim"; }],
+    ["invalid metadata hash", o => { o.installer.deployment.metadataSha256 = false; }],
+    ["non-boolean stamp match", o => { o.installer.deployment.sourceStampMatched = "true"; }],
+    ["contradictory stamp match", o => { o.installer.stampClaims.revision = `sha256:${"0".repeat(64)}`; }],
+    ["unstructured missing reason", o => { o.installer.missingReason = "secret URL or raw error"; }],
+    ["unattributable module", o => { o.engine.module = "example.invalid/another-engine"; }],
+    ["unattributable package", o => { o.engine.package = "example.invalid/another-engine/cmd/wasm"; }],
+    ["empty Go version", o => { o.engine.goVersion = ""; }],
+    ["short engine revision", o => { o.engine.vcsRevision = "abcd"; }],
+    ["uppercase engine revision", o => { o.engine.vcsRevision = "C".repeat(40); }],
+    ["non-string modified stamp", o => { o.engine.vcsModified = false; }],
+  ];
+  for (const [name, mutate] of malformed) {
+    test(`rejects ${name}`, () => {
+      const input = measuredFixture();
+      mutate(input.buildResult.observedInputs);
+      expect(() => diagnosticRecord(input)).toThrow(/invalid observed/);
+    });
+  }
+});
+
+test.describe("native WASM diagnostic observation: consumed inputs", () => {
+  test("joins closed download, consumed request and loaded frontend bytes without completing missing identities", async ({ page }, testInfo) => {
+    await page.addInitScript(observeLoadedWasm);
+    await page.addInitScript(observeConsumedBuildInputs);
+    const frontend = observeFrontendResponses(page);
+    const config = 'globalThis.fixtureConfig = {label:"café"};\n';
+    const shim = 'globalThis.fixtureShimLoaded = true;\n';
+    const html = '<!doctype html><script src="/wasm_exec.js"></script><script src="/builder-config-data.js"></script>';
+    await page.route("**/*", route => {
+      const pathname = new URL(route.request().url()).pathname;
+      if (pathname === "/tbox.wasm") return route.fulfill({ contentType: "application/wasm", body: WASM });
+      if (pathname === "/wasm_exec.js" || pathname === "/builder-config-data.js") {
+        return route.fulfill({ contentType: "application/javascript; charset=utf-8", body: pathname === "/wasm_exec.js" ? shim : config });
+      }
+      return route.fulfill({ contentType: "text/html; charset=utf-8", body: html });
+    });
+    await page.goto("http://127.0.0.1:8931/");
+    const bytes = Buffer.from("tiny observed post-close fixture; not bootable\n");
+    const result = observedBuildFixture(bytes.length);
+    const downloadEvent = page.waitForEvent("download");
+    await page.evaluate(async ({ bytes, result }) => {
+      await WebAssembly.instantiateStreaming(fetch("/tbox.wasm"));
+      globalThis.tboxCurrentOperation = { id: 5, buildAttempt: 8, state: "building" };
+      // A behavioral fixture for the engine's synchronous serialization boundary,
+      // not a fake source/installer identity or a production engine replacement.
+      globalThis.tboxBuildIsoWithResult = opts => {
+        globalThis.fixtureConsumedJson = JSON.stringify({
+          schemaVersion: 1, kind: "build-request", image: opts.request.image,
+          options: { label: fixtureConfig.label },
+        });
+        return Promise.resolve(result);
+      };
+      const actual = await tboxBuildIsoWithResult({ request: { image: "consumed-image", catalogClaim: "not consumed" } });
+      tboxCurrentOperation.state = "completed";
+      tboxCurrentOperation.buildResult = actual;
+      const link = document.createElement("a");
+      link.href = URL.createObjectURL(new Blob([Uint8Array.from(bytes)]));
+      link.download = "observed-fixture.iso";
+      link.click();
+    }, { bytes: [...bytes], result });
+    const download = await downloadEvent;
+    const filename = testInfo.outputPath("observed-fixture.iso");
+    await download.saveAs(filename);
+    const identity = await buildOperationIdentity(page);
+    const iso = await hashSavedIso(filename, bytes.length);
+    const inputs = await completedInputMeasurements(page, identity);
+    const responses = await frontend.summary();
+    frontend.stop();
+    const session = await page.context().newCDPSession(page);
+    let browser;
+    try { browser = await session.send("Browser.getVersion"); }
+    finally { await session.detach(); }
+    const record = browserObservedInputRecord({ iso, wasm: await loadedWasmMeasurement(page), browser,
+      buildResult: await completedBuildResult(page, identity), identity, inputs, frontend: responses,
+      env: { GITHUB_RUN_ID: "123", GITHUB_RUN_ATTEMPT: "2" },
+    });
+    const parsed = await page.evaluate(() => ({ json: fixtureConsumedJson, shim: fixtureShimLoaded, config: fixtureConfig }));
+    expect(parsed.shim).toBe(true);
+    expect(parsed.config.label).toBe("café");
+    expect(record.media).toEqual({ sha256: digest(bytes), sizeBytes: bytes.length });
+    expect(record.observed.selection_id).toBe("5:8");
+    expect(record.observed.build_request_sha256).toBe(digest(Buffer.from(parsed.json, "utf8")));
+    expect(record.measurements.buildRequest).toMatchObject({
+      sizeBytes: Buffer.byteLength(parsed.json, "utf8"), encoding: "utf-8",
+    });
+    expect(record.measurements.buildRequest.text).toBeUndefined();
+    expect(JSON.stringify(record)).not.toContain("consumed-image");
+    expect(record.measurements.runtimeShim).toMatchObject({ sha256: digest(Buffer.from(shim)), sizeBytes: Buffer.byteLength(shim) });
+    expect(record.measurements.config).toMatchObject({ sha256: digest(Buffer.from(config)), sizeBytes: Buffer.byteLength(config) });
+    expect(record.measurements.frontendFiles).toEqual(expect.arrayContaining([
+      expect.objectContaining({ resourceType: "document", sha256: digest(Buffer.from(html)) }),
+    ]));
+    expect(record.measurements.producerEnvironment.runAttempt).toBe(2);
+    expect(record.missingFields).toEqual(expect.arrayContaining(["config_sha256", "recipe_sha256", "deployed_frontend", "loaded_engine"]));
+    expect(record.observed.config_sha256).toBeUndefined();
+    expect(record.qualification).toBe("not-assessed");
+    await expect(completedBuildResult(page, identity)).resolves.toEqual(result);
+    await fs.writeFile(testInfo.outputPath("browser-observed-input.json"), `${JSON.stringify(record, null, 2)}\n`);
+  });
 });
 
 test.describe("diagnostic wiring boundaries", () => {

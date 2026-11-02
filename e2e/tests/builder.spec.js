@@ -14,7 +14,7 @@ require('./legacy-deployment').useLegacyDeployment(test);
 const path = require("path");
 const fs = require("fs");
 const { qualifiedCatalogFixture } = require("./qualified-catalog-fixture");
-const { observeLoadedWasm, loadedWasmMeasurement, hashSavedIso, buildOperationIdentity, completedBuildResult, diagnosticRecord, observeRegistryTransfers } = require("./build-measurements");
+const { observeLoadedWasm, loadedWasmMeasurement, hashSavedIso, buildOperationIdentity, completedBuildResult, diagnosticRecord, observeRegistryTransfers, observeConsumedBuildInputs, completedInputMeasurements, observeFrontendResponses, browserObservedInputRecord, captureExecutingSource, finalizeExecutingSource } = require("./build-measurements");
 const { removeSavePicker, buildFailedSignature } = require("./full-harness");
 const { diagnosticGrantFromEnv, installDiagnosticGrant, strictObservedGrantFromEnv, installStrictObservedGrant, resolveLiveDigests, catalogEntryFor, refreshDiagnosticSnapshot, parseGateRefusal, gateRefusalMessage, gateRefusalSummary } = require("./diagnostic-gate");
 const { campaignValue, pairEnvironment, digest: pairDigest } = require("./pair-protocol");
@@ -384,12 +384,14 @@ test.describe("iso builder", () => {
 
   test("full build streams a bootable ISO @full", async ({ page }) => {
     test.skip(!process.env.TBOX_E2E_FULL, "set TBOX_E2E_FULL=1 for the full build");
-    let registry = null, wallStartedAt = null, pairProtocol = null, ownedOutput = null;
+    let registry = null, frontend = null, wallStartedAt = null, pairProtocol = null, ownedOutput = null;
     let activePhase = "preflight", phaseStartedAt = performance.now();
     const attemptStartedAt = phaseStartedAt;
     let phases = { inspectMs: null, buildMs: null, saveMs: null };
     try {
+    const executingSourceBefore = await captureExecutingSource();
     await page.addInitScript(observeLoadedWasm);
+    await page.addInitScript(observeConsumedBuildInputs);
     await page.addInitScript(removeSavePicker);
     // Test-only, explicit, named-target override of the catalog gate. Null
     // (the default) leaves the production gate untouched.
@@ -468,6 +470,7 @@ test.describe("iso builder", () => {
     // Registry blob transfers the browser makes for this build (page and
     // layer-download worker), from navigation on. Wall time starts here too.
     registry = observeRegistryTransfers(page.context());
+    frontend = observeFrontendResponses(page);
     wallStartedAt = performance.now();
     activePhase = "navigation"; phaseStartedAt = wallStartedAt;
     await page.goto(`/?image=${encodeURIComponent(IMAGE)}&autodl=1&autorun=1${initrd ? `&initrd=${encodeURIComponent(initrd)}` : ""}`);
@@ -752,9 +755,9 @@ test.describe("iso builder", () => {
     fs.mkdirSync(path.dirname(evPath), { recursive: true });
     fs.writeFileSync(evPath, `${JSON.stringify(evidence, null, 2)}\n`);
     console.log("wrote browser evidence:", evPath);
-    // Join operation-local engine observations only to independently measured
-    // saved ISO and loaded WASM bytes. Producer/frontend identity is still absent;
-    // keep this diagnostic separate from qualification evidence.
+    // Join operation-local observations only to the saved ISO, actually loaded
+    // frontend responses and native WASM instantiation. Neither record is
+    // authenticated provenance or qualification evidence.
     const wasm = await loadedWasmMeasurement(page);
     const iso = await hashSavedIso(out, size);
     if (process.env.TBOX_E2E_ISO_COPY) {
@@ -779,6 +782,17 @@ test.describe("iso builder", () => {
       expect(measurements.engineBuildResult?.observedInputs?.overlay?.baseAnnotationMatched).toBe(true);
     }
     console.log("wrote diagnostic measurements:", measurementPath);
+    const inputs = await completedInputMeasurements(page, buildIdentity);
+    const frontendResponses = await frontend.summary();
+    const executingSource = await finalizeExecutingSource(executingSourceBefore);
+    expect(await completedBuildResult(page, buildIdentity)).toEqual(buildResult);
+    const observedInputs = browserObservedInputRecord({
+      iso, wasm, browser: browserVersion, buildResult, identity: buildIdentity,
+      inputs, frontend: frontendResponses, executingSource,
+    });
+    const observationPath = path.join(path.dirname(evPath), `browser-observed-input-${path.basename(evPath)}`);
+    fs.writeFileSync(observationPath, `${JSON.stringify(observedInputs, null, 2)}\n`);
+    console.log("wrote incomplete browser observations:", observationPath);
     fs.unlinkSync(out);
     // Pair protocol (PAIR=true): the cold build must show the observer sees
     // layer downloads at all, and the warm build, same profile and inputs,
@@ -823,6 +837,7 @@ test.describe("iso builder", () => {
       throw error;
     } finally {
       registry?.stop();
+      frontend?.stop();
       if (ownedOutput) {
         try { fs.rmSync(ownedOutput, { force: true }); }
         catch (cleanupError) { console.error("failed to remove this pair's output:", cleanupError); }
