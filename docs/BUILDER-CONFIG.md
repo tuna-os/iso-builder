@@ -91,3 +91,57 @@ BuildRequest export preserves supported advanced options and refuses detected
 credentials rather than silently deleting them. It is engine transport, not a
 new configuration source of truth. Custom Flatpak remotes and full TOML editing
 remain unimplemented; the app picker still records requests only.
+
+### Measured TOML editing blocker
+
+The primary reference at `tuna-os/tunaOS` commit
+`9e8398ce12ab3d515ae0e58eb5b71af6e2985ab5` parses TOML with vendored Tomli 2.3.2
+(`scripts/lib/tunaos_config.py:parse`) and rejects unknown schema fields. Its
+`iso_builder_config.py:project` derives desktop app defaults from
+`flatpak_preinstall`; duplicating `default_flatpaks` in primary `[iso_builder]`
+is an error. `[iso_builder]` describes deployment presentation and initial
+selection, not an individual user's build request. A browser recipe cannot
+be honestly round-tripped through that subsection by inventing keys for
+packages, remotes or commands, or by treating an imported `preview_only=false`
+as permission to build. No browser-compatible canonical TOML parser or full
+per-build TOML contract is supplied in this repository. Until those contracts
+exist, leave primary documents untouched and reject unsupported import instead
+of reserializing or discarding unknown fields.
+
+The existing `selection.facets.values.card` contract supports desktop previews.
+The picker now renders a configured desktop card on its selected-image summary,
+with an explicit distinction from qualification evidence. Stock TOML supplies
+text descriptions but no desktop screenshots. The local primary checkout has
+historical installer screenshots, not current desktop previews; they are not
+misrepresented as desktop artwork. Supply reviewed screenshots through primary
+TOML and its normal export workflow. Missing artwork is visibly identified;
+UI tests use local synthetic fixtures rather than depend on external image hosts.
+
+The local canonical validation check passed with Tomli 2.3.2 and schema 2.
+Adding `iso_builder.packages = ["vim"]` failed with
+`$: unknown keys ['packages']`; adding desktop `default_flatpaks` failed with
+`desktops[0]: unknown keys ['default_flatpaks']`. The original TOML was only
+read. Those failures are the reason the frontend does not reinterpret these
+inputs as a supported round-trip format.
+
+### Backend contract needed for application delivery
+
+`app.js:build` currently sends requested `flatpaks`, `packages` and `extraRun`
+options to the pinned engine. A request is not evidence that they were applied.
+`build-result.js` validates observed source/overlay identity and output byte
+counts; it does not return observed application inclusion. Before the UI can
+promise installed apps, tacklebox and the primary configuration need a jointly
+validated contract covering:
+
+- Explicit application identity (remote, app ID, architecture, branch and pinned
+  revision) and remote publisher trust; unsupported inputs fail before output.
+- Whether the app is included in the live environment, installed system, or both,
+  plus offline availability of required runtimes and content.
+- Engine observations reporting what was actually applied, including failures,
+  bound to the exact build result; never copy the request into those observations.
+- Qualification that verifies the applications in the resulting installed system,
+  separately from download, integrity and producer-authentication evidence.
+
+The browser must keep displaying request-only status until that engine contract
+and its validation exist. Custom remote configuration must not silently become a
+shell command or expand registry/relay access.

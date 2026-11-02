@@ -111,3 +111,15 @@ Writer guidance is experience-specific. The Bluefin preview links its official
 2026-11-02 recommends Fedora Media Writer and marks Ventoy unsupported. This
 is guidance for obtaining and writing upstream media, not a claim that this
 preview can create an installable Bluefin ISO.
+
+### Recovering a plan after refresh
+
+Use “Save planning choices for a refresh” to save a plan in this tab's session
+storage. Restoration is explicit and validates the version, experience, catalog
+identity, selected leaf and every filter against the current catalog. It keeps
+only catalog choices, app requests, package names and an uppercase ISO label.
+Build readiness, receipts and notice acknowledgements are never restored.
+Advanced images, commands and boot/connection overrides block saving or restoring
+rather than being silently dropped. “Forget saved plan” clears only stored data,
+not the current form. Storage failures leave the form untouched. This temporary
+UI state is not an additional configuration source or a portable TOML format.

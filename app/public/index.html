@@ -204,6 +204,13 @@
   .guided-next,.guided-use {background:var(--accent);color:var(--accent-ink);font-weight:600;}
   .guided-leaf {border:1px solid var(--border);border-radius:10px;padding:1rem;margin:.8rem 0;overflow-wrap:anywhere;}
   .guided-leaf h3 {margin-top:0;}
+  .desktop-preview {margin:.75rem 0;}
+  .desktop-preview img {display:block;width:100%;height:auto;max-width:640px;border-radius:8px;}
+  .desktop-preview img[hidden],.guided-art-card img[hidden] {display:none;}
+  .preview-unavailable {position:relative;z-index:2;color:var(--fg);background:var(--panel);padding:.6rem;border-radius:6px;font-size:.85rem;}
+  .guided-art-card.artwork-unavailable {min-height:200px;flex-wrap:wrap;}
+  .guided-art-card.artwork-unavailable::after {display:none;}
+  .guided-art-card.artwork-unavailable .guided-choice-copy,.guided-art-card.artwork-unavailable .guided-choice-copy small {color:var(--fg);}
   .guided-leaf code {white-space:normal;overflow-wrap:anywhere;}
   .guided-conflict {padding:1rem;border:1px solid var(--warn);border-radius:10px;}
   .guided-resolved {padding-left:1.2rem;color:var(--dim);font-size:.85rem;}
@@ -279,6 +286,20 @@
       </div>
     </details>
     <div class="facts hidden" id="facts"></div>
+  </section>
+  <section class="card" aria-labelledby="hardware-heading">
+    <h2 id="hardware-heading">Check your target computer</h2>
+    <p class="helper">Use the specifications of the computer you will install on, even if you are planning on a phone or another computer. We do not infer compatibility from this browser.</p>
+    <details><summary>Find the architecture and hardware requirements</summary>
+      <ul>
+        <li>On Windows, open Settings → System → About and find System type and processor. On macOS, use About This Mac. On Linux, open system information or run <code>uname -m</code> for the architecture.</li>
+        <li>Intel/AMD x86-64 and ARM64 are different targets. An x86-64 result alone does not establish the v2 or v3 CPU baseline. Check the processor specifications against the selected image requirements.</li>
+        <li>Apple Silicon and Apple T2 Macs need explicitly supported hardware paths. Generic ARM64 or Intel/AMD media does not establish Mac support.</li>
+        <li>Check graphics, firmware and boot requirements in the selected system’s installation documentation. An available catalog image is not a hardware compatibility test.</li>
+      </ul>
+      <button type="button" id="choose-architecture" class="secondary">Choose computer architecture</button>
+      <p id="hardware-help-status" role="status"></p>
+    </details>
   </section>
   <section class="card" aria-labelledby="apps-heading">
     <h2 id="apps-heading">Plan your apps <span class="optional">Optional</span></h2>
@@ -449,6 +470,11 @@
     </div>
   </div>
 
+  <details id="planning-recovery"><summary>Save planning choices for a refresh</summary>
+    <p class="helper">Save supported catalog choices, app requests, packages and the image label in this tab’s session storage. Nothing is uploaded. Restoring never starts a build or restores trust acknowledgements. Custom images, commands, connection overrides, TOML and secrets are not supported. Use the setup link to move supported choices to a different computer.</p>
+    <div class="row"><button type="button" id="save-plan" class="secondary">Save plan in this tab</button><button type="button" id="restore-plan" class="secondary">Restore saved plan</button><button type="button" id="forget-plan" class="secondary">Forget saved plan</button></div>
+    <p id="plan-status" role="status" aria-live="polite"></p>
+  </details>
   <details class="share-options"><summary>Share this setup</summary><p class="helper">The link includes the supported image, platform, app requests, packages and label. It excludes setup commands, boot-file and relay overrides, branding and TOML fields. Keep the original configuration for a complete setup. Do not put secrets in shared values.</p><p class="sub" style="margin-top:1rem">Share a preset:
     <a id="sharelink" href="#" style="word-break:break-all"><code id="share">?image=…</code></a>
     <button id="copyshare" class="secondary" style="padding:.2rem .6rem;font-size:.8rem;margin-left:.4rem">Copy</button>
@@ -466,6 +492,7 @@
 <script src="experiences.js"></script>
 <script src="flatpak-defaults.js"></script>
 <script src="setup-safety.js"></script>
+<script src="setup-draft.js"></script>
 <script src="app.js"></script>
 </body>
 </html>
