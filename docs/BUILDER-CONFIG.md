@@ -97,3 +97,15 @@ JSON is the transport for requests to the engine. It does not replace primary co
 
 The browser has no custom Flatpak remotes or complete TOML editor.
 The app picker only records requests.
+
+### Native catalog fixture fails before comparison
+
+The native test uses a Node VM to evaluate `app.js`.
+Its dependency list must include `setup-safety.js`.
+Without this module, `updateShare` throws `TypeError: $(...).removeAttribute is not a function` in the minimal DOM fixture.
+The fixture then exits before it compares catalog coverage.
+
+The same fixture passed at `aa70af0` and failed at `551c3f0` and `5112421`.
+Load the real module in `native/catalog_variants_test.go`; do not bypass the safety check or mock its result.
+The Node test `tests/native-catalog-harness.test.cjs` runs this exact fixture without a GUI toolchain.
+The Go test still compares the web output with the native loader.
