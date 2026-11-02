@@ -27,7 +27,7 @@ function app() {
   };
   const request = { image: "synthetic:base", options: { label: "TEST", outputFilename: "test.iso", flatpaks: [], packages: [], extraRun: [] } };
   const op = { state: "ready", ready: true, request, inspectedVia: "wasm", id: 1, buildResult: null };
-  const trace = { closes: 0, writes: 0, aborts: 0, legacy: 0, calls: 0, downloads: 0 };
+  const trace = { sinks: 0, closes: 0, writes: 0, aborts: 0, legacy: 0, calls: 0, downloads: 0 };
   const sink = { kind: "picker", w: {
     write: async bytes => { trace.writes += bytes.length; },
     close: async () => { trace.closes++; }, abort: async () => { trace.aborts++; },
@@ -46,7 +46,7 @@ function app() {
     isOperationBusy() { return false; }, operationMatchesForm: () => true,
     setOperationBusy() {}, watchEngineMemory: () => () => {},
     log() {}, notify() {}, renderFallbackCard() {}, showCacheSize() {}, updatePostcardFilename() {},
-    isoSink: async () => sink, loadWasm: async () => {}, tboxValidateBuildResult: validateBuildResult,
+    isoSink: async () => { trace.sinks++; return sink; }, loadWasm: async () => {}, tboxValidateBuildResult: validateBuildResult,
     tboxBuildIso: async (_opts, write) => { trace.legacy++; await write(new Uint8Array([1, 2, 3, 4])); return 4; },
     tboxBuildIsoWithResult: async (_opts, write) => { trace.calls++; await write(new Uint8Array([1, 2, 3, 4])); return observedBuildFixture(); },
     tboxReset: () => null, tboxResetAsync: async () => null,
@@ -57,6 +57,7 @@ function app() {
     appFunction("deepFreeze", "let operationSeq"),
     appFunction("clearBuildResult", "function observeEngineResets"),
     appFunction("observeEngineResets", "function isOperationBusy"),
+    appFunction("requestRootfsCompression", "function buildRequestFromForm"),
     appFunction("rebuildCurrentOperation", "function syncOperationOptions"),
     appFunction("syncOperationOptions", "function operationMatchesForm"),
     appFunction("finishIsoSink", "function prepareDdi"),
@@ -98,6 +99,25 @@ test.describe("app result lifecycle VM", () => {
     await a.c.build();
     expect(a.op.state).toBe("completed"); expect(a.op.buildResult).toBeNull();
     expect(a.trace.legacy).toBe(1);
+  });
+  for (const mode of [undefined, null, "", "none"]) {
+    test(`legacy request compression ${String(mode)} keeps the uncompressed path`, async () => {
+      const a = app();
+      if (mode === undefined) delete a.c.nextRequest.options.rootfsCompression;
+      else a.c.nextRequest.options.rootfsCompression = mode;
+      await a.c.build();
+      expect(a.op.state).toBe("completed");
+      expect(a.trace.sinks).toBe(1); expect(a.trace.calls).toBe(1); expect(a.trace.closes).toBe(1);
+    });
+  }
+  test("legacy client cannot authorize LZ4 with an uncaptured capability function", async () => {
+    const a = app();
+    a.c.nextRequest.options.rootfsCompression = "lz4";
+    a.c.tboxGetCapabilities = () => ({ schemaVersion: 1, rootfsCompression: ["none", "lz4"] });
+    await a.c.build();
+    expect(a.op.state).toBe("failed");
+    expect(a.op.error).toContain("does not advertise compression capabilities");
+    expect(a.trace.sinks).toBe(0); expect(a.trace.calls).toBe(0); expect(a.trace.writes).toBe(0);
   });
   for (const malformed of [null, 4, {}, observedBuildFixture(3), observedBuildFixture(Number.MAX_SAFE_INTEGER + 1)]) {
     test(`rejects malformed returned result ${JSON.stringify(malformed)} before close`, async () => {

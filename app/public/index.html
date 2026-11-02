@@ -333,6 +333,12 @@
       <p class="helper">The defaults work for most people. Only change these if you need a specific system setup.</p>
       <label for="label">USB image name</label>
       <input type="text" id="label" value="" spellcheck="false">
+      <label for="rootfs-compression">Live filesystem compression</label>
+      <select id="rootfs-compression" aria-describedby="rootfs-compression-help">
+        <option value="none" selected>None (default)</option>
+        <option value="lz4">LZ4</option>
+      </select>
+      <p id="rootfs-compression-help" class="helper">LZ4 can reduce ISO size. It requires an engine that advertises LZ4 support and support in the exact selected kernel; engine capability alone does not establish kernel compatibility or installation qualification. DDI channels do not support LZ4. BuildRequest JSON and the local command preserve this choice. Setup links exclude compression; planning drafts cannot save or replace a setup with LZ4 selected. Select None explicitly to use planning recovery.</p>
       <details><summary>Add system packages</summary>
       <label style="margin-top:1rem">System packages (layered on the installed system via <a href="https://github.com/tuna-os/remora" target="_blank" rel="noopener">remora</a> — persists across updates)</label>
       <div id="pkglist" class="fplist"></div>
@@ -384,6 +390,7 @@
     <p>This creates a multi-GB ISO file on this computer. Keep this tab open and allow time for downloads and temporary browser storage. The final size and space required depend on the image; available space is not guaranteed.</p>
     <p>Check the selected architecture against your target computer’s specifications. This browser cannot establish its hardware compatibility. Browser build eligibility does not mean this exact output has passed an installation test.</p>
     <p id="review-apps" class="note"></p>
+    <p id="review-compression" class="muted" role="status"></p>
     <p>The browser does not flash a USB drive. After saving, use a separate writer and follow the system’s installation guide.</p>
     <div class="row"><button id="review-back" class="secondary">Back to setup</button><button id="review-create">Create ISO file</button></div>
   </dialog>
@@ -473,11 +480,11 @@
   </div>
 
   <details id="planning-recovery"><summary>Save planning choices for a refresh</summary>
-    <p class="helper">Save supported catalog choices, app requests, packages and the image label in this tab’s session storage. Nothing is uploaded. Restoring never starts a build or restores trust acknowledgements. Custom images, commands, connection overrides, TOML and secrets are not supported. Use the setup link to move supported choices to a different computer.</p>
+    <p class="helper">Save supported catalog choices, app requests, packages and the image label in this tab’s session storage. Nothing is uploaded. Restoring never starts a build or restores trust acknowledgements. Custom images, commands, connection overrides, nondefault live filesystem compression, TOML and secrets are not supported. Clear those advanced values explicitly before saving or restoring a plan. Use the setup link to move supported choices to a different computer.</p>
     <div class="row"><button type="button" id="save-plan" class="secondary">Save plan in this tab</button><button type="button" id="restore-plan" class="secondary">Restore saved plan</button><button type="button" id="forget-plan" class="secondary">Forget saved plan</button></div>
     <p id="plan-status" role="status" aria-live="polite"></p>
   </details>
-  <details class="share-options"><summary>Share this setup</summary><p class="helper">The link includes the supported image, platform, app requests, packages and label. It excludes setup commands, boot-file and relay overrides, branding and TOML fields. Keep the original configuration for a complete setup. Do not put secrets in shared values.</p><p class="sub" style="margin-top:1rem">Share a preset:
+  <details class="share-options"><summary>Share this setup</summary><p class="helper">The link includes the supported image, platform, app requests, packages and label. It excludes live filesystem compression, setup commands, boot-file and relay overrides, branding and TOML fields. A new tab opened from this link uses uncompressed live filesystems (None); use BuildRequest JSON and the local command to retain LZ4. Keep the original configuration for a complete setup. Do not put secrets in shared values.</p><p class="sub" style="margin-top:1rem">Share a preset:
     <a id="sharelink" href="#" style="word-break:break-all"><code id="share">?image=…</code></a>
     <button id="copyshare" class="secondary" style="padding:.2rem .6rem;font-size:.8rem;margin-left:.4rem">Copy</button>
   </p></details>
