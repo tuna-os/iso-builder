@@ -86,22 +86,31 @@ installation to validate this guide.
 
 ### Interpreting output delivery
 
-`ISO saved` means the file writer closed successfully. `Download started`
-means the browser accepted a download request; the page cannot confirm its
-completion or persistence. Check the browser download list before writing media.
-Cancellation or a failed write must not show the installation card. Neither
-message is a checksum of the saved file, publisher authentication, or an
-installation test. Unknown browser quota is reported as unknown, not unlimited.
-App selections remain requests and are not applied to the resulting system.
+`ISO saved` means the writer closed the file without an error.
+`Download started` means the browser accepted a download request.
+The page cannot confirm that the download finished or that the file persists.
+Check the download list in your browser before you write media.
+
+If a user cancels a save, or a write fails, the page must hide the installation card.
+Neither message proves a checksum match, publisher identity, or a successful installation.
+
+The page must show unknown quota as unknown.
+App choices are requests; the engine does not apply them to the system.
 
 ### Starting point and review
 
-The first screen uses the deployment's maintained recommendation, never the
-first catalog entry. Qualification remains separate and unavailable targets
-are not replaced. Use “Help me choose / browse all setups” for the existing
-base-first and desktop-first paths. Check the architecture of the installation
-target, not the browser host. Before creating media, review the target, temporary
-storage needs, and application-request limitations. Back or Escape preserves
-the form. On phones, use the existing setup link for supported choices on a
-desktop; it is not cloud storage. Unsaved refresh recovery and importing complete
-TOML setups are not implemented by this stage.
+The first screen uses the recommendation in the deployment configuration.
+It never selects the first catalog entry as a substitute.
+Qualification remains separate. The page does not replace unavailable targets.
+
+Use `Help me choose / browse all setups` to open catalog choices.
+The base-first and desktop-first paths use the same catalog.
+Check the architecture of the installation target, not the browser host.
+
+Before you create media, review the target, temporary storage needs, and limits for app requests.
+Back or Escape keeps the form unchanged.
+On phones, use the setup link to move supported choices to a desktop.
+The link does not use cloud storage.
+
+This stage does not restore unsaved changes after refresh.
+It does not import TOML setups.
