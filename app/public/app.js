@@ -149,7 +149,7 @@ function diagnosticUnqualifiedGrant(op) {
   if (globalThis.__TBOX_STRICT_OBSERVED__) return null;
   const g = globalThis.__TBOX_DIAGNOSTIC_UNQUALIFIED__;
   if (!g || g.kind !== "diagnostic-unqualified" || typeof g.image !== "string" || g.image === "") return null;
-  if (op?.request?.image !== g.image) return null;
+  if (!sameImageRef(op?.request?.image, g.image)) return null;
   if (g.platform !== undefined && op.request.target?.platform !== g.platform) return null;
   if (op.catalogEntry?.availability?.available !== true) return null;
   return g;
@@ -160,7 +160,7 @@ function strictObservedGrant(op) {
   if (globalThis.__TBOX_DIAGNOSTIC_UNQUALIFIED__ || !g || g.kind !== "strict-observed" ||
       g.route !== "retained-iso-roundtrip" || g.installMode !== "plain" ||
       g.image !== "tuna-os/skipjack:gnome" || g.platform !== "linux/amd64" ||
-      op?.request?.image !== g.image || op.request.target?.platform !== g.platform ||
+      !sameImageRef(op?.request?.image, g.image) || op.request.target?.platform !== g.platform ||
       op.catalogEntry?.availability?.available !== true) return null;
   return g;
 }
@@ -716,6 +716,31 @@ function parseImage(raw) {
   return { registry: SHIM, image: s };
 }
 
+// The default relay fronts ghcr.io and nothing else (worker/cors-shim.js
+// UPSTREAM, matching the SHIM initializer above). A user-overridden relay
+// fronts an unknown registry, so refs fetched through it stay hostless:
+// the request must never assert a host it cannot prove. The engine accepts
+// both forms for fetch/compare (tacklebox NormalizeImageRef) but ships
+// request.image verbatim into media-input.json/recipe.json, from which the
+// installer derives the bootc origin — a hostless request produced a
+// hostless origin that failed the strict FQ comparison (iso-builder#3797).
+const DEFAULT_RELAY = "https://relay.tunaos.org";
+function canonicalInstallRef(rawInput, registry, image) {
+  const raw = String(rawInput || "").trim();
+  const firstSeg = raw.split("/")[0] || "";
+  if (raw.includes("/") && (firstSeg.includes(".") || firstSeg.includes(":"))) return raw;
+  if (registry === DEFAULT_RELAY) return "ghcr.io/" + image;
+  return image;
+}
+
+// Engine contract: "ghcr.io/tuna-os/x:y" and "tuna-os/x:y" are the same
+// image (tacklebox NormalizeImageRef). Request/grant comparisons use this
+// so the canonical request form still matches short grant pins.
+function sameImageRef(a, b) {
+  const strip = (s) => String(s || "").trim().replace(/^ghcr\.io\//, "");
+  return strip(a) === strip(b);
+}
+
 // ── Image picker & unified BuildRequest v1 operation state ───────────────
 const GUIDED = BUILDER_CONFIG.schema_version === 2;
 let guidedPicker = null, guidedModel = null, guidedError = null, manualImageMode = false, guidedSelectionIdentity = null;
@@ -906,6 +931,7 @@ function buildRequestFromForm(existingOp = null) {
   const vSel = ($("variant")?.value || "").replace(/^ddi:/, "");
   const defaultRef = rawInput;
   const { registry, image } = parseImage(defaultRef);
+  const installImage = canonicalInstallRef(defaultRef, registry, image);
   const label = (($("label")?.value || BUILDER_CONFIG.output.volume_label).toUpperCase().replace(/[^A-Z0-9_]/g, "_")) || BUILDER_CONFIG.output.volume_label;
   const flatpaks = fpCollect();
   const packages = pkgCollect();
@@ -962,7 +988,7 @@ function buildRequestFromForm(existingOp = null) {
     schemaVersion: 1,
     kind: "build-request",
     customImage,
-    image,
+    image: installImage,
     registry,
     ...(target ? { target } : {}),
     ...(resolvedInputs ? { resolvedInputs } : {}),
@@ -1026,7 +1052,7 @@ function operationMatchesForm(op) {
   const rawInput = ($("image")?.value || "").trim();
   if (!rawInput) return false;
   const { registry, image } = parseImage(rawInput);
-  if (op.request.image !== image || op.request.registry !== registry) return false;
+  if (!sameImageRef(op.request.image, image) || op.request.registry !== registry) return false;
   const parsedTuna = parseCuratedTunaRef(rawInput);
   const wantPlat = parsedTuna
     ? normalizePlatformForVariant(parsedTuna.variant, currentPlatform())
