@@ -54,7 +54,7 @@ test.describe("engine OOM guard", () => {
     expect(fallbackReq).toEqual(selectedRequest);
     expect(fallbackReq.schemaVersion).toBe(1);
     expect(fallbackReq.kind).toBe("build-request");
-    expect(fallbackReq.image).toBe("tuna-os/bonito:kde");
+    expect(fallbackReq.image).toBe("ghcr.io/tuna-os/bonito:kde");
     expect(fallbackReq.target).toEqual({
       variant: "bonito",
       flavor: "kde",
@@ -97,7 +97,7 @@ test.describe("engine OOM guard", () => {
     expect(opState.fallbackReq).toEqual(selectedRequest);
     expect(opState.fallbackReq.schemaVersion).toBe(1);
     expect(opState.fallbackReq.kind).toBe("build-request");
-    expect(opState.fallbackReq.image).toBe("tuna-os/yellowfin:gnome");
+    expect(opState.fallbackReq.image).toBe("ghcr.io/tuna-os/yellowfin:gnome");
     expect(opState.fallbackReq.target).toEqual({
       variant: "yellowfin",
       flavor: "gnome",
