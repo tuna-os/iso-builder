@@ -723,7 +723,7 @@ function parseImage(raw) {
 // both forms for fetch/compare (tacklebox NormalizeImageRef) but ships
 // request.image verbatim into media-input.json/recipe.json, from which the
 // installer derives the bootc origin — a hostless request produced a
-// hostless origin that failed the strict FQ comparison (iso-builder#3797).
+// hostless origin that failed the strict FQ comparison (tuna-os/tunaOS#3797).
 const DEFAULT_RELAY = "https://relay.tunaos.org";
 function canonicalInstallRef(rawInput, registry, image) {
   const raw = String(rawInput || "").trim();
