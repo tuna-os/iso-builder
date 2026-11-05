@@ -712,7 +712,7 @@ test.describe("iso builder", () => {
     let observed = null;
     if (strictObserved) {
       const badge = ((await page.locator(".badge.status").first().textContent().catch(() => "")) || "").trim();
-      expect(badge, "app must label the retained plain build as not-assessed").toContain("not-assessed");
+      expect(badge, "app must label the retained strict-observed build as not-assessed").toContain("not-assessed");
       expect(await page.evaluate(() => globalThis.tboxGetBuildRequest().qualificationId)).toBeUndefined();
       observed = { label: "observed, not assessed", image: IMAGE, platform: evPlatform, catalogPins: diagnosticPins };
     }

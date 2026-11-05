@@ -155,11 +155,19 @@ function diagnosticUnqualifiedGrant(op) {
   return g;
 }
 
+// The retained plain observation stays bounded to Skipjack GNOME. A both-mode
+// run (plain then LUKS on the same retained ISO, the qualification-receipt
+// route) may name one TunaOS linux/amd64 target. Either way the page labels
+// the build not-assessed and sends no qualificationId.
+const STRICT_OBSERVED_BOTH_IMAGE = /^tuna-os\/[a-z0-9]+(?:-[a-z0-9]+)*:[a-z0-9]+(?:[.-][a-z0-9]+)*$/;
+
 function strictObservedGrant(op) {
   const g = globalThis.__TBOX_STRICT_OBSERVED__;
   if (globalThis.__TBOX_DIAGNOSTIC_UNQUALIFIED__ || !g || g.kind !== "strict-observed" ||
-      g.route !== "retained-iso-roundtrip" || g.installMode !== "plain" ||
-      g.image !== "tuna-os/skipjack:gnome" || g.platform !== "linux/amd64" ||
+      g.route !== "retained-iso-roundtrip" || typeof g.image !== "string" ||
+      !(g.installMode === "plain" ? g.image === "tuna-os/skipjack:gnome"
+        : g.installMode === "both" && STRICT_OBSERVED_BOTH_IMAGE.test(g.image)) ||
+      g.platform !== "linux/amd64" ||
       !sameImageRef(op?.request?.image, g.image) || op.request.target?.platform !== g.platform ||
       op.catalogEntry?.availability?.available !== true) return null;
   return g;

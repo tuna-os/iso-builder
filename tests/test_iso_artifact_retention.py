@@ -275,7 +275,7 @@ def test_strict_roundtrip_plan_accepts_bounded_observed_or_diagnostic_cell(mode,
 @pytest.mark.parametrize('key,value', [
     ('ONLY', 'bonito-kde'), ('ONLY', 'skipjack-gnome,bonito-kde'),
     ('RUN_FULL', 'false'), ('BENCHMARK', 'true'), ('PAIR', 'true'),
-    ('KEEP_ISO', 'true'), ('STRICT_INSTALL_MODE', 'both'), ('STRICT_INSTALL_MODE', ''),
+    ('KEEP_ISO', 'true'), ('STRICT_INSTALL_MODE', 'plain,luks'), ('STRICT_INSTALL_MODE', ''),
     ('RETAIN_ISO_ARTIFACT', 'false'), ('RETAIN_CANDIDATE', 'true'),
 ])
 @pytest.mark.parametrize('mode,diagnostic', [('plain', 'false'), ('luks', 'true')])
@@ -288,14 +288,38 @@ def test_strict_roundtrip_plan_rejects_unbounded_or_published_modes(key, value, 
 
 
 @pytest.mark.parametrize('mode,diagnostic', [('plain', 'true'), ('luks', 'false'),
-                                           ('plain', 'invalid')])
+                                           ('plain', 'invalid'), ('both', 'true')])
 def test_strict_roundtrip_plan_rejects_mismatched_diagnostic_mode(mode, diagnostic):
     env = valid()
     env.update(STRICT_ROUNDTRIP_TEST='true', STRICT_INSTALL_MODE=mode, DIAGNOSTIC_UNQUALIFIED=diagnostic)
     assert plan(env).returncode != 0
 
 
-def test_strict_choice_does_not_change_normal_full_route():
+@pytest.mark.parametrize('mode', ['luks', 'both'])
+def test_strict_choice_does_not_change_normal_full_route(mode):
     env = valid()
-    env.update(RETAIN_ISO_ARTIFACT='false', ONLY='', STRICT_INSTALL_MODE='luks')
+    env.update(RETAIN_ISO_ARTIFACT='false', ONLY='', STRICT_INSTALL_MODE=mode)
     assert plan(env).returncode == 0
+
+
+@pytest.mark.parametrize('only', ['skipjack-gnome', 'bonito-kde', 'grouper-gnome'])
+def test_strict_both_plan_accepts_one_named_qualify_amd64_cell(only):
+    env = valid()
+    env.update(STRICT_ROUNDTRIP_TEST='true', STRICT_INSTALL_MODE='both', DIAGNOSTIC_UNQUALIFIED='false', ONLY=only)
+    r = plan(env)
+    assert r.returncode == 0, r.stderr
+    assert 'count=1' in r.stdout and f'"slug": "{only}"' in r.stdout
+
+
+@pytest.mark.parametrize('key,value', [
+    # amd64/v2 stays native; reference cells never qualify; one cell only.
+    ('ONLY', 'yellowfin-gnome'), ('ONLY', 'albacore-gnome'), ('ONLY', 'bluefin-dakota'),
+    ('ONLY', 'aurora-stable'), ('ONLY', 'bonito-kde,skipjack-gnome'), ('ONLY', ''),
+    ('DIAGNOSTIC_UNQUALIFIED', 'true'), ('RUN_FULL', 'false'), ('BENCHMARK', 'true'), ('PAIR', 'true'),
+    ('KEEP_ISO', 'true'), ('RETAIN_ISO_ARTIFACT', 'false'), ('RETAIN_CANDIDATE', 'true'),
+])
+def test_strict_both_plan_rejects_unbounded_unqualifiable_or_diagnostic(key, value):
+    env = valid()
+    env.update(STRICT_ROUNDTRIP_TEST='true', STRICT_INSTALL_MODE='both', DIAGNOSTIC_UNQUALIFIED='false', ONLY='bonito-kde')
+    env[key] = value
+    assert plan(env).returncode != 0

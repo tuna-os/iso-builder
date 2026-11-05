@@ -127,8 +127,8 @@ The steps run after the browser build, and also after a failed guest check:
 
 ### Optional strict test of the exact round-tripped bytes
 
-The bounded same-byte path is off by default. It accepts two contexts for
-`skipjack-gnome` only. The observed plain-install context is:
+The bounded same-byte path is off by default. It accepts two contexts with one
+mode each, for `skipjack-gnome` only. The observed plain-install context is:
 
 ```json
 {"run_full":true,"only":"skipjack-gnome","benchmark":false,"keep_iso":false,"retain_candidate":false,"pair":false,"retain_iso_artifact":true,"diagnostic_unqualified":false,"strict_roundtrip_test":true,"strict_install_mode":"plain","retain_iso_artifact_days":"7"}
@@ -138,15 +138,22 @@ The diagnostic context uses the same bounds with `strict_install_mode: "luks"`
 and `diagnostic_unqualified: true`. The planner does not accept plain builds
 with diagnostics, or LUKS builds without diagnostics. Neither context lets CI publish an ISO.
 
+A third context, `strict_install_mode: "both"` with
+`diagnostic_unqualified: false`, runs plain and then LUKS on the same bytes.
+It is the qualification-receipt route (see the README). It accepts one `only=`
+cell that `e2e/editions.json` marks `qualify: true` on `linux/amd64`.
+`amd64/v2` cells stay native, and reference cells never qualify.
+
 ### Admission and qualification boundaries
 
 CI can observe an image that the production catalog has not qualified.
 The browser harness enables this route only with `TBOX_E2E_STRICT_OBSERVED=1`,
 `TBOX_E2E_FULL=1`, and all the inputs above.
-The frozen `__TBOX_STRICT_OBSERVED__` grant binds
-`tuna-os/skipjack:gnome`, `linux/amd64`, install mode `plain`, and route
-`retained-iso-roundtrip`. It is not a URL, UI, or browser-storage override and
-cannot coexist with the diagnostic grant.
+The frozen `__TBOX_STRICT_OBSERVED__` grant binds `linux/amd64`, route
+`retained-iso-roundtrip`, and either install mode `plain` with
+`tuna-os/skipjack:gnome`, or install mode `both` with the one named
+`tuna-os/<variant>:<flavor>` cell. It is not a URL, UI, or browser-storage
+override and cannot coexist with the diagnostic grant.
 
 Observed builds retain `qualification: not-assessed`. The harness labels
 their `strictObserved` evidence `observed, not assessed`. It records the image,
@@ -157,10 +164,14 @@ the bytes it used. These observations do not prove qualification.
 Diagnostic builds retain `qualification: diagnostic-unqualified`. Their label
 states that CI used a diagnostic override. The production catalog keeps its
 qualification guards. If CI retains an artifact or a guest test passes for one
-mode, that result does not qualify an observed or diagnostic build.
+mode, that result does not qualify an observed or diagnostic build. Only the
+attested receipt of a passed `both` run on `main` carries
+`qualification: browser-qualified`. The browser build itself stays
+`not-assessed`.
 
 The job timeout is 360 minutes for this path. The capped build, artifact
-transfer, input preparation, and guest test total 275 minutes. Each setup step
+transfer, input preparation, and guest test total 275 minutes for one mode.
+With `both`, the guest gets 120 minutes, so the total is 335. Each setup step
 has its own cap. The 360-minute limit also includes finalization and cleanup.
 
 ### Runner preparation

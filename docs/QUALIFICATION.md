@@ -68,9 +68,17 @@ without this format. Both trim browser names before the native checks.
 The minimum gate also needs browser origin, a build receipt digest and the final
 ISO digest. The producer must match these to a separate observation from a
 trusted browser-build workflow and artifact. A self-asserted origin flag does
-not prove that association. The current producer lacks this integration and
-must keep targets unqualified. A native install result does not establish
+not prove that association. A native install result does not establish
 browser origin. Placeholder browser names and versions cannot pass the gate.
+
+That association now exists as a producer artifact. On `main`, a
+`strict_roundtrip_test` run with `strict_install_mode=both` must pass both
+strict legs on one retained ISO. It then emits a
+`BrowserIsoQualificationReceipt/v1` and attests it with build provenance (see
+the README). The receipt binds the ISO bytes, the producer run and artifact,
+the harness revision and both harness results. The receipt route does not change
+the app catalog or its admission gate. They still keep every target
+unqualified until a consumer verifies a receipt and publishes the result.
 
 ## Cold/warm pair protocol
 

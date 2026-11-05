@@ -98,15 +98,16 @@ npx playwright test --grep-invert @full        # Runs UI & inspect network flow
 
 ### Retained same-byte strict guest observations
 
-CI's opt-in `strict_roundtrip_test` route is limited to `only=skipjack-gnome`,
-`run_full=true`, `retain_iso_artifact=true`, `keep_iso=false`,
-`retain_candidate=false`, `benchmark=false` and `pair=false`. Its
+CI's opt-in `strict_roundtrip_test` route needs `run_full=true`,
+`retain_iso_artifact=true`, `keep_iso=false`, `retain_candidate=false`,
+`benchmark=false`, `pair=false` and exactly one `only=` cell. Its
 `strict_install_mode` choice applies **only** to this route:
 
-| Strict install mode | `diagnostic_unqualified` | Evidence scope |
-|---|---|---|
-| `plain` (default) | `false` | Observed plain install; `not-assessed`, not full qualification |
-| `luks` | `true` | Diagnostic LUKS install; `diagnostic-unqualified`, never qualification |
+| Strict install mode | `diagnostic_unqualified` | `only=` | Evidence scope |
+|---|---|---|---|
+| `plain` (default) | `false` | `skipjack-gnome` | Observed plain install; `not-assessed`, not full qualification |
+| `luks` | `true` | `skipjack-gnome` | Diagnostic LUKS install; `diagnostic-unqualified`, never qualification |
+| `both` | `false` | one `qualify: true` `linux/amd64` cell | Plain then LUKS on the same ISO in one harness run; on `main`, an attested qualification receipt |
 
 For example, dispatch an observed plain run with:
 
@@ -122,14 +123,49 @@ For diagnostic LUKS, use `strict_install_mode=luks` and
 `diagnostic_unqualified=true` together. The catalog/source admission guards
 still apply; a non-diagnostic run does not bypass them.
 
-Both routes retain the browser-built ISO and discard the local original.
+All three modes retain the browser-built ISO and discard the local original.
 They download the chunks again, reconstruct the ISO, and verify its hash against
 the browser measurement **before** the guest starts. The helper checks that the
 receipt agrees with the source, browser, `GITHUB_RUN_ID`, `GITHUB_RUN_ATTEMPT`,
 and artifact identities for the strict invocation. Only LUKS with diagnostics
 sets `TUNAOS_INSTALLED_BOOT_DIAGNOSTIC=1`. Neither single-mode result is full
-qualification evidence. Other full runs still need both modes for full
-qualification.
+qualification evidence.
+
+#### Qualification receipts (`strict_install_mode=both`)
+
+`both` runs the strict harness once with `--strict-offline-gui=plain,luks`
+against the round-tripped ISO. When that job passes on `refs/heads/main`,
+`scripts/build-qualification-receipt.py` writes a
+`BrowserIsoQualificationReceipt/v1`. Its inputs are the harness's
+`strict-qual-plain.json` and `strict-qual-luks.json` (copied verbatim), the
+same-byte binding, the harness revision pinned in `ci.yml` and the run's
+`GITHUB_*` identity. The receipt is canonical JSON
+(`sort_keys`, `(",", ":")` separators, no trailing newline), so
+`sha256(receipt.json)` is the receipt digest.
+
+The builder writes a receipt only when these conditions are true:
+
+- Both legs installed and did a cold boot and a warm boot.
+- Each warm boot has a kernel boot ID that is different from the cold boot.
+- Each leg created the account in GNOME Initial Setup and logged in through GDM.
+- The plain leg shows no passphrase prompt and the LUKS leg shows one.
+- The booted digest equals the source digest and the image digest.
+- The imgref is `ghcr.io/tuna-os/<variant>:<flavor>`.
+- The run is not diagnostic, ran both modes, and ran on `main`.
+
+A branch dispatch still runs both legs but writes no receipt.
+
+The job attests `receipt.json` with `actions/attest-build-provenance`, which
+is why `full-matrix` alone holds `id-token: write` and `attestations: write`.
+It then checks the bundle the way a consumer will and uploads `receipt.json`
+and `bundle.jsonl` as `qualification-receipt-<slug>-run<id>-a<attempt>`.
+To authenticate a downloaded receipt:
+
+```sh
+gh attestation verify receipt.json --repo tuna-os/iso-builder \
+  --signer-workflow tuna-os/iso-builder/.github/workflows/ci.yml \
+  --source-ref refs/heads/main --bundle bundle.jsonl
+```
 
 ### Brand assets and primary configuration
 

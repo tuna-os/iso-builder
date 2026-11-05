@@ -76,15 +76,16 @@ on:
         type: string
         default: "7"
       strict_roundtrip_test:
-        description: "Test exact retained Skipjack GNOME ISO bytes: observed plain or diagnostic LUKS, never full qualification. Requires run_full, only=skipjack-gnome, retain_iso_artifact; no benchmark or R2."
+        description: "Test exact retained ISO bytes under the strict harness. plain/luks: Skipjack GNOME only, observed plain or diagnostic LUKS, never qualification. both: plain+LUKS on one named qualify linux/amd64 cell; on main it emits an attested qualification receipt. Requires run_full, one only=, retain_iso_artifact; no benchmark or R2."
         type: boolean
         default: false
       strict_install_mode:
-        description: "Strict-roundtrip-only install mode; plain requires diagnostic_unqualified=false, luks requires true. Normal full runs still test both modes."
+        description: "Strict-roundtrip-only install mode; plain and both require diagnostic_unqualified=false, luks requires true. Normal full runs still test both modes."
         type: choice
         options:
           - plain
           - luks
+          - both
         default: plain
       benchmark:
         description: "Run each @full build three times (cold profiles) and attach median/range evidence"
@@ -498,12 +499,24 @@ jobs:
   full-matrix:
     needs: [full-plan, wasm]
     runs-on: ubuntu-24.04
+    # Widened from the workflow default for one purpose: a both-mode strict
+    # run on main attests its qualification receipt with
+    # actions/attest-build-provenance, which needs an OIDC token (id-token)
+    # and the attestations API. Nothing else in this job uses either.
+    permissions:
+      contents: read
+      id-token: write
+      attestations: write
     # The strict same-byte route has bounded stages: 75 min to build, 30 to
     # split the ISO, 30+5 to upload it, 5 to drop local chunks, 30 to download,
-    # 30 to verify, 10 to prepare, and 60 for the guest: 275 min total. Setup
-    # and the pinned harness checkout, output labeling, uploads and cleanup
-    # have their own step caps. The unchanged GitHub maximum of 360 min also
-    # bounds their combined runtime; individual caps are not extra job time.
+    # 30 to verify, 10 to prepare, and 60 for a single-mode guest: 275 min
+    # total. strict_install_mode=both runs plain then LUKS in one harness
+    # invocation, so its guest step gets 120 (335 min), plus 5+10+5+10 for
+    # the main-only receipt build, attestation, bundle check and upload.
+    # Setup and the pinned harness checkout, output labeling, uploads and
+    # cleanup have their own step caps. The unchanged GitHub maximum of 360
+    # min also bounds their combined runtime; individual caps are not extra
+    # job time.
     # Without the strict guest test, retained-ISO runs need 330 min for the
     # same setup, browser, 25-minute guest check, artifact transfer, and uploads.
     # Candidate retention keeps its existing 130-minute cap. Cold/warm pairs
@@ -630,7 +643,7 @@ jobs:
           # diagnostic-unqualified and are never a qualification.
           DIAGNOSTIC_ALLOW_UNQUALIFIED: ${{ github.event.inputs.diagnostic_unqualified == 'true' && github.event.inputs.only != '' && '1' || '' }}
           DIAGNOSTIC_TARGET: ${{ contains(matrix.edition.ref, '/') && matrix.edition.ref || format('tuna-os/{0}', matrix.edition.ref) }}
-          TBOX_E2E_STRICT_OBSERVED: ${{ github.event.inputs.strict_roundtrip_test == 'true' && github.event.inputs.strict_install_mode == 'plain' && github.event.inputs.diagnostic_unqualified != 'true' && '1' || '' }}
+          TBOX_E2E_STRICT_OBSERVED: ${{ github.event.inputs.strict_roundtrip_test == 'true' && (github.event.inputs.strict_install_mode == 'plain' || github.event.inputs.strict_install_mode == 'both') && github.event.inputs.diagnostic_unqualified != 'true' && '1' || '' }}
           STRICT_ROUNDTRIP_TEST: ${{ github.event.inputs.strict_roundtrip_test }}
           STRICT_INSTALL_MODE: ${{ github.event.inputs.strict_install_mode }}
           DIAGNOSTIC_UNQUALIFIED: ${{ github.event.inputs.diagnostic_unqualified }}
@@ -817,8 +830,9 @@ jobs:
         run: just full-strict-inputs
 
       - name: verify exact retained ISO under current strict harness
+        id: strict-guest
         if: ${{ always() && !cancelled() && github.event.inputs.strict_roundtrip_test == 'true' && steps.iso-roundtrip.outcome == 'success' && steps.same-byte-inputs.outcome == 'success' }}
-        timeout-minutes: 60
+        timeout-minutes: ${{ github.event.inputs.strict_install_mode == 'both' && 120 || 60 }}
         env:
           SLUG: ${{ matrix.edition.slug }}
           STRICT_INSTALL_MODE: ${{ github.event.inputs.strict_install_mode }}
@@ -901,6 +915,54 @@ jobs:
           STRICT_ROUNDTRIP_TEST: ${{ github.event.inputs.strict_roundtrip_test }}
           DIAGNOSTIC_UNQUALIFIED: ${{ github.event.inputs.diagnostic_unqualified }}
         run: just full-label-output
+
+      # Qualification receipt (BrowserIsoQualificationReceipt/v1), only for a
+      # passed non-diagnostic both-mode strict run on refs/heads/main: one ISO,
+      # plain and LUKS legs, every step before this green. The builder
+      # re-checks all of that and refuses otherwise. A branch dispatch still
+      # runs both legs but emits no receipt. The receipt is attested with
+      # build provenance (subject receipt.json); the consumer authenticates it
+      # with `gh attestation verify receipt.json --repo tuna-os/iso-builder
+      # --signer-workflow tuna-os/iso-builder/.github/workflows/ci.yml
+      # --source-ref refs/heads/main --bundle bundle.jsonl`.
+      - name: build qualification receipt (both-mode, main only)
+        id: qualification-receipt
+        if: ${{ success() && github.ref == 'refs/heads/main' && github.event.inputs.strict_roundtrip_test == 'true' && github.event.inputs.strict_install_mode == 'both' && github.event.inputs.diagnostic_unqualified == 'false' && steps.strict-guest.outcome == 'success' }}
+        timeout-minutes: 5
+        env:
+          SLUG: ${{ matrix.edition.slug }}
+          STRICT_INSTALL_MODE: ${{ github.event.inputs.strict_install_mode }}
+          DIAGNOSTIC_UNQUALIFIED: ${{ github.event.inputs.diagnostic_unqualified }}
+        run: just full-qualification-receipt
+
+      - name: attest qualification receipt
+        id: attest-receipt
+        if: ${{ success() && steps.qualification-receipt.outcome == 'success' }}
+        timeout-minutes: 10
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        with:
+          subject-path: ${{ runner.temp }}/qualification-receipt/receipt.json
+
+      - name: verify qualification receipt attestation bundle
+        if: ${{ success() && steps.attest-receipt.outcome == 'success' }}
+        timeout-minutes: 5
+        env:
+          GH_TOKEN: ${{ github.token }}
+          BUNDLE_PATH: ${{ steps.attest-receipt.outputs.bundle-path }}
+        run: just full-qualification-receipt-verify
+
+      - name: upload qualification receipt
+        if: ${{ success() && steps.attest-receipt.outcome == 'success' }}
+        timeout-minutes: 10
+        uses: actions/upload-artifact@v7
+        with:
+          name: qualification-receipt-${{ matrix.edition.slug }}-run${{ github.run_id }}-a${{ github.run_attempt }}
+          path: |
+            ${{ runner.temp }}/qualification-receipt/receipt.json
+            ${{ runner.temp }}/qualification-receipt/bundle.jsonl
+          retention-days: 90
+          if-no-files-found: error
+
       # The browser-half evidence and the measurements of the exact ISO bytes
       # exist as soon as the build step succeeds. They must not wait for the
       # guest: a failed guest check otherwise discarded the only record of the

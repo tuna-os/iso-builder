@@ -24,11 +24,11 @@ def longest_slug():
     return max((e['slug'] for e in editions), key=len)
 
 
-def run_strict(tmp_path, workdir, slug):
+def run_strict(tmp_path, workdir, slug, mode=None):
     harness = tmp_path / 'ws/tunaos-e2e-current/scripts/iso-e2e.sh'
     harness.parent.mkdir(parents=True)
     ran = tmp_path / 'harness-ran'
-    harness.write_text(f'#!/bin/sh\ntouch {ran}\n')
+    harness.write_text(f'#!/bin/sh\nprintf "%s\\n" "$@" > {ran}\n')
     harness.chmod(0o755)
     bindir = tmp_path / 'bin'
     bindir.mkdir()
@@ -53,6 +53,8 @@ def run_strict(tmp_path, workdir, slug):
         env[f'TUNAOS_QUAL_{key}'] = 'fixture'
     env.pop('STRICT_INSTALL_MODE', None)
     env.pop('DIAGNOSTIC_UNQUALIFIED', None)
+    if mode is not None:
+        env['STRICT_INSTALL_MODE'] = mode
     r = subprocess.run(['just', '--justfile', str(ROOT / 'justfile'), '--working-directory', str(workdir),
                         'full-guest-verify-strict'], env=env, text=True, capture_output=True)
     return r, ran
@@ -94,3 +96,23 @@ def test_runner_length_workspace_with_longest_slug_passes_the_guard(tmp_path):
             workdir.rmdir()
     assert r.returncode == 0, r.stdout + r.stderr
     assert ran.exists()
+
+
+@needs_just
+@pytest.mark.parametrize('mode,expected', [(None, 'plain'), ('plain', 'plain'), ('both', 'plain,luks')])
+def test_install_mode_selects_the_harness_legs(tmp_path, mode, expected):
+    with tempfile.TemporaryDirectory(prefix='strict-') as workdir:
+        r, ran = run_strict(tmp_path, Path(workdir), 'skipjack-gnome', mode)
+    assert r.returncode == 0, r.stdout + r.stderr
+    args = ran.read_text().splitlines()
+    assert f'--strict-offline-gui={expected}' in args
+    assert args[args.index('--output') + 1] == 'luks-verify-skipjack-gnome-obs'
+
+
+@needs_just
+@pytest.mark.parametrize('mode', ['plain,luks', 'all', 'LUKS'])
+def test_unknown_install_mode_fails_before_the_harness_runs(tmp_path, mode):
+    with tempfile.TemporaryDirectory(prefix='strict-') as workdir:
+        r, ran = run_strict(tmp_path, Path(workdir), 'skipjack-gnome', mode)
+    assert r.returncode != 0
+    assert not ran.exists()
