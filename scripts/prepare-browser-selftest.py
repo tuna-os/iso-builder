@@ -231,9 +231,9 @@ def validate_inputs(*, iso: str | Path, measurements: dict, browser_evidence: di
             "artifact name does not bind target, run id and attempt")
     require(PLATFORM.fullmatch(platform) is not None, "matrix platform is unsupported")
     require(type(diagnostic_unqualified) is bool, "diagnostic-unqualified must be true or false")
-    require(install_mode in {"plain", "luks"}, "install mode must be plain or luks")
-    require(install_mode == ("luks" if diagnostic_unqualified else "plain"),
-            "diagnostic-unqualified requires luks; observed non-diagnostic tests require plain")
+    require(install_mode in {"plain", "luks", "both"}, "install mode must be plain, luks or both")
+    require((install_mode == "luks") if diagnostic_unqualified else (install_mode in {"plain", "both"}),
+            "diagnostic-unqualified requires luks; observed non-diagnostic tests require plain or both")
     qualification = "diagnostic-unqualified" if diagnostic_unqualified else "not-assessed"
     image = f"tuna-os/{variant}:{flavor}"
 
@@ -382,7 +382,11 @@ def validate_inputs(*, iso: str | Path, measurements: dict, browser_evidence: di
     binding = {
         "schema": "BrowserIsoSameByteGuestTest/v1",
         "qualification": qualification,
-        "notice": ("Single-mode observation; full qualification is not assessed. "
+        "installMode": install_mode,
+        "notice": (("Both-mode observation (plain and LUKS on these exact bytes); only "
+                    "scripts/build-qualification-receipt.py may turn its results into a "
+                    "qualification receipt. " if install_mode == "both" else
+                    "Single-mode observation; full qualification is not assessed. ") +
                    "Consistency, not authentication: this test does not authenticate "
                    "the producer or qualify the target."),
         "producer": {**expected_producer, "artifactName": artifact_name, "artifactId": int(artifact_id)},
@@ -418,7 +422,7 @@ def main(argv=None) -> int:
     parser.add_argument("--flavor", required=True)
     parser.add_argument("--slug", required=True)
     parser.add_argument("--platform", required=True)
-    parser.add_argument("--install-mode", choices=("plain", "luks"), default="plain")
+    parser.add_argument("--install-mode", choices=("plain", "luks", "both"), default="plain")
     parser.add_argument("--diagnostic-unqualified", choices=("true", "false"), default="false")
     parser.add_argument("--out-env", required=True)
     parser.add_argument("--out-binding", required=True)

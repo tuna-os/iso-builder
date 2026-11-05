@@ -228,12 +228,31 @@ def test_observed_plain_rejects_old_or_contradictory_diagnostic_block(tmp_path, 
         helper.validate_inputs(**args)
 
 
-@pytest.mark.parametrize("diagnostic,mode", [(True, "plain"), (False, "luks")])
+@pytest.mark.parametrize("diagnostic,mode", [(True, "plain"), (True, "both"), (False, "luks"),
+                                              (False, "plain,luks"), (False, "")])
 def test_rejects_install_mode_outside_requested_diagnostic_context(tmp_path, diagnostic, mode):
     args, *_ = fixture(tmp_path, diagnostic=diagnostic)
     args["install_mode"] = mode
     with pytest.raises(helper.InputError):
         helper.validate_inputs(**args)
+
+
+def test_observed_both_mode_binds_the_same_identities_and_records_the_mode(tmp_path):
+    args, source, overlay, engine, wasm, installer = fixture(tmp_path, diagnostic=False)
+    plain_env, plain_binding = helper.validate_inputs(**args)
+    args["install_mode"] = "both"
+    env, binding = helper.validate_inputs(**args)
+
+    assert env["STRICT_INSTALL_MODE"] == "both"
+    assert env["DIAGNOSTIC_UNQUALIFIED"] == "false"
+    assert env["TUNAOS_INSTALLED_BOOT_DIAGNOSTIC"] == "0"
+    volatile = {"STRICT_INSTALL_MODE", "TUNAOS_QUAL_BROWSER_FREE_DISK_GIB"}
+    assert {k: v for k, v in env.items() if k not in volatile} == \
+        {k: v for k, v in plain_env.items() if k not in volatile}
+    assert binding["qualification"] == "not-assessed"
+    assert binding["installMode"] == "both" and plain_binding["installMode"] == "plain"
+    assert binding["identities"] == plain_binding["identities"]
+    assert binding["notice"].startswith("Both-mode observation")
 
 
 @pytest.mark.parametrize("field,value", [

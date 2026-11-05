@@ -3,7 +3,7 @@
 // Production catalog qualification is never changed. CI installs frozen,
 // named-target grants with addInitScript; URL, storage and UI cannot grant one.
 // Diagnostic builds stay diagnostic-unqualified. The bounded retained-ISO plain
-// route instead records a strict-observed, not-assessed build.
+// and both-mode routes instead record a strict-observed, not-assessed build.
 
 const LABEL = "diagnostic, unqualified build";
 const QUALIFICATION = "diagnostic-unqualified";
@@ -37,21 +37,29 @@ function installDiagnosticGrant(grant) {
   });
 }
 
+// The retained plain route stays bounded to Skipjack GNOME. STRICT_INSTALL_MODE
+// =both (plain then LUKS on one retained ISO, the qualification-receipt route)
+// may name any single TunaOS linux/amd64 cell; ONLY must be exactly its slug.
+const STRICT_BOTH_IMAGE = /^tuna-os\/([a-z0-9]+(?:-[a-z0-9]+)*):([a-z0-9]+(?:[.-][a-z0-9]+)*)$/;
+
 function strictObservedGrantFromEnv(env, { image, platform }) {
   if (env.TBOX_E2E_STRICT_OBSERVED === undefined || env.TBOX_E2E_STRICT_OBSERVED === "") return null;
   const required = {
     TBOX_E2E_STRICT_OBSERVED: "1", TBOX_E2E_FULL: "1",
-    STRICT_ROUNDTRIP_TEST: "true", STRICT_INSTALL_MODE: "plain",
-    DIAGNOSTIC_UNQUALIFIED: "false", RETAIN_ISO_ARTIFACT: "true",
-    ONLY: "skipjack-gnome", BENCHMARK: "false", KEEP_ISO: "false",
-    RETAIN_CANDIDATE: "false", PAIR: "false",
+    STRICT_ROUNDTRIP_TEST: "true", DIAGNOSTIC_UNQUALIFIED: "false", RETAIN_ISO_ARTIFACT: "true",
+    BENCHMARK: "false", KEEP_ISO: "false", RETAIN_CANDIDATE: "false", PAIR: "false",
   };
-  if (Object.entries(required).some(([key, value]) => env[key] !== value) ||
-      env.DIAGNOSTIC_ALLOW_UNQUALIFIED || image !== "tuna-os/skipjack:gnome" || platform !== "linux/amd64") {
-    throw new Error("TBOX_E2E_STRICT_OBSERVED requires the retained Skipjack GNOME plain strict roundtrip, no diagnostic grant or publishing");
+  const mode = env.STRICT_INSTALL_MODE;
+  const both = mode === "both" && STRICT_BOTH_IMAGE.exec(image || "");
+  const target = mode === "plain"
+    ? env.ONLY === "skipjack-gnome" && image === "tuna-os/skipjack:gnome"
+    : Boolean(both) && env.ONLY === `${both[1]}-${both[2]}`;
+  if (Object.entries(required).some(([key, value]) => env[key] !== value) || !target ||
+      env.DIAGNOSTIC_ALLOW_UNQUALIFIED || platform !== "linux/amd64") {
+    throw new Error("TBOX_E2E_STRICT_OBSERVED requires the retained Skipjack GNOME plain strict roundtrip, or a both-mode strict roundtrip of the one named TunaOS linux/amd64 cell, with no diagnostic grant or publishing");
   }
   return Object.freeze({ kind: "strict-observed", image, platform,
-    installMode: "plain", route: "retained-iso-roundtrip" });
+    installMode: mode, route: "retained-iso-roundtrip" });
 }
 
 function installStrictObservedGrant(grant) {

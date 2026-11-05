@@ -158,6 +158,35 @@ test.describe("bounded strict-observed admission", () => {
     expect(() => strictObservedGrantFromEnv({ ...env, DIAGNOSTIC_ALLOW_UNQUALIFIED: "1" }, want)).toThrow(/no diagnostic/);
   });
 
+  test("both mode admits only the one named TunaOS linux/amd64 cell", () => {
+    const both = { ...env, STRICT_INSTALL_MODE: "both" };
+    expect(strictObservedGrantFromEnv(both, want)).toEqual({ kind: "strict-observed", ...want,
+      installMode: "both", route: "retained-iso-roundtrip" });
+    const bonito = { image: "tuna-os/bonito:kde", platform: PLATFORM };
+    expect(strictObservedGrantFromEnv({ ...both, ONLY: "bonito-kde" }, bonito)).toEqual({
+      kind: "strict-observed", ...bonito, installMode: "both", route: "retained-iso-roundtrip" });
+    for (const [over, target] of [
+      [{ ONLY: "skipjack-gnome" }, bonito],
+      [{ ONLY: "bonito-kde,skipjack-gnome" }, bonito],
+      [{ ONLY: "yellowfin-gnome" }, { image: "tuna-os/yellowfin:gnome", platform: "linux/amd64/v2" }],
+      [{ ONLY: "bluefin-dakota" }, { image: "projectbluefin/dakota:stable", platform: PLATFORM }],
+      [{ DIAGNOSTIC_UNQUALIFIED: "true" }, want],
+      [{ DIAGNOSTIC_ALLOW_UNQUALIFIED: "1" }, want],
+      [{ STRICT_INSTALL_MODE: "luks" }, want],
+    ]) {
+      expect(() => strictObservedGrantFromEnv({ ...both, ...over }, target), JSON.stringify(over)).toThrow(/TBOX_E2E_STRICT_OBSERVED/);
+    }
+  });
+
+  test("real app admits a both-mode observation as not-assessed", async ({ page }) => {
+    await page.addInitScript(installStrictObservedGrant, { ...observedGrant(), installMode: "both" });
+    await page.goto(PRESET);
+    await inspectPreset(page);
+    await expect(page.locator("#build")).toBeEnabled();
+    await expect(page.locator(".badge.status")).toContainText("not-assessed");
+    expect(await page.evaluate(() => globalThis.tboxGetBuildRequest().qualificationId)).toBeUndefined();
+  });
+
   test("real app admits the retained plain observation without qualification or diagnostic labels", async ({ page }) => {
     await page.addInitScript(installStrictObservedGrant, observedGrant());
     await page.goto(PRESET);
@@ -191,6 +220,8 @@ test.describe("bounded strict-observed admission", () => {
     ["another image", { image: "tuna-os/yellowfin:gnome" }],
     ["another platform", { platform: "linux/amd64/v2" }],
     ["another mode", { installMode: "luks" }],
+    ["both mode on another platform", { installMode: "both", platform: "linux/amd64/v2" }],
+    ["both mode for a non-TunaOS image", { installMode: "both", image: "projectbluefin/dakota:stable" }],
     ["another route", { route: "normal" }],
     ["another kind", { kind: "qualified" }],
   ]) {

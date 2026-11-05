@@ -328,15 +328,23 @@ full-strict-inputs:
       cat "e2e/test-results/same-byte-guest-test-binding-${SLUG}.json"
     } >> "$GITHUB_STEP_SUMMARY"
 
-# Run one install mode on the exact retained ISO (observed, never full
-# qualification). The TUNAOS_QUAL_* identities come from $GITHUB_ENV,
-# written by full-strict-inputs. Env: SLUG, STRICT_INSTALL_MODE, DIAGNOSTIC_UNQUALIFIED.
+# Run the exact retained ISO through the strict harness: one install mode
+# (plain, or diagnostic luks; observed, never full qualification) or both legs
+# (STRICT_INSTALL_MODE=both: plain then LUKS on the same bytes in one harness
+# run, the input to build-qualification-receipt). The TUNAOS_QUAL_* identities
+# come from $GITHUB_ENV, written by full-strict-inputs.
+# Env: SLUG, STRICT_INSTALL_MODE, DIAGNOSTIC_UNQUALIFIED.
 # Run the exact retained ISO under the current strict harness.
 full-guest-verify-strict:
     #!/usr/bin/env bash
     set -euo pipefail
     STRICT_INSTALL_MODE="${STRICT_INSTALL_MODE:-plain}"
     DIAGNOSTIC_UNQUALIFIED="${DIAGNOSTIC_UNQUALIFIED:-false}"
+    case "$STRICT_INSTALL_MODE" in
+      plain|luks) HARNESS_MODES="$STRICT_INSTALL_MODE" ;;
+      both) HARNESS_MODES="plain,luks" ;;
+      *) echo "::error::STRICT_INSTALL_MODE must be plain, luks or both (got '$STRICT_INSTALL_MODE')"; exit 1 ;;
+    esac
     # The harness binds monitor/vnc/swtpm/serial sockets under OUTPUT; the
     # longest is strict-plain-warm-serial.sock, and sun_path holds 107 bytes.
     OUT="luks-verify-${SLUG}-obs"
@@ -383,14 +391,74 @@ full-guest-verify-strict:
       TUNAOS_QUAL_BROWSER_VERSION="$TUNAOS_QUAL_BROWSER_VERSION" \
       TUNAOS_QUAL_BROWSER_MEMORY_GIB="$TUNAOS_QUAL_BROWSER_MEMORY_GIB" \
       TUNAOS_QUAL_BROWSER_FREE_DISK_GIB="$TUNAOS_QUAL_BROWSER_FREE_DISK_GIB" \
-      "$GITHUB_WORKSPACE/tunaos-e2e-current/scripts/iso-e2e.sh" "$ISO" --strict-offline-gui="$STRICT_INSTALL_MODE" \
+      "$GITHUB_WORKSPACE/tunaos-e2e-current/scripts/iso-e2e.sh" "$ISO" --strict-offline-gui="$HARNESS_MODES" \
       --output "$OUT" --timeout 900
     fi
+    if [ "$STRICT_INSTALL_MODE" = "both" ]; then
+      scope="plain and LUKS legs passed; a qualification receipt is built only on refs/heads/main"
+    else
+      scope="not full qualification"
+    fi
     {
-      echo "### Same-byte strict guest test completed (${STRICT_INSTALL_MODE}, diagnostic-unqualified=${DIAGNOSTIC_UNQUALIFIED}; not full qualification)"
+      echo "### Same-byte strict guest test completed (${STRICT_INSTALL_MODE}, diagnostic-unqualified=${DIAGNOSTIC_UNQUALIFIED}; ${scope})"
       echo "- ISO: \`${TUNAOS_QUAL_MEDIA_DIGEST}\`"
-      echo "- Single-mode observations and media-bound identities are attached; producer/frontend authentication remains absent."
+      echo "- Harness modes \`${HARNESS_MODES}\`; observations and media-bound identities are attached."
     } >> "$GITHUB_STEP_SUMMARY"
+
+# Build the BrowserIsoQualificationReceipt/v1 from a passed both-mode strict
+# run (harness fragments + same-byte binding + this run's GITHUB_* identity),
+# writing canonical receipt.json for attestation. Refuses anything but a
+# non-diagnostic both-mode run on refs/heads/main. Env: SLUG,
+# STRICT_INSTALL_MODE, DIAGNOSTIC_UNQUALIFIED (plus the GITHUB_* defaults).
+# Build the canonical qualification receipt from a passed both-mode run.
+full-qualification-receipt:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    mkdir -p "$RUNNER_TEMP/qualification-receipt"
+    python3 scripts/build-qualification-receipt.py \
+      --harness-output "luks-verify-${SLUG}-obs" \
+      --binding "e2e/test-results/same-byte-guest-test-binding-${SLUG}.json" \
+      --workflow .github/workflows/ci.yml \
+      --harness-checkout "$GITHUB_WORKSPACE/tunaos-e2e-current" \
+      --slug "$SLUG" \
+      --install-mode "$STRICT_INSTALL_MODE" --diagnostic-unqualified "$DIAGNOSTIC_UNQUALIFIED" \
+      --out "$RUNNER_TEMP/qualification-receipt/receipt.json"
+    digest="sha256:$(sha256sum "$RUNNER_TEMP/qualification-receipt/receipt.json" | cut -d' ' -f1)"
+    {
+      echo "### Browser ISO qualification receipt (${SLUG})"
+      echo "- receipt digest: \`${digest}\`"
+      echo '```json'
+      python3 -m json.tool "$RUNNER_TEMP/qualification-receipt/receipt.json"
+      echo '```'
+    } >> "$GITHUB_STEP_SUMMARY"
+
+# Put the attestation bundle beside the receipt as bundle.jsonl and
+# authenticate it exactly as the consumer will, including that the signing
+# certificate names this run attempt and source commit. Env: BUNDLE_PATH
+# (attest-build-provenance's bundle-path output), GH_TOKEN.
+# Verify the receipt's attestation bundle as the consumer will.
+full-qualification-receipt-verify:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    dir="$RUNNER_TEMP/qualification-receipt"
+    if [ -z "${BUNDLE_PATH:-}" ] || [ ! -s "$BUNDLE_PATH" ]; then
+      echo "::error::attestation bundle is missing: '${BUNDLE_PATH:-}'"
+      exit 1
+    fi
+    cp "$BUNDLE_PATH" "$dir/bundle.jsonl"
+    gh attestation verify "$dir/receipt.json" --repo tuna-os/iso-builder \
+      --signer-workflow tuna-os/iso-builder/.github/workflows/ci.yml \
+      --source-ref refs/heads/main --bundle "$dir/bundle.jsonl" \
+      --format json > "$dir/verify.json"
+    python3 - "$dir/verify.json" <<'PY'
+    import json, os, sys
+    results = json.load(open(sys.argv[1]))
+    run = f"{os.environ['GITHUB_SERVER_URL']}/{os.environ['GITHUB_REPOSITORY']}/actions/runs/{os.environ['GITHUB_RUN_ID']}/attempts/{os.environ['GITHUB_RUN_ATTEMPT']}"
+    certs = [r["verificationResult"]["signature"]["certificate"] for r in results]
+    if not certs or any(c.get("runInvocationURI") != run or c.get("sourceRepositoryDigest") != os.environ["GITHUB_SHA"] for c in certs):
+        sys.exit(f"attestation certificate does not name {run} at {os.environ['GITHUB_SHA']}: {certs}")
+    print(f"receipt attestation verified for {run}")
+    PY
 
 # The guest harness runs under sudo, so its output starts root-owned. Label
 # the strict receipt first, then hand the tree back to the runner user so
