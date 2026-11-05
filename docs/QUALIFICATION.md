@@ -317,13 +317,13 @@ gh workflow run ci.yml -f run_full=true -f only=skipjack-gnome -f diagnostic_unq
   holds a `diagnosticUnqualified` block with label, image, platform and gate
   reason. A diagnostic file is not a qualification and never says `qualified`.
   The scripts for R2 retention accept only `not-assessed`, so they reject it.
-- The snapshot holds the registry digests from its generation date, and the
-  engine builds exactly the pinned platform manifest, fetched by digest
-  (tacklebox#452). Before that it resolved the tag and refused a moved one:
-  the first dispatch failed with `platformManifestDigest mismatch` (snapshot
-  `01ae7e79`, live `5f2ac8b1`). A diagnostic build is meant to exercise what
-  the registry serves now, so it gets the live index, manifest and config
-  digests of the named target from GHCR. It serves them to the page through a
+- The snapshot holds the registry digests from its generation date. The engine
+  builds the pinned platform manifest and gets it by digest (tacklebox#452).
+  Before that change, it resolved the tag and refused a moved tag. The first
+  dispatch failed with `platformManifestDigest mismatch` (snapshot `01ae7e79`,
+  live `5f2ac8b1`). A diagnostic build must test what the registry serves now.
+  Thus it gets the live index, manifest and config digests of the named target
+  from GHCR. It serves them to the page through a
   route. The committed snapshot does not change. The evidence records the old
   and new values in `diagnosticUnqualified.catalogPins`. If the build had no
   digests, the media would have no embedded offline layout.
