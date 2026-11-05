@@ -76,9 +76,39 @@ That association now exists as a producer artifact. On `main`, a
 strict legs on one retained ISO. It then emits a
 `BrowserIsoQualificationReceipt/v1` and attests it with build provenance (see
 the README). The receipt binds the ISO bytes, the producer run and artifact,
-the harness revision and both harness results. The receipt route does not change
-the app catalog or its admission gate. They still keep every target
-unqualified until a consumer verifies a receipt and publishes the result.
+the harness revision and both harness results.
+
+## Catalog from tunaOS
+
+tunaOS makes the catalog snapshot with `scripts/generate-catalog-snapshot.py`.
+That script reads `tunaos.toml`, the published image indexes and the receipts
+in `iso-qualification/receipts/`. Import its output with
+`python3 scripts/sync-catalog-snapshot.py <file>`. The import validates the
+document and then writes the web copy, the native copy, the fallback in
+`app.js` and the guided catalog. `just test` runs the `--check` form.
+
+A target is `qualified` only if a committed receipt names its variant and
+flavor. The receipt image digest must also be the current digest of the
+`linux/amd64` target. A `linux/arm64` target uses the receipt of the
+`linux/amd64` target of its flavor. Other platforms have no receipt basis.
+
+The receipt holds no browser profile, so the producer writes `browser: null`
+and `browserBuildReceiptDigest: null`. The gate accepts this second form only
+when it has all of these fields:
+
+- `receiptSchema` is `BrowserIsoQualificationReceipt/v1`.
+- `producer` is `ci.yml` of `tuna-os/iso-builder` on `refs/heads/main`, with
+  a 40-hex `sha`, a positive `runId` and a positive `runAttempt`.
+- `receiptDigest`, `isoDigest` and `receiptImageDigest` are digests, and
+  `receiptPlatform` is `linux/amd64`.
+- A `linux/amd64` target has its overlay, base, installer and engine digests
+  from the receipt. `receiptImageDigest` is equal to its own digest.
+
+`scripts/verify-catalog.py` also makes sure that each `linux/arm64` entry
+cites the digest of the `linux/amd64` entry in the same snapshot. The gate
+does not verify the attestation. tunaOS
+`scripts/collect-qualification-receipt.py` does that before it commits the
+receipt.
 
 ## Cold/warm pair protocol
 

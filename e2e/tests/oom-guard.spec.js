@@ -101,8 +101,8 @@ test.describe("engine OOM guard", () => {
     expect(opState.fallbackReq.target).toEqual({
       variant: "yellowfin",
       flavor: "gnome",
-      platform: "linux/amd64/v2",
-      cpuBaseline: "x86-64-v2",
+      platform: "linux/amd64",
+      cpuBaseline: "x86-64",
       hardwareScope: "generic",
     });
     expect(opState.fallbackReq.resolvedInputs.platformManifestDigest).toMatch(

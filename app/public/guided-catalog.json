@@ -2,9 +2,34 @@
   "schemaVersion": 1,
   "kind": "guided-image-catalog",
   "catalogId": "stock",
-  "generatedAt": "2026-10-17T00:00:00Z",
-  "snapshotDigest": "sha256:f11a1e621146510e729032bd9ddbb01ba6787b80aaa7a404b241e2d1d10e785b",
+  "generatedAt": "2026-11-05T21:25:23Z",
+  "snapshotDigest": "sha256:3efefccba88ee5bf32ea4da97380941fd4ca2bc7f2d3c0a7e2519c51f1f7aa6f",
   "leaves": [
+    {
+      "id": "albacore:base-hwe:linux/amd64",
+      "source": {
+        "kind": "target",
+        "targetKey": "albacore:base-hwe:linux/amd64"
+      },
+      "facets": {
+        "base": [
+          "albacore"
+        ],
+        "desktop": [
+          "none"
+        ],
+        "hardware": [
+          "generic"
+        ],
+        "platform": [
+          "linux/amd64"
+        ],
+        "edition": [
+          "hwe"
+        ]
+      },
+      "notices": []
+    },
     {
       "id": "albacore:base-hwe:linux/amd64/v2",
       "source": {
@@ -56,10 +81,10 @@
       "notices": []
     },
     {
-      "id": "albacore:base-nvidia:linux/amd64/v2",
+      "id": "albacore:base-nvidia:linux/amd64",
       "source": {
         "kind": "target",
-        "targetKey": "albacore:base-nvidia:linux/amd64/v2"
+        "targetKey": "albacore:base-nvidia:linux/amd64"
       },
       "facets": {
         "base": [
@@ -72,7 +97,7 @@
           "generic"
         ],
         "platform": [
-          "linux/amd64/v2"
+          "linux/amd64"
         ],
         "edition": [
           "nvidia"
@@ -81,10 +106,10 @@
       "notices": []
     },
     {
-      "id": "albacore:base-nvidia:linux/arm64",
+      "id": "albacore:base:linux/amd64",
       "source": {
         "kind": "target",
-        "targetKey": "albacore:base-nvidia:linux/arm64"
+        "targetKey": "albacore:base:linux/amd64"
       },
       "facets": {
         "base": [
@@ -97,10 +122,10 @@
           "generic"
         ],
         "platform": [
-          "linux/arm64"
+          "linux/amd64"
         ],
         "edition": [
-          "nvidia"
+          "standard"
         ]
       },
       "notices": []
@@ -156,10 +181,10 @@
       "notices": []
     },
     {
-      "id": "albacore:cosmic-hwe:linux/amd64/v2",
+      "id": "albacore:cosmic-hwe:linux/amd64",
       "source": {
         "kind": "target",
-        "targetKey": "albacore:cosmic-hwe:linux/amd64/v2"
+        "targetKey": "albacore:cosmic-hwe:linux/amd64"
       },
       "facets": {
         "base": [
@@ -172,7 +197,7 @@
           "generic"
         ],
         "platform": [
-          "linux/amd64/v2"
+          "linux/amd64"
         ],
         "edition": [
           "hwe"
@@ -181,10 +206,10 @@
       "notices": []
     },
     {
-      "id": "albacore:cosmic-hwe:linux/arm64",
+      "id": "albacore:cosmic-nvidia:linux/amd64",
       "source": {
         "kind": "target",
-        "targetKey": "albacore:cosmic-hwe:linux/arm64"
+        "targetKey": "albacore:cosmic-nvidia:linux/amd64"
       },
       "facets": {
         "base": [
@@ -197,110 +222,60 @@
           "generic"
         ],
         "platform": [
-          "linux/arm64"
+          "linux/amd64"
+        ],
+        "edition": [
+          "nvidia"
+        ]
+      },
+      "notices": []
+    },
+    {
+      "id": "albacore:cosmic:linux/amd64",
+      "source": {
+        "kind": "target",
+        "targetKey": "albacore:cosmic:linux/amd64"
+      },
+      "facets": {
+        "base": [
+          "albacore"
+        ],
+        "desktop": [
+          "cosmic"
+        ],
+        "hardware": [
+          "generic"
+        ],
+        "platform": [
+          "linux/amd64"
+        ],
+        "edition": [
+          "standard"
+        ]
+      },
+      "notices": []
+    },
+    {
+      "id": "albacore:gnome-hwe:linux/amd64",
+      "source": {
+        "kind": "target",
+        "targetKey": "albacore:gnome-hwe:linux/amd64"
+      },
+      "facets": {
+        "base": [
+          "albacore"
+        ],
+        "desktop": [
+          "gnome"
+        ],
+        "hardware": [
+          "generic"
+        ],
+        "platform": [
+          "linux/amd64"
         ],
         "edition": [
           "hwe"
-        ]
-      },
-      "notices": []
-    },
-    {
-      "id": "albacore:cosmic-nvidia:linux/amd64/v2",
-      "source": {
-        "kind": "target",
-        "targetKey": "albacore:cosmic-nvidia:linux/amd64/v2"
-      },
-      "facets": {
-        "base": [
-          "albacore"
-        ],
-        "desktop": [
-          "cosmic"
-        ],
-        "hardware": [
-          "generic"
-        ],
-        "platform": [
-          "linux/amd64/v2"
-        ],
-        "edition": [
-          "nvidia"
-        ]
-      },
-      "notices": []
-    },
-    {
-      "id": "albacore:cosmic-nvidia:linux/arm64",
-      "source": {
-        "kind": "target",
-        "targetKey": "albacore:cosmic-nvidia:linux/arm64"
-      },
-      "facets": {
-        "base": [
-          "albacore"
-        ],
-        "desktop": [
-          "cosmic"
-        ],
-        "hardware": [
-          "generic"
-        ],
-        "platform": [
-          "linux/arm64"
-        ],
-        "edition": [
-          "nvidia"
-        ]
-      },
-      "notices": []
-    },
-    {
-      "id": "albacore:cosmic:linux/amd64/v2",
-      "source": {
-        "kind": "target",
-        "targetKey": "albacore:cosmic:linux/amd64/v2"
-      },
-      "facets": {
-        "base": [
-          "albacore"
-        ],
-        "desktop": [
-          "cosmic"
-        ],
-        "hardware": [
-          "generic"
-        ],
-        "platform": [
-          "linux/amd64/v2"
-        ],
-        "edition": [
-          "standard"
-        ]
-      },
-      "notices": []
-    },
-    {
-      "id": "albacore:cosmic:linux/arm64",
-      "source": {
-        "kind": "target",
-        "targetKey": "albacore:cosmic:linux/arm64"
-      },
-      "facets": {
-        "base": [
-          "albacore"
-        ],
-        "desktop": [
-          "cosmic"
-        ],
-        "hardware": [
-          "generic"
-        ],
-        "platform": [
-          "linux/arm64"
-        ],
-        "edition": [
-          "standard"
         ]
       },
       "notices": []
@@ -331,10 +306,10 @@
       "notices": []
     },
     {
-      "id": "albacore:gnome-hwe:linux/arm64",
+      "id": "albacore:gnome-nvidia:linux/amd64",
       "source": {
         "kind": "target",
-        "targetKey": "albacore:gnome-hwe:linux/arm64"
+        "targetKey": "albacore:gnome-nvidia:linux/amd64"
       },
       "facets": {
         "base": [
@@ -347,32 +322,7 @@
           "generic"
         ],
         "platform": [
-          "linux/arm64"
-        ],
-        "edition": [
-          "hwe"
-        ]
-      },
-      "notices": []
-    },
-    {
-      "id": "albacore:gnome-nvidia:linux/amd64/v2",
-      "source": {
-        "kind": "target",
-        "targetKey": "albacore:gnome-nvidia:linux/amd64/v2"
-      },
-      "facets": {
-        "base": [
-          "albacore"
-        ],
-        "desktop": [
-          "gnome"
-        ],
-        "hardware": [
-          "generic"
-        ],
-        "platform": [
-          "linux/amd64/v2"
+          "linux/amd64"
         ],
         "edition": [
           "nvidia"
@@ -381,10 +331,10 @@
       "notices": []
     },
     {
-      "id": "albacore:gnome-nvidia:linux/arm64",
+      "id": "albacore:gnome:linux/amd64",
       "source": {
         "kind": "target",
-        "targetKey": "albacore:gnome-nvidia:linux/arm64"
+        "targetKey": "albacore:gnome:linux/amd64"
       },
       "facets": {
         "base": [
@@ -397,10 +347,10 @@
           "generic"
         ],
         "platform": [
-          "linux/arm64"
+          "linux/amd64"
         ],
         "edition": [
-          "nvidia"
+          "standard"
         ]
       },
       "notices": []
@@ -431,26 +381,26 @@
       "notices": []
     },
     {
-      "id": "albacore:gnome:linux/arm64",
+      "id": "albacore:kde-hwe:linux/amd64",
       "source": {
         "kind": "target",
-        "targetKey": "albacore:gnome:linux/arm64"
+        "targetKey": "albacore:kde-hwe:linux/amd64"
       },
       "facets": {
         "base": [
           "albacore"
         ],
         "desktop": [
-          "gnome"
+          "kde"
         ],
         "hardware": [
           "generic"
         ],
         "platform": [
-          "linux/arm64"
+          "linux/amd64"
         ],
         "edition": [
-          "standard"
+          "hwe"
         ]
       },
       "notices": []
@@ -506,10 +456,10 @@
       "notices": []
     },
     {
-      "id": "albacore:kde-nvidia:linux/amd64/v2",
+      "id": "albacore:kde-nvidia:linux/amd64",
       "source": {
         "kind": "target",
-        "targetKey": "albacore:kde-nvidia:linux/amd64/v2"
+        "targetKey": "albacore:kde-nvidia:linux/amd64"
       },
       "facets": {
         "base": [
@@ -522,7 +472,7 @@
           "generic"
         ],
         "platform": [
-          "linux/amd64/v2"
+          "linux/amd64"
         ],
         "edition": [
           "nvidia"
@@ -531,10 +481,10 @@
       "notices": []
     },
     {
-      "id": "albacore:kde-nvidia:linux/arm64",
+      "id": "albacore:kde:linux/amd64",
       "source": {
         "kind": "target",
-        "targetKey": "albacore:kde-nvidia:linux/arm64"
+        "targetKey": "albacore:kde:linux/amd64"
       },
       "facets": {
         "base": [
@@ -547,10 +497,10 @@
           "generic"
         ],
         "platform": [
-          "linux/arm64"
+          "linux/amd64"
         ],
         "edition": [
-          "nvidia"
+          "standard"
         ]
       },
       "notices": []
@@ -606,6 +556,31 @@
       "notices": []
     },
     {
+      "id": "albacore:niri-hwe:linux/amd64",
+      "source": {
+        "kind": "target",
+        "targetKey": "albacore:niri-hwe:linux/amd64"
+      },
+      "facets": {
+        "base": [
+          "albacore"
+        ],
+        "desktop": [
+          "niri"
+        ],
+        "hardware": [
+          "generic"
+        ],
+        "platform": [
+          "linux/amd64"
+        ],
+        "edition": [
+          "hwe"
+        ]
+      },
+      "notices": []
+    },
+    {
       "id": "albacore:niri-hwe:linux/amd64/v2",
       "source": {
         "kind": "target",
@@ -656,10 +631,10 @@
       "notices": []
     },
     {
-      "id": "albacore:niri-nvidia:linux/amd64/v2",
+      "id": "albacore:niri-nvidia:linux/amd64",
       "source": {
         "kind": "target",
-        "targetKey": "albacore:niri-nvidia:linux/amd64/v2"
+        "targetKey": "albacore:niri-nvidia:linux/amd64"
       },
       "facets": {
         "base": [
@@ -672,7 +647,7 @@
           "generic"
         ],
         "platform": [
-          "linux/amd64/v2"
+          "linux/amd64"
         ],
         "edition": [
           "nvidia"
@@ -681,10 +656,10 @@
       "notices": []
     },
     {
-      "id": "albacore:niri-nvidia:linux/arm64",
+      "id": "albacore:niri:linux/amd64",
       "source": {
         "kind": "target",
-        "targetKey": "albacore:niri-nvidia:linux/arm64"
+        "targetKey": "albacore:niri:linux/amd64"
       },
       "facets": {
         "base": [
@@ -697,10 +672,10 @@
           "generic"
         ],
         "platform": [
-          "linux/arm64"
+          "linux/amd64"
         ],
         "edition": [
-          "nvidia"
+          "standard"
         ]
       },
       "notices": []
@@ -756,6 +731,56 @@
       "notices": []
     },
     {
+      "id": "albacore:tuna:linux/amd64",
+      "source": {
+        "kind": "target",
+        "targetKey": "albacore:tuna:linux/amd64"
+      },
+      "facets": {
+        "base": [
+          "albacore"
+        ],
+        "desktop": [
+          "tuna"
+        ],
+        "hardware": [
+          "generic"
+        ],
+        "platform": [
+          "linux/amd64"
+        ],
+        "edition": [
+          "standard"
+        ]
+      },
+      "notices": []
+    },
+    {
+      "id": "albacore:xfce-hwe:linux/amd64",
+      "source": {
+        "kind": "target",
+        "targetKey": "albacore:xfce-hwe:linux/amd64"
+      },
+      "facets": {
+        "base": [
+          "albacore"
+        ],
+        "desktop": [
+          "xfce"
+        ],
+        "hardware": [
+          "generic"
+        ],
+        "platform": [
+          "linux/amd64"
+        ],
+        "edition": [
+          "hwe"
+        ]
+      },
+      "notices": []
+    },
+    {
       "id": "albacore:xfce-hwe:linux/amd64/v2",
       "source": {
         "kind": "target",
@@ -781,10 +806,10 @@
       "notices": []
     },
     {
-      "id": "albacore:xfce-hwe:linux/arm64",
+      "id": "albacore:xfce-nvidia:linux/amd64",
       "source": {
         "kind": "target",
-        "targetKey": "albacore:xfce-hwe:linux/arm64"
+        "targetKey": "albacore:xfce-nvidia:linux/amd64"
       },
       "facets": {
         "base": [
@@ -797,32 +822,7 @@
           "generic"
         ],
         "platform": [
-          "linux/arm64"
-        ],
-        "edition": [
-          "hwe"
-        ]
-      },
-      "notices": []
-    },
-    {
-      "id": "albacore:xfce-nvidia:linux/amd64/v2",
-      "source": {
-        "kind": "target",
-        "targetKey": "albacore:xfce-nvidia:linux/amd64/v2"
-      },
-      "facets": {
-        "base": [
-          "albacore"
-        ],
-        "desktop": [
-          "xfce"
-        ],
-        "hardware": [
-          "generic"
-        ],
-        "platform": [
-          "linux/amd64/v2"
+          "linux/amd64"
         ],
         "edition": [
           "nvidia"
@@ -831,10 +831,10 @@
       "notices": []
     },
     {
-      "id": "albacore:xfce-nvidia:linux/arm64",
+      "id": "albacore:xfce:linux/amd64",
       "source": {
         "kind": "target",
-        "targetKey": "albacore:xfce-nvidia:linux/arm64"
+        "targetKey": "albacore:xfce:linux/amd64"
       },
       "facets": {
         "base": [
@@ -847,10 +847,10 @@
           "generic"
         ],
         "platform": [
-          "linux/arm64"
+          "linux/amd64"
         ],
         "edition": [
-          "nvidia"
+          "standard"
         ]
       },
       "notices": []
@@ -873,31 +873,6 @@
         ],
         "platform": [
           "linux/amd64/v2"
-        ],
-        "edition": [
-          "standard"
-        ]
-      },
-      "notices": []
-    },
-    {
-      "id": "albacore:xfce:linux/arm64",
-      "source": {
-        "kind": "target",
-        "targetKey": "albacore:xfce:linux/arm64"
-      },
-      "facets": {
-        "base": [
-          "albacore"
-        ],
-        "desktop": [
-          "xfce"
-        ],
-        "hardware": [
-          "generic"
-        ],
-        "platform": [
-          "linux/arm64"
         ],
         "edition": [
           "standard"
@@ -981,31 +956,6 @@
       "notices": []
     },
     {
-      "id": "bonito-rawhide:base-nvidia:linux/arm64",
-      "source": {
-        "kind": "target",
-        "targetKey": "bonito-rawhide:base-nvidia:linux/arm64"
-      },
-      "facets": {
-        "base": [
-          "bonito-rawhide"
-        ],
-        "desktop": [
-          "none"
-        ],
-        "hardware": [
-          "generic"
-        ],
-        "platform": [
-          "linux/arm64"
-        ],
-        "edition": [
-          "nvidia"
-        ]
-      },
-      "notices": []
-    },
-    {
       "id": "bonito-rawhide:base:linux/amd64",
       "source": {
         "kind": "target",
@@ -1073,31 +1023,6 @@
         ],
         "platform": [
           "linux/amd64"
-        ],
-        "edition": [
-          "nvidia"
-        ]
-      },
-      "notices": []
-    },
-    {
-      "id": "bonito-rawhide:cosmic-nvidia:linux/arm64",
-      "source": {
-        "kind": "target",
-        "targetKey": "bonito-rawhide:cosmic-nvidia:linux/arm64"
-      },
-      "facets": {
-        "base": [
-          "bonito-rawhide"
-        ],
-        "desktop": [
-          "cosmic"
-        ],
-        "hardware": [
-          "generic"
-        ],
-        "platform": [
-          "linux/arm64"
         ],
         "edition": [
           "nvidia"
@@ -1231,31 +1156,6 @@
       "notices": []
     },
     {
-      "id": "bonito-rawhide:gnome-nvidia:linux/arm64",
-      "source": {
-        "kind": "target",
-        "targetKey": "bonito-rawhide:gnome-nvidia:linux/arm64"
-      },
-      "facets": {
-        "base": [
-          "bonito-rawhide"
-        ],
-        "desktop": [
-          "gnome"
-        ],
-        "hardware": [
-          "generic"
-        ],
-        "platform": [
-          "linux/arm64"
-        ],
-        "edition": [
-          "nvidia"
-        ]
-      },
-      "notices": []
-    },
-    {
       "id": "bonito-rawhide:gnome:linux/amd64",
       "source": {
         "kind": "target",
@@ -1323,31 +1223,6 @@
         ],
         "platform": [
           "linux/amd64"
-        ],
-        "edition": [
-          "nvidia"
-        ]
-      },
-      "notices": []
-    },
-    {
-      "id": "bonito-rawhide:kde-nvidia:linux/arm64",
-      "source": {
-        "kind": "target",
-        "targetKey": "bonito-rawhide:kde-nvidia:linux/arm64"
-      },
-      "facets": {
-        "base": [
-          "bonito-rawhide"
-        ],
-        "desktop": [
-          "kde"
-        ],
-        "hardware": [
-          "generic"
-        ],
-        "platform": [
-          "linux/arm64"
         ],
         "edition": [
           "nvidia"
@@ -1431,31 +1306,6 @@
       "notices": []
     },
     {
-      "id": "bonito-rawhide:niri-nvidia:linux/arm64",
-      "source": {
-        "kind": "target",
-        "targetKey": "bonito-rawhide:niri-nvidia:linux/arm64"
-      },
-      "facets": {
-        "base": [
-          "bonito-rawhide"
-        ],
-        "desktop": [
-          "niri"
-        ],
-        "hardware": [
-          "generic"
-        ],
-        "platform": [
-          "linux/arm64"
-        ],
-        "edition": [
-          "nvidia"
-        ]
-      },
-      "notices": []
-    },
-    {
       "id": "bonito-rawhide:niri:linux/amd64",
       "source": {
         "kind": "target",
@@ -1506,6 +1356,31 @@
       "notices": []
     },
     {
+      "id": "bonito-rawhide:tuna:linux/amd64",
+      "source": {
+        "kind": "target",
+        "targetKey": "bonito-rawhide:tuna:linux/amd64"
+      },
+      "facets": {
+        "base": [
+          "bonito-rawhide"
+        ],
+        "desktop": [
+          "tuna"
+        ],
+        "hardware": [
+          "generic"
+        ],
+        "platform": [
+          "linux/amd64"
+        ],
+        "edition": [
+          "standard"
+        ]
+      },
+      "notices": []
+    },
+    {
       "id": "bonito-rawhide:xfce-nvidia:linux/amd64",
       "source": {
         "kind": "target",
@@ -1523,31 +1398,6 @@
         ],
         "platform": [
           "linux/amd64"
-        ],
-        "edition": [
-          "nvidia"
-        ]
-      },
-      "notices": []
-    },
-    {
-      "id": "bonito-rawhide:xfce-nvidia:linux/arm64",
-      "source": {
-        "kind": "target",
-        "targetKey": "bonito-rawhide:xfce-nvidia:linux/arm64"
-      },
-      "facets": {
-        "base": [
-          "bonito-rawhide"
-        ],
-        "desktop": [
-          "xfce"
-        ],
-        "hardware": [
-          "generic"
-        ],
-        "platform": [
-          "linux/arm64"
         ],
         "edition": [
           "nvidia"
@@ -1681,31 +1531,6 @@
       "notices": []
     },
     {
-      "id": "bonito:base-nvidia:linux/arm64",
-      "source": {
-        "kind": "target",
-        "targetKey": "bonito:base-nvidia:linux/arm64"
-      },
-      "facets": {
-        "base": [
-          "bonito"
-        ],
-        "desktop": [
-          "none"
-        ],
-        "hardware": [
-          "generic"
-        ],
-        "platform": [
-          "linux/arm64"
-        ],
-        "edition": [
-          "nvidia"
-        ]
-      },
-      "notices": []
-    },
-    {
       "id": "bonito:base:linux/amd64",
       "source": {
         "kind": "target",
@@ -1773,31 +1598,6 @@
         ],
         "platform": [
           "linux/amd64"
-        ],
-        "edition": [
-          "nvidia"
-        ]
-      },
-      "notices": []
-    },
-    {
-      "id": "bonito:cosmic-nvidia:linux/arm64",
-      "source": {
-        "kind": "target",
-        "targetKey": "bonito:cosmic-nvidia:linux/arm64"
-      },
-      "facets": {
-        "base": [
-          "bonito"
-        ],
-        "desktop": [
-          "cosmic"
-        ],
-        "hardware": [
-          "generic"
-        ],
-        "platform": [
-          "linux/arm64"
         ],
         "edition": [
           "nvidia"
@@ -1956,31 +1756,6 @@
       "notices": []
     },
     {
-      "id": "bonito:gnome-nvidia:linux/arm64",
-      "source": {
-        "kind": "target",
-        "targetKey": "bonito:gnome-nvidia:linux/arm64"
-      },
-      "facets": {
-        "base": [
-          "bonito"
-        ],
-        "desktop": [
-          "gnome"
-        ],
-        "hardware": [
-          "generic"
-        ],
-        "platform": [
-          "linux/arm64"
-        ],
-        "edition": [
-          "nvidia"
-        ]
-      },
-      "notices": []
-    },
-    {
       "id": "bonito:gnome-t2:linux/amd64",
       "source": {
         "kind": "target",
@@ -2001,6 +1776,31 @@
         ],
         "edition": [
           "t2"
+        ]
+      },
+      "notices": []
+    },
+    {
+      "id": "bonito:gnome-x13s:linux/arm64",
+      "source": {
+        "kind": "target",
+        "targetKey": "bonito:gnome-x13s:linux/arm64"
+      },
+      "facets": {
+        "base": [
+          "bonito"
+        ],
+        "desktop": [
+          "gnome"
+        ],
+        "hardware": [
+          "generic"
+        ],
+        "platform": [
+          "linux/arm64"
+        ],
+        "edition": [
+          "x13s"
         ]
       },
       "notices": []
@@ -2073,31 +1873,6 @@
         ],
         "platform": [
           "linux/amd64"
-        ],
-        "edition": [
-          "nvidia"
-        ]
-      },
-      "notices": []
-    },
-    {
-      "id": "bonito:kde-nvidia:linux/arm64",
-      "source": {
-        "kind": "target",
-        "targetKey": "bonito:kde-nvidia:linux/arm64"
-      },
-      "facets": {
-        "base": [
-          "bonito"
-        ],
-        "desktop": [
-          "kde"
-        ],
-        "hardware": [
-          "generic"
-        ],
-        "platform": [
-          "linux/arm64"
         ],
         "edition": [
           "nvidia"
@@ -2181,31 +1956,6 @@
       "notices": []
     },
     {
-      "id": "bonito:niri-nvidia:linux/arm64",
-      "source": {
-        "kind": "target",
-        "targetKey": "bonito:niri-nvidia:linux/arm64"
-      },
-      "facets": {
-        "base": [
-          "bonito"
-        ],
-        "desktop": [
-          "niri"
-        ],
-        "hardware": [
-          "generic"
-        ],
-        "platform": [
-          "linux/arm64"
-        ],
-        "edition": [
-          "nvidia"
-        ]
-      },
-      "notices": []
-    },
-    {
       "id": "bonito:niri:linux/amd64",
       "source": {
         "kind": "target",
@@ -2256,6 +2006,31 @@
       "notices": []
     },
     {
+      "id": "bonito:tuna:linux/amd64",
+      "source": {
+        "kind": "target",
+        "targetKey": "bonito:tuna:linux/amd64"
+      },
+      "facets": {
+        "base": [
+          "bonito"
+        ],
+        "desktop": [
+          "tuna"
+        ],
+        "hardware": [
+          "generic"
+        ],
+        "platform": [
+          "linux/amd64"
+        ],
+        "edition": [
+          "standard"
+        ]
+      },
+      "notices": []
+    },
+    {
       "id": "bonito:xfce-nvidia:linux/amd64",
       "source": {
         "kind": "target",
@@ -2273,31 +2048,6 @@
         ],
         "platform": [
           "linux/amd64"
-        ],
-        "edition": [
-          "nvidia"
-        ]
-      },
-      "notices": []
-    },
-    {
-      "id": "bonito:xfce-nvidia:linux/arm64",
-      "source": {
-        "kind": "target",
-        "targetKey": "bonito:xfce-nvidia:linux/arm64"
-      },
-      "facets": {
-        "base": [
-          "bonito"
-        ],
-        "desktop": [
-          "xfce"
-        ],
-        "hardware": [
-          "generic"
-        ],
-        "platform": [
-          "linux/arm64"
         ],
         "edition": [
           "nvidia"
@@ -2381,31 +2131,6 @@
       "notices": []
     },
     {
-      "id": "flounder-sid:base:linux/arm64",
-      "source": {
-        "kind": "target",
-        "targetKey": "flounder-sid:base:linux/arm64"
-      },
-      "facets": {
-        "base": [
-          "flounder-sid"
-        ],
-        "desktop": [
-          "none"
-        ],
-        "hardware": [
-          "generic"
-        ],
-        "platform": [
-          "linux/arm64"
-        ],
-        "edition": [
-          "standard"
-        ]
-      },
-      "notices": []
-    },
-    {
       "id": "flounder-sid:gnome-nvidia:linux/amd64",
       "source": {
         "kind": "target",
@@ -2423,31 +2148,6 @@
         ],
         "platform": [
           "linux/amd64"
-        ],
-        "edition": [
-          "nvidia"
-        ]
-      },
-      "notices": []
-    },
-    {
-      "id": "flounder-sid:gnome-nvidia:linux/arm64",
-      "source": {
-        "kind": "target",
-        "targetKey": "flounder-sid:gnome-nvidia:linux/arm64"
-      },
-      "facets": {
-        "base": [
-          "flounder-sid"
-        ],
-        "desktop": [
-          "gnome"
-        ],
-        "hardware": [
-          "generic"
-        ],
-        "platform": [
-          "linux/arm64"
         ],
         "edition": [
           "nvidia"
@@ -2481,31 +2181,6 @@
       "notices": []
     },
     {
-      "id": "flounder-sid:gnome:linux/arm64",
-      "source": {
-        "kind": "target",
-        "targetKey": "flounder-sid:gnome:linux/arm64"
-      },
-      "facets": {
-        "base": [
-          "flounder-sid"
-        ],
-        "desktop": [
-          "gnome"
-        ],
-        "hardware": [
-          "generic"
-        ],
-        "platform": [
-          "linux/arm64"
-        ],
-        "edition": [
-          "standard"
-        ]
-      },
-      "notices": []
-    },
-    {
       "id": "flounder-sid:kde-nvidia:linux/amd64",
       "source": {
         "kind": "target",
@@ -2523,31 +2198,6 @@
         ],
         "platform": [
           "linux/amd64"
-        ],
-        "edition": [
-          "nvidia"
-        ]
-      },
-      "notices": []
-    },
-    {
-      "id": "flounder-sid:kde-nvidia:linux/arm64",
-      "source": {
-        "kind": "target",
-        "targetKey": "flounder-sid:kde-nvidia:linux/arm64"
-      },
-      "facets": {
-        "base": [
-          "flounder-sid"
-        ],
-        "desktop": [
-          "kde"
-        ],
-        "hardware": [
-          "generic"
-        ],
-        "platform": [
-          "linux/arm64"
         ],
         "edition": [
           "nvidia"
@@ -2581,23 +2231,23 @@
       "notices": []
     },
     {
-      "id": "flounder-sid:kde:linux/arm64",
+      "id": "flounder-sid:tuna:linux/amd64",
       "source": {
         "kind": "target",
-        "targetKey": "flounder-sid:kde:linux/arm64"
+        "targetKey": "flounder-sid:tuna:linux/amd64"
       },
       "facets": {
         "base": [
           "flounder-sid"
         ],
         "desktop": [
-          "kde"
+          "tuna"
         ],
         "hardware": [
           "generic"
         ],
         "platform": [
-          "linux/arm64"
+          "linux/amd64"
         ],
         "edition": [
           "standard"
@@ -2631,31 +2281,6 @@
       "notices": []
     },
     {
-      "id": "flounder-sid:xfce-nvidia:linux/arm64",
-      "source": {
-        "kind": "target",
-        "targetKey": "flounder-sid:xfce-nvidia:linux/arm64"
-      },
-      "facets": {
-        "base": [
-          "flounder-sid"
-        ],
-        "desktop": [
-          "xfce"
-        ],
-        "hardware": [
-          "generic"
-        ],
-        "platform": [
-          "linux/arm64"
-        ],
-        "edition": [
-          "nvidia"
-        ]
-      },
-      "notices": []
-    },
-    {
       "id": "flounder-sid:xfce:linux/amd64",
       "source": {
         "kind": "target",
@@ -2673,31 +2298,6 @@
         ],
         "platform": [
           "linux/amd64"
-        ],
-        "edition": [
-          "standard"
-        ]
-      },
-      "notices": []
-    },
-    {
-      "id": "flounder-sid:xfce:linux/arm64",
-      "source": {
-        "kind": "target",
-        "targetKey": "flounder-sid:xfce:linux/arm64"
-      },
-      "facets": {
-        "base": [
-          "flounder-sid"
-        ],
-        "desktop": [
-          "xfce"
-        ],
-        "hardware": [
-          "generic"
-        ],
-        "platform": [
-          "linux/arm64"
         ],
         "edition": [
           "standard"
@@ -2781,31 +2381,6 @@
       "notices": []
     },
     {
-      "id": "flounder:kde-nvidia:linux/arm64",
-      "source": {
-        "kind": "target",
-        "targetKey": "flounder:kde-nvidia:linux/arm64"
-      },
-      "facets": {
-        "base": [
-          "flounder"
-        ],
-        "desktop": [
-          "kde"
-        ],
-        "hardware": [
-          "generic"
-        ],
-        "platform": [
-          "linux/arm64"
-        ],
-        "edition": [
-          "nvidia"
-        ]
-      },
-      "notices": []
-    },
-    {
       "id": "flounder:kde:linux/amd64",
       "source": {
         "kind": "target",
@@ -2831,23 +2406,23 @@
       "notices": []
     },
     {
-      "id": "flounder:kde:linux/arm64",
+      "id": "flounder:tuna:linux/amd64",
       "source": {
         "kind": "target",
-        "targetKey": "flounder:kde:linux/arm64"
+        "targetKey": "flounder:tuna:linux/amd64"
       },
       "facets": {
         "base": [
           "flounder"
         ],
         "desktop": [
-          "kde"
+          "tuna"
         ],
         "hardware": [
           "generic"
         ],
         "platform": [
-          "linux/arm64"
+          "linux/amd64"
         ],
         "edition": [
           "standard"
@@ -2881,31 +2456,6 @@
       "notices": []
     },
     {
-      "id": "flounder:xfce-nvidia:linux/arm64",
-      "source": {
-        "kind": "target",
-        "targetKey": "flounder:xfce-nvidia:linux/arm64"
-      },
-      "facets": {
-        "base": [
-          "flounder"
-        ],
-        "desktop": [
-          "xfce"
-        ],
-        "hardware": [
-          "generic"
-        ],
-        "platform": [
-          "linux/arm64"
-        ],
-        "edition": [
-          "nvidia"
-        ]
-      },
-      "notices": []
-    },
-    {
       "id": "flounder:xfce:linux/amd64",
       "source": {
         "kind": "target",
@@ -2923,31 +2473,6 @@
         ],
         "platform": [
           "linux/amd64"
-        ],
-        "edition": [
-          "standard"
-        ]
-      },
-      "notices": []
-    },
-    {
-      "id": "flounder:xfce:linux/arm64",
-      "source": {
-        "kind": "target",
-        "targetKey": "flounder:xfce:linux/arm64"
-      },
-      "facets": {
-        "base": [
-          "flounder"
-        ],
-        "desktop": [
-          "xfce"
-        ],
-        "hardware": [
-          "generic"
-        ],
-        "platform": [
-          "linux/arm64"
         ],
         "edition": [
           "standard"
@@ -3023,31 +2548,6 @@
         ],
         "platform": [
           "linux/amd64"
-        ],
-        "edition": [
-          "standard"
-        ]
-      },
-      "notices": []
-    },
-    {
-      "id": "grouper:cosmic:linux/arm64",
-      "source": {
-        "kind": "target",
-        "targetKey": "grouper:cosmic:linux/arm64"
-      },
-      "facets": {
-        "base": [
-          "grouper"
-        ],
-        "desktop": [
-          "cosmic"
-        ],
-        "hardware": [
-          "generic"
-        ],
-        "platform": [
-          "linux/arm64"
         ],
         "edition": [
           "standard"
@@ -3231,6 +2731,31 @@
       "notices": []
     },
     {
+      "id": "grouper:tuna:linux/amd64",
+      "source": {
+        "kind": "target",
+        "targetKey": "grouper:tuna:linux/amd64"
+      },
+      "facets": {
+        "base": [
+          "grouper"
+        ],
+        "desktop": [
+          "tuna"
+        ],
+        "hardware": [
+          "generic"
+        ],
+        "platform": [
+          "linux/amd64"
+        ],
+        "edition": [
+          "standard"
+        ]
+      },
+      "notices": []
+    },
+    {
       "id": "grouper:xfce:linux/amd64",
       "source": {
         "kind": "target",
@@ -3306,23 +2831,23 @@
       "notices": []
     },
     {
-      "id": "guppy:base:linux/arm64",
+      "id": "guppy:gnome:linux/amd64",
       "source": {
         "kind": "target",
-        "targetKey": "guppy:base:linux/arm64"
+        "targetKey": "guppy:gnome:linux/amd64"
       },
       "facets": {
         "base": [
           "guppy"
         ],
         "desktop": [
-          "none"
+          "gnome"
         ],
         "hardware": [
           "generic"
         ],
         "platform": [
-          "linux/arm64"
+          "linux/amd64"
         ],
         "edition": [
           "standard"
@@ -3356,31 +2881,6 @@
       "notices": []
     },
     {
-      "id": "guppy:kde:linux/arm64",
-      "source": {
-        "kind": "target",
-        "targetKey": "guppy:kde:linux/arm64"
-      },
-      "facets": {
-        "base": [
-          "guppy"
-        ],
-        "desktop": [
-          "kde"
-        ],
-        "hardware": [
-          "generic"
-        ],
-        "platform": [
-          "linux/arm64"
-        ],
-        "edition": [
-          "standard"
-        ]
-      },
-      "notices": []
-    },
-    {
       "id": "guppy:xfce:linux/amd64",
       "source": {
         "kind": "target",
@@ -3398,31 +2898,6 @@
         ],
         "platform": [
           "linux/amd64"
-        ],
-        "edition": [
-          "standard"
-        ]
-      },
-      "notices": []
-    },
-    {
-      "id": "guppy:xfce:linux/arm64",
-      "source": {
-        "kind": "target",
-        "targetKey": "guppy:xfce:linux/arm64"
-      },
-      "facets": {
-        "base": [
-          "guppy"
-        ],
-        "desktop": [
-          "xfce"
-        ],
-        "hardware": [
-          "generic"
-        ],
-        "platform": [
-          "linux/arm64"
         ],
         "edition": [
           "standard"
@@ -3556,31 +3031,6 @@
       "notices": []
     },
     {
-      "id": "hummingbird:base:linux/arm64",
-      "source": {
-        "kind": "target",
-        "targetKey": "hummingbird:base:linux/arm64"
-      },
-      "facets": {
-        "base": [
-          "hummingbird"
-        ],
-        "desktop": [
-          "none"
-        ],
-        "hardware": [
-          "generic"
-        ],
-        "platform": [
-          "linux/arm64"
-        ],
-        "edition": [
-          "standard"
-        ]
-      },
-      "notices": []
-    },
-    {
       "id": "hummingbird:cosmic:linux/amd64",
       "source": {
         "kind": "target",
@@ -3606,31 +3056,6 @@
       "notices": []
     },
     {
-      "id": "hummingbird:cosmic:linux/arm64",
-      "source": {
-        "kind": "target",
-        "targetKey": "hummingbird:cosmic:linux/arm64"
-      },
-      "facets": {
-        "base": [
-          "hummingbird"
-        ],
-        "desktop": [
-          "cosmic"
-        ],
-        "hardware": [
-          "generic"
-        ],
-        "platform": [
-          "linux/arm64"
-        ],
-        "edition": [
-          "standard"
-        ]
-      },
-      "notices": []
-    },
-    {
       "id": "hummingbird:gnome:linux/amd64",
       "source": {
         "kind": "target",
@@ -3648,31 +3073,6 @@
         ],
         "platform": [
           "linux/amd64"
-        ],
-        "edition": [
-          "standard"
-        ]
-      },
-      "notices": []
-    },
-    {
-      "id": "hummingbird:gnome:linux/arm64",
-      "source": {
-        "kind": "target",
-        "targetKey": "hummingbird:gnome:linux/arm64"
-      },
-      "facets": {
-        "base": [
-          "hummingbird"
-        ],
-        "desktop": [
-          "gnome"
-        ],
-        "hardware": [
-          "generic"
-        ],
-        "platform": [
-          "linux/arm64"
         ],
         "edition": [
           "standard"
@@ -3756,31 +3156,6 @@
       "notices": []
     },
     {
-      "id": "marlin:cosmic-cachyos:linux/arm64",
-      "source": {
-        "kind": "target",
-        "targetKey": "marlin:cosmic-cachyos:linux/arm64"
-      },
-      "facets": {
-        "base": [
-          "marlin"
-        ],
-        "desktop": [
-          "cosmic"
-        ],
-        "hardware": [
-          "generic"
-        ],
-        "platform": [
-          "linux/arm64"
-        ],
-        "edition": [
-          "cachyos"
-        ]
-      },
-      "notices": []
-    },
-    {
       "id": "marlin:cosmic-nvidia:linux/amd64",
       "source": {
         "kind": "target",
@@ -3798,31 +3173,6 @@
         ],
         "platform": [
           "linux/amd64"
-        ],
-        "edition": [
-          "nvidia"
-        ]
-      },
-      "notices": []
-    },
-    {
-      "id": "marlin:cosmic-nvidia:linux/arm64",
-      "source": {
-        "kind": "target",
-        "targetKey": "marlin:cosmic-nvidia:linux/arm64"
-      },
-      "facets": {
-        "base": [
-          "marlin"
-        ],
-        "desktop": [
-          "cosmic"
-        ],
-        "hardware": [
-          "generic"
-        ],
-        "platform": [
-          "linux/arm64"
         ],
         "edition": [
           "nvidia"
@@ -3856,31 +3206,6 @@
       "notices": []
     },
     {
-      "id": "marlin:cosmic:linux/arm64",
-      "source": {
-        "kind": "target",
-        "targetKey": "marlin:cosmic:linux/arm64"
-      },
-      "facets": {
-        "base": [
-          "marlin"
-        ],
-        "desktop": [
-          "cosmic"
-        ],
-        "hardware": [
-          "generic"
-        ],
-        "platform": [
-          "linux/arm64"
-        ],
-        "edition": [
-          "standard"
-        ]
-      },
-      "notices": []
-    },
-    {
       "id": "marlin:gnome-cachyos:linux/amd64",
       "source": {
         "kind": "target",
@@ -3898,31 +3223,6 @@
         ],
         "platform": [
           "linux/amd64"
-        ],
-        "edition": [
-          "cachyos"
-        ]
-      },
-      "notices": []
-    },
-    {
-      "id": "marlin:gnome-cachyos:linux/arm64",
-      "source": {
-        "kind": "target",
-        "targetKey": "marlin:gnome-cachyos:linux/arm64"
-      },
-      "facets": {
-        "base": [
-          "marlin"
-        ],
-        "desktop": [
-          "gnome"
-        ],
-        "hardware": [
-          "generic"
-        ],
-        "platform": [
-          "linux/arm64"
         ],
         "edition": [
           "cachyos"
@@ -3956,10 +3256,10 @@
       "notices": []
     },
     {
-      "id": "marlin:gnome-nvidia:linux/arm64",
+      "id": "marlin:gnome-x13s:linux/arm64",
       "source": {
         "kind": "target",
-        "targetKey": "marlin:gnome-nvidia:linux/arm64"
+        "targetKey": "marlin:gnome-x13s:linux/arm64"
       },
       "facets": {
         "base": [
@@ -3975,7 +3275,7 @@
           "linux/arm64"
         ],
         "edition": [
-          "nvidia"
+          "x13s"
         ]
       },
       "notices": []
@@ -4056,31 +3356,6 @@
       "notices": []
     },
     {
-      "id": "marlin:kde-cachyos:linux/arm64",
-      "source": {
-        "kind": "target",
-        "targetKey": "marlin:kde-cachyos:linux/arm64"
-      },
-      "facets": {
-        "base": [
-          "marlin"
-        ],
-        "desktop": [
-          "kde"
-        ],
-        "hardware": [
-          "generic"
-        ],
-        "platform": [
-          "linux/arm64"
-        ],
-        "edition": [
-          "cachyos"
-        ]
-      },
-      "notices": []
-    },
-    {
       "id": "marlin:kde-nvidia:linux/amd64",
       "source": {
         "kind": "target",
@@ -4098,31 +3373,6 @@
         ],
         "platform": [
           "linux/amd64"
-        ],
-        "edition": [
-          "nvidia"
-        ]
-      },
-      "notices": []
-    },
-    {
-      "id": "marlin:kde-nvidia:linux/arm64",
-      "source": {
-        "kind": "target",
-        "targetKey": "marlin:kde-nvidia:linux/arm64"
-      },
-      "facets": {
-        "base": [
-          "marlin"
-        ],
-        "desktop": [
-          "kde"
-        ],
-        "hardware": [
-          "generic"
-        ],
-        "platform": [
-          "linux/arm64"
         ],
         "edition": [
           "nvidia"
@@ -4156,31 +3406,6 @@
       "notices": []
     },
     {
-      "id": "marlin:kde:linux/arm64",
-      "source": {
-        "kind": "target",
-        "targetKey": "marlin:kde:linux/arm64"
-      },
-      "facets": {
-        "base": [
-          "marlin"
-        ],
-        "desktop": [
-          "kde"
-        ],
-        "hardware": [
-          "generic"
-        ],
-        "platform": [
-          "linux/arm64"
-        ],
-        "edition": [
-          "standard"
-        ]
-      },
-      "notices": []
-    },
-    {
       "id": "marlin:niri-cachyos:linux/amd64",
       "source": {
         "kind": "target",
@@ -4198,31 +3423,6 @@
         ],
         "platform": [
           "linux/amd64"
-        ],
-        "edition": [
-          "cachyos"
-        ]
-      },
-      "notices": []
-    },
-    {
-      "id": "marlin:niri-cachyos:linux/arm64",
-      "source": {
-        "kind": "target",
-        "targetKey": "marlin:niri-cachyos:linux/arm64"
-      },
-      "facets": {
-        "base": [
-          "marlin"
-        ],
-        "desktop": [
-          "niri"
-        ],
-        "hardware": [
-          "generic"
-        ],
-        "platform": [
-          "linux/arm64"
         ],
         "edition": [
           "cachyos"
@@ -4256,31 +3456,6 @@
       "notices": []
     },
     {
-      "id": "marlin:niri-nvidia:linux/arm64",
-      "source": {
-        "kind": "target",
-        "targetKey": "marlin:niri-nvidia:linux/arm64"
-      },
-      "facets": {
-        "base": [
-          "marlin"
-        ],
-        "desktop": [
-          "niri"
-        ],
-        "hardware": [
-          "generic"
-        ],
-        "platform": [
-          "linux/arm64"
-        ],
-        "edition": [
-          "nvidia"
-        ]
-      },
-      "notices": []
-    },
-    {
       "id": "marlin:niri:linux/amd64",
       "source": {
         "kind": "target",
@@ -4306,23 +3481,23 @@
       "notices": []
     },
     {
-      "id": "marlin:niri:linux/arm64",
+      "id": "marlin:tuna:linux/amd64",
       "source": {
         "kind": "target",
-        "targetKey": "marlin:niri:linux/arm64"
+        "targetKey": "marlin:tuna:linux/amd64"
       },
       "facets": {
         "base": [
           "marlin"
         ],
         "desktop": [
-          "niri"
+          "tuna"
         ],
         "hardware": [
           "generic"
         ],
         "platform": [
-          "linux/arm64"
+          "linux/amd64"
         ],
         "edition": [
           "standard"
@@ -4356,31 +3531,6 @@
       "notices": []
     },
     {
-      "id": "marlin:xfce-cachyos:linux/arm64",
-      "source": {
-        "kind": "target",
-        "targetKey": "marlin:xfce-cachyos:linux/arm64"
-      },
-      "facets": {
-        "base": [
-          "marlin"
-        ],
-        "desktop": [
-          "xfce"
-        ],
-        "hardware": [
-          "generic"
-        ],
-        "platform": [
-          "linux/arm64"
-        ],
-        "edition": [
-          "cachyos"
-        ]
-      },
-      "notices": []
-    },
-    {
       "id": "marlin:xfce-nvidia:linux/amd64",
       "source": {
         "kind": "target",
@@ -4406,31 +3556,6 @@
       "notices": []
     },
     {
-      "id": "marlin:xfce-nvidia:linux/arm64",
-      "source": {
-        "kind": "target",
-        "targetKey": "marlin:xfce-nvidia:linux/arm64"
-      },
-      "facets": {
-        "base": [
-          "marlin"
-        ],
-        "desktop": [
-          "xfce"
-        ],
-        "hardware": [
-          "generic"
-        ],
-        "platform": [
-          "linux/arm64"
-        ],
-        "edition": [
-          "nvidia"
-        ]
-      },
-      "notices": []
-    },
-    {
       "id": "marlin:xfce:linux/amd64",
       "source": {
         "kind": "target",
@@ -4448,31 +3573,6 @@
         ],
         "platform": [
           "linux/amd64"
-        ],
-        "edition": [
-          "standard"
-        ]
-      },
-      "notices": []
-    },
-    {
-      "id": "marlin:xfce:linux/arm64",
-      "source": {
-        "kind": "target",
-        "targetKey": "marlin:xfce:linux/arm64"
-      },
-      "facets": {
-        "base": [
-          "marlin"
-        ],
-        "desktop": [
-          "xfce"
-        ],
-        "hardware": [
-          "generic"
-        ],
-        "platform": [
-          "linux/arm64"
         ],
         "edition": [
           "standard"
@@ -4556,31 +3656,6 @@
       "notices": []
     },
     {
-      "id": "sailfin:cosmic:linux/arm64",
-      "source": {
-        "kind": "target",
-        "targetKey": "sailfin:cosmic:linux/arm64"
-      },
-      "facets": {
-        "base": [
-          "sailfin"
-        ],
-        "desktop": [
-          "cosmic"
-        ],
-        "hardware": [
-          "generic"
-        ],
-        "platform": [
-          "linux/arm64"
-        ],
-        "edition": [
-          "standard"
-        ]
-      },
-      "notices": []
-    },
-    {
       "id": "sailfin:gnome:linux/amd64",
       "source": {
         "kind": "target",
@@ -4656,31 +3731,6 @@
       "notices": []
     },
     {
-      "id": "sailfin:kde:linux/arm64",
-      "source": {
-        "kind": "target",
-        "targetKey": "sailfin:kde:linux/arm64"
-      },
-      "facets": {
-        "base": [
-          "sailfin"
-        ],
-        "desktop": [
-          "kde"
-        ],
-        "hardware": [
-          "generic"
-        ],
-        "platform": [
-          "linux/arm64"
-        ],
-        "edition": [
-          "standard"
-        ]
-      },
-      "notices": []
-    },
-    {
       "id": "sailfin:niri:linux/amd64",
       "source": {
         "kind": "target",
@@ -4706,23 +3756,23 @@
       "notices": []
     },
     {
-      "id": "sailfin:niri:linux/arm64",
+      "id": "sailfin:tuna:linux/amd64",
       "source": {
         "kind": "target",
-        "targetKey": "sailfin:niri:linux/arm64"
+        "targetKey": "sailfin:tuna:linux/amd64"
       },
       "facets": {
         "base": [
           "sailfin"
         ],
         "desktop": [
-          "niri"
+          "tuna"
         ],
         "hardware": [
           "generic"
         ],
         "platform": [
-          "linux/arm64"
+          "linux/amd64"
         ],
         "edition": [
           "standard"
@@ -4748,31 +3798,6 @@
         ],
         "platform": [
           "linux/amd64"
-        ],
-        "edition": [
-          "standard"
-        ]
-      },
-      "notices": []
-    },
-    {
-      "id": "sailfin:xfce:linux/arm64",
-      "source": {
-        "kind": "target",
-        "targetKey": "sailfin:xfce:linux/arm64"
-      },
-      "facets": {
-        "base": [
-          "sailfin"
-        ],
-        "desktop": [
-          "xfce"
-        ],
-        "hardware": [
-          "generic"
-        ],
-        "platform": [
-          "linux/arm64"
         ],
         "edition": [
           "standard"
@@ -4856,31 +3881,6 @@
       "notices": []
     },
     {
-      "id": "skipjack:base-nvidia:linux/arm64",
-      "source": {
-        "kind": "target",
-        "targetKey": "skipjack:base-nvidia:linux/arm64"
-      },
-      "facets": {
-        "base": [
-          "skipjack"
-        ],
-        "desktop": [
-          "none"
-        ],
-        "hardware": [
-          "generic"
-        ],
-        "platform": [
-          "linux/arm64"
-        ],
-        "edition": [
-          "nvidia"
-        ]
-      },
-      "notices": []
-    },
-    {
       "id": "skipjack:base:linux/amd64",
       "source": {
         "kind": "target",
@@ -4956,31 +3956,6 @@
       "notices": []
     },
     {
-      "id": "skipjack:cosmic-hwe:linux/arm64",
-      "source": {
-        "kind": "target",
-        "targetKey": "skipjack:cosmic-hwe:linux/arm64"
-      },
-      "facets": {
-        "base": [
-          "skipjack"
-        ],
-        "desktop": [
-          "cosmic"
-        ],
-        "hardware": [
-          "generic"
-        ],
-        "platform": [
-          "linux/arm64"
-        ],
-        "edition": [
-          "hwe"
-        ]
-      },
-      "notices": []
-    },
-    {
       "id": "skipjack:cosmic-nvidia:linux/amd64",
       "source": {
         "kind": "target",
@@ -4998,31 +3973,6 @@
         ],
         "platform": [
           "linux/amd64"
-        ],
-        "edition": [
-          "nvidia"
-        ]
-      },
-      "notices": []
-    },
-    {
-      "id": "skipjack:cosmic-nvidia:linux/arm64",
-      "source": {
-        "kind": "target",
-        "targetKey": "skipjack:cosmic-nvidia:linux/arm64"
-      },
-      "facets": {
-        "base": [
-          "skipjack"
-        ],
-        "desktop": [
-          "cosmic"
-        ],
-        "hardware": [
-          "generic"
-        ],
-        "platform": [
-          "linux/arm64"
         ],
         "edition": [
           "nvidia"
@@ -5056,31 +4006,6 @@
       "notices": []
     },
     {
-      "id": "skipjack:cosmic:linux/arm64",
-      "source": {
-        "kind": "target",
-        "targetKey": "skipjack:cosmic:linux/arm64"
-      },
-      "facets": {
-        "base": [
-          "skipjack"
-        ],
-        "desktop": [
-          "cosmic"
-        ],
-        "hardware": [
-          "generic"
-        ],
-        "platform": [
-          "linux/arm64"
-        ],
-        "edition": [
-          "standard"
-        ]
-      },
-      "notices": []
-    },
-    {
       "id": "skipjack:gnome-hwe:linux/amd64",
       "source": {
         "kind": "target",
@@ -5106,10 +4031,10 @@
       "notices": []
     },
     {
-      "id": "skipjack:gnome-hwe:linux/arm64",
+      "id": "skipjack:gnome-hwe:linux/amd64/v2",
       "source": {
         "kind": "target",
-        "targetKey": "skipjack:gnome-hwe:linux/arm64"
+        "targetKey": "skipjack:gnome-hwe:linux/amd64/v2"
       },
       "facets": {
         "base": [
@@ -5122,7 +4047,7 @@
           "generic"
         ],
         "platform": [
-          "linux/arm64"
+          "linux/amd64/v2"
         ],
         "edition": [
           "hwe"
@@ -5156,31 +4081,6 @@
       "notices": []
     },
     {
-      "id": "skipjack:gnome-nvidia:linux/arm64",
-      "source": {
-        "kind": "target",
-        "targetKey": "skipjack:gnome-nvidia:linux/arm64"
-      },
-      "facets": {
-        "base": [
-          "skipjack"
-        ],
-        "desktop": [
-          "gnome"
-        ],
-        "hardware": [
-          "generic"
-        ],
-        "platform": [
-          "linux/arm64"
-        ],
-        "edition": [
-          "nvidia"
-        ]
-      },
-      "notices": []
-    },
-    {
       "id": "skipjack:gnome:linux/amd64",
       "source": {
         "kind": "target",
@@ -5206,10 +4106,10 @@
       "notices": []
     },
     {
-      "id": "skipjack:gnome:linux/arm64",
+      "id": "skipjack:gnome:linux/amd64/v2",
       "source": {
         "kind": "target",
-        "targetKey": "skipjack:gnome:linux/arm64"
+        "targetKey": "skipjack:gnome:linux/amd64/v2"
       },
       "facets": {
         "base": [
@@ -5222,7 +4122,7 @@
           "generic"
         ],
         "platform": [
-          "linux/arm64"
+          "linux/amd64/v2"
         ],
         "edition": [
           "standard"
@@ -5298,31 +4198,6 @@
         ],
         "platform": [
           "linux/amd64"
-        ],
-        "edition": [
-          "nvidia"
-        ]
-      },
-      "notices": []
-    },
-    {
-      "id": "skipjack:kde-nvidia:linux/arm64",
-      "source": {
-        "kind": "target",
-        "targetKey": "skipjack:kde-nvidia:linux/arm64"
-      },
-      "facets": {
-        "base": [
-          "skipjack"
-        ],
-        "desktop": [
-          "kde"
-        ],
-        "hardware": [
-          "generic"
-        ],
-        "platform": [
-          "linux/arm64"
         ],
         "edition": [
           "nvidia"
@@ -5456,31 +4331,6 @@
       "notices": []
     },
     {
-      "id": "skipjack:niri-nvidia:linux/arm64",
-      "source": {
-        "kind": "target",
-        "targetKey": "skipjack:niri-nvidia:linux/arm64"
-      },
-      "facets": {
-        "base": [
-          "skipjack"
-        ],
-        "desktop": [
-          "niri"
-        ],
-        "hardware": [
-          "generic"
-        ],
-        "platform": [
-          "linux/arm64"
-        ],
-        "edition": [
-          "nvidia"
-        ]
-      },
-      "notices": []
-    },
-    {
       "id": "skipjack:niri:linux/amd64",
       "source": {
         "kind": "target",
@@ -5531,6 +4381,31 @@
       "notices": []
     },
     {
+      "id": "skipjack:tuna:linux/amd64",
+      "source": {
+        "kind": "target",
+        "targetKey": "skipjack:tuna:linux/amd64"
+      },
+      "facets": {
+        "base": [
+          "skipjack"
+        ],
+        "desktop": [
+          "tuna"
+        ],
+        "hardware": [
+          "generic"
+        ],
+        "platform": [
+          "linux/amd64"
+        ],
+        "edition": [
+          "standard"
+        ]
+      },
+      "notices": []
+    },
+    {
       "id": "skipjack:xfce:linux/amd64",
       "source": {
         "kind": "target",
@@ -5548,31 +4423,6 @@
         ],
         "platform": [
           "linux/amd64"
-        ],
-        "edition": [
-          "standard"
-        ]
-      },
-      "notices": []
-    },
-    {
-      "id": "skipjack:xfce:linux/arm64",
-      "source": {
-        "kind": "target",
-        "targetKey": "skipjack:xfce:linux/arm64"
-      },
-      "facets": {
-        "base": [
-          "skipjack"
-        ],
-        "desktop": [
-          "xfce"
-        ],
-        "hardware": [
-          "generic"
-        ],
-        "platform": [
-          "linux/arm64"
         ],
         "edition": [
           "standard"
@@ -5781,6 +4631,56 @@
       "notices": []
     },
     {
+      "id": "wahoo:tuna:linux/amd64",
+      "source": {
+        "kind": "target",
+        "targetKey": "wahoo:tuna:linux/amd64"
+      },
+      "facets": {
+        "base": [
+          "wahoo"
+        ],
+        "desktop": [
+          "tuna"
+        ],
+        "hardware": [
+          "generic"
+        ],
+        "platform": [
+          "linux/amd64"
+        ],
+        "edition": [
+          "standard"
+        ]
+      },
+      "notices": []
+    },
+    {
+      "id": "yellowfin:base-hwe:linux/amd64",
+      "source": {
+        "kind": "target",
+        "targetKey": "yellowfin:base-hwe:linux/amd64"
+      },
+      "facets": {
+        "base": [
+          "yellowfin"
+        ],
+        "desktop": [
+          "none"
+        ],
+        "hardware": [
+          "generic"
+        ],
+        "platform": [
+          "linux/amd64"
+        ],
+        "edition": [
+          "hwe"
+        ]
+      },
+      "notices": []
+    },
+    {
       "id": "yellowfin:base-hwe:linux/amd64/v2",
       "source": {
         "kind": "target",
@@ -5831,10 +4731,10 @@
       "notices": []
     },
     {
-      "id": "yellowfin:base-nvidia:linux/amd64/v2",
+      "id": "yellowfin:base-nvidia:linux/amd64",
       "source": {
         "kind": "target",
-        "targetKey": "yellowfin:base-nvidia:linux/amd64/v2"
+        "targetKey": "yellowfin:base-nvidia:linux/amd64"
       },
       "facets": {
         "base": [
@@ -5847,7 +4747,7 @@
           "generic"
         ],
         "platform": [
-          "linux/amd64/v2"
+          "linux/amd64"
         ],
         "edition": [
           "nvidia"
@@ -5856,10 +4756,10 @@
       "notices": []
     },
     {
-      "id": "yellowfin:base-nvidia:linux/arm64",
+      "id": "yellowfin:base:linux/amd64",
       "source": {
         "kind": "target",
-        "targetKey": "yellowfin:base-nvidia:linux/arm64"
+        "targetKey": "yellowfin:base:linux/amd64"
       },
       "facets": {
         "base": [
@@ -5872,10 +4772,10 @@
           "generic"
         ],
         "platform": [
-          "linux/arm64"
+          "linux/amd64"
         ],
         "edition": [
-          "nvidia"
+          "standard"
         ]
       },
       "notices": []
@@ -5931,10 +4831,10 @@
       "notices": []
     },
     {
-      "id": "yellowfin:cosmic-hwe:linux/amd64/v2",
+      "id": "yellowfin:cosmic-hwe:linux/amd64",
       "source": {
         "kind": "target",
-        "targetKey": "yellowfin:cosmic-hwe:linux/amd64/v2"
+        "targetKey": "yellowfin:cosmic-hwe:linux/amd64"
       },
       "facets": {
         "base": [
@@ -5947,7 +4847,7 @@
           "generic"
         ],
         "platform": [
-          "linux/amd64/v2"
+          "linux/amd64"
         ],
         "edition": [
           "hwe"
@@ -5956,10 +4856,10 @@
       "notices": []
     },
     {
-      "id": "yellowfin:cosmic-hwe:linux/arm64",
+      "id": "yellowfin:cosmic-nvidia:linux/amd64",
       "source": {
         "kind": "target",
-        "targetKey": "yellowfin:cosmic-hwe:linux/arm64"
+        "targetKey": "yellowfin:cosmic-nvidia:linux/amd64"
       },
       "facets": {
         "base": [
@@ -5972,110 +4872,60 @@
           "generic"
         ],
         "platform": [
-          "linux/arm64"
+          "linux/amd64"
+        ],
+        "edition": [
+          "nvidia"
+        ]
+      },
+      "notices": []
+    },
+    {
+      "id": "yellowfin:cosmic:linux/amd64",
+      "source": {
+        "kind": "target",
+        "targetKey": "yellowfin:cosmic:linux/amd64"
+      },
+      "facets": {
+        "base": [
+          "yellowfin"
+        ],
+        "desktop": [
+          "cosmic"
+        ],
+        "hardware": [
+          "generic"
+        ],
+        "platform": [
+          "linux/amd64"
+        ],
+        "edition": [
+          "standard"
+        ]
+      },
+      "notices": []
+    },
+    {
+      "id": "yellowfin:gnome-hwe:linux/amd64",
+      "source": {
+        "kind": "target",
+        "targetKey": "yellowfin:gnome-hwe:linux/amd64"
+      },
+      "facets": {
+        "base": [
+          "yellowfin"
+        ],
+        "desktop": [
+          "gnome"
+        ],
+        "hardware": [
+          "generic"
+        ],
+        "platform": [
+          "linux/amd64"
         ],
         "edition": [
           "hwe"
-        ]
-      },
-      "notices": []
-    },
-    {
-      "id": "yellowfin:cosmic-nvidia:linux/amd64/v2",
-      "source": {
-        "kind": "target",
-        "targetKey": "yellowfin:cosmic-nvidia:linux/amd64/v2"
-      },
-      "facets": {
-        "base": [
-          "yellowfin"
-        ],
-        "desktop": [
-          "cosmic"
-        ],
-        "hardware": [
-          "generic"
-        ],
-        "platform": [
-          "linux/amd64/v2"
-        ],
-        "edition": [
-          "nvidia"
-        ]
-      },
-      "notices": []
-    },
-    {
-      "id": "yellowfin:cosmic-nvidia:linux/arm64",
-      "source": {
-        "kind": "target",
-        "targetKey": "yellowfin:cosmic-nvidia:linux/arm64"
-      },
-      "facets": {
-        "base": [
-          "yellowfin"
-        ],
-        "desktop": [
-          "cosmic"
-        ],
-        "hardware": [
-          "generic"
-        ],
-        "platform": [
-          "linux/arm64"
-        ],
-        "edition": [
-          "nvidia"
-        ]
-      },
-      "notices": []
-    },
-    {
-      "id": "yellowfin:cosmic:linux/amd64/v2",
-      "source": {
-        "kind": "target",
-        "targetKey": "yellowfin:cosmic:linux/amd64/v2"
-      },
-      "facets": {
-        "base": [
-          "yellowfin"
-        ],
-        "desktop": [
-          "cosmic"
-        ],
-        "hardware": [
-          "generic"
-        ],
-        "platform": [
-          "linux/amd64/v2"
-        ],
-        "edition": [
-          "standard"
-        ]
-      },
-      "notices": []
-    },
-    {
-      "id": "yellowfin:cosmic:linux/arm64",
-      "source": {
-        "kind": "target",
-        "targetKey": "yellowfin:cosmic:linux/arm64"
-      },
-      "facets": {
-        "base": [
-          "yellowfin"
-        ],
-        "desktop": [
-          "cosmic"
-        ],
-        "hardware": [
-          "generic"
-        ],
-        "platform": [
-          "linux/arm64"
-        ],
-        "edition": [
-          "standard"
         ]
       },
       "notices": []
@@ -6106,10 +4956,10 @@
       "notices": []
     },
     {
-      "id": "yellowfin:gnome-hwe:linux/arm64",
+      "id": "yellowfin:gnome-nvidia:linux/amd64",
       "source": {
         "kind": "target",
-        "targetKey": "yellowfin:gnome-hwe:linux/arm64"
+        "targetKey": "yellowfin:gnome-nvidia:linux/amd64"
       },
       "facets": {
         "base": [
@@ -6122,32 +4972,7 @@
           "generic"
         ],
         "platform": [
-          "linux/arm64"
-        ],
-        "edition": [
-          "hwe"
-        ]
-      },
-      "notices": []
-    },
-    {
-      "id": "yellowfin:gnome-nvidia:linux/amd64/v2",
-      "source": {
-        "kind": "target",
-        "targetKey": "yellowfin:gnome-nvidia:linux/amd64/v2"
-      },
-      "facets": {
-        "base": [
-          "yellowfin"
-        ],
-        "desktop": [
-          "gnome"
-        ],
-        "hardware": [
-          "generic"
-        ],
-        "platform": [
-          "linux/amd64/v2"
+          "linux/amd64"
         ],
         "edition": [
           "nvidia"
@@ -6156,10 +4981,10 @@
       "notices": []
     },
     {
-      "id": "yellowfin:gnome-nvidia:linux/arm64",
+      "id": "yellowfin:gnome:linux/amd64",
       "source": {
         "kind": "target",
-        "targetKey": "yellowfin:gnome-nvidia:linux/arm64"
+        "targetKey": "yellowfin:gnome:linux/amd64"
       },
       "facets": {
         "base": [
@@ -6172,10 +4997,10 @@
           "generic"
         ],
         "platform": [
-          "linux/arm64"
+          "linux/amd64"
         ],
         "edition": [
-          "nvidia"
+          "standard"
         ]
       },
       "notices": []
@@ -6206,26 +5031,26 @@
       "notices": []
     },
     {
-      "id": "yellowfin:gnome:linux/arm64",
+      "id": "yellowfin:kde-hwe:linux/amd64",
       "source": {
         "kind": "target",
-        "targetKey": "yellowfin:gnome:linux/arm64"
+        "targetKey": "yellowfin:kde-hwe:linux/amd64"
       },
       "facets": {
         "base": [
           "yellowfin"
         ],
         "desktop": [
-          "gnome"
+          "kde"
         ],
         "hardware": [
           "generic"
         ],
         "platform": [
-          "linux/arm64"
+          "linux/amd64"
         ],
         "edition": [
-          "standard"
+          "hwe"
         ]
       },
       "notices": []
@@ -6281,10 +5106,10 @@
       "notices": []
     },
     {
-      "id": "yellowfin:kde-nvidia:linux/amd64/v2",
+      "id": "yellowfin:kde-nvidia:linux/amd64",
       "source": {
         "kind": "target",
-        "targetKey": "yellowfin:kde-nvidia:linux/amd64/v2"
+        "targetKey": "yellowfin:kde-nvidia:linux/amd64"
       },
       "facets": {
         "base": [
@@ -6297,7 +5122,7 @@
           "generic"
         ],
         "platform": [
-          "linux/amd64/v2"
+          "linux/amd64"
         ],
         "edition": [
           "nvidia"
@@ -6306,10 +5131,10 @@
       "notices": []
     },
     {
-      "id": "yellowfin:kde-nvidia:linux/arm64",
+      "id": "yellowfin:kde:linux/amd64",
       "source": {
         "kind": "target",
-        "targetKey": "yellowfin:kde-nvidia:linux/arm64"
+        "targetKey": "yellowfin:kde:linux/amd64"
       },
       "facets": {
         "base": [
@@ -6322,10 +5147,10 @@
           "generic"
         ],
         "platform": [
-          "linux/arm64"
+          "linux/amd64"
         ],
         "edition": [
-          "nvidia"
+          "standard"
         ]
       },
       "notices": []
@@ -6381,6 +5206,31 @@
       "notices": []
     },
     {
+      "id": "yellowfin:niri-hwe:linux/amd64",
+      "source": {
+        "kind": "target",
+        "targetKey": "yellowfin:niri-hwe:linux/amd64"
+      },
+      "facets": {
+        "base": [
+          "yellowfin"
+        ],
+        "desktop": [
+          "niri"
+        ],
+        "hardware": [
+          "generic"
+        ],
+        "platform": [
+          "linux/amd64"
+        ],
+        "edition": [
+          "hwe"
+        ]
+      },
+      "notices": []
+    },
+    {
       "id": "yellowfin:niri-hwe:linux/amd64/v2",
       "source": {
         "kind": "target",
@@ -6431,10 +5281,10 @@
       "notices": []
     },
     {
-      "id": "yellowfin:niri-nvidia:linux/amd64/v2",
+      "id": "yellowfin:niri-nvidia:linux/amd64",
       "source": {
         "kind": "target",
-        "targetKey": "yellowfin:niri-nvidia:linux/amd64/v2"
+        "targetKey": "yellowfin:niri-nvidia:linux/amd64"
       },
       "facets": {
         "base": [
@@ -6447,7 +5297,7 @@
           "generic"
         ],
         "platform": [
-          "linux/amd64/v2"
+          "linux/amd64"
         ],
         "edition": [
           "nvidia"
@@ -6456,10 +5306,10 @@
       "notices": []
     },
     {
-      "id": "yellowfin:niri-nvidia:linux/arm64",
+      "id": "yellowfin:niri:linux/amd64",
       "source": {
         "kind": "target",
-        "targetKey": "yellowfin:niri-nvidia:linux/arm64"
+        "targetKey": "yellowfin:niri:linux/amd64"
       },
       "facets": {
         "base": [
@@ -6472,10 +5322,10 @@
           "generic"
         ],
         "platform": [
-          "linux/arm64"
+          "linux/amd64"
         ],
         "edition": [
-          "nvidia"
+          "standard"
         ]
       },
       "notices": []
@@ -6531,6 +5381,56 @@
       "notices": []
     },
     {
+      "id": "yellowfin:tuna:linux/amd64",
+      "source": {
+        "kind": "target",
+        "targetKey": "yellowfin:tuna:linux/amd64"
+      },
+      "facets": {
+        "base": [
+          "yellowfin"
+        ],
+        "desktop": [
+          "tuna"
+        ],
+        "hardware": [
+          "generic"
+        ],
+        "platform": [
+          "linux/amd64"
+        ],
+        "edition": [
+          "standard"
+        ]
+      },
+      "notices": []
+    },
+    {
+      "id": "yellowfin:xfce-hwe:linux/amd64",
+      "source": {
+        "kind": "target",
+        "targetKey": "yellowfin:xfce-hwe:linux/amd64"
+      },
+      "facets": {
+        "base": [
+          "yellowfin"
+        ],
+        "desktop": [
+          "xfce"
+        ],
+        "hardware": [
+          "generic"
+        ],
+        "platform": [
+          "linux/amd64"
+        ],
+        "edition": [
+          "hwe"
+        ]
+      },
+      "notices": []
+    },
+    {
       "id": "yellowfin:xfce-hwe:linux/amd64/v2",
       "source": {
         "kind": "target",
@@ -6556,10 +5456,10 @@
       "notices": []
     },
     {
-      "id": "yellowfin:xfce-hwe:linux/arm64",
+      "id": "yellowfin:xfce-nvidia:linux/amd64",
       "source": {
         "kind": "target",
-        "targetKey": "yellowfin:xfce-hwe:linux/arm64"
+        "targetKey": "yellowfin:xfce-nvidia:linux/amd64"
       },
       "facets": {
         "base": [
@@ -6572,32 +5472,7 @@
           "generic"
         ],
         "platform": [
-          "linux/arm64"
-        ],
-        "edition": [
-          "hwe"
-        ]
-      },
-      "notices": []
-    },
-    {
-      "id": "yellowfin:xfce-nvidia:linux/amd64/v2",
-      "source": {
-        "kind": "target",
-        "targetKey": "yellowfin:xfce-nvidia:linux/amd64/v2"
-      },
-      "facets": {
-        "base": [
-          "yellowfin"
-        ],
-        "desktop": [
-          "xfce"
-        ],
-        "hardware": [
-          "generic"
-        ],
-        "platform": [
-          "linux/amd64/v2"
+          "linux/amd64"
         ],
         "edition": [
           "nvidia"
@@ -6606,10 +5481,10 @@
       "notices": []
     },
     {
-      "id": "yellowfin:xfce-nvidia:linux/arm64",
+      "id": "yellowfin:xfce:linux/amd64",
       "source": {
         "kind": "target",
-        "targetKey": "yellowfin:xfce-nvidia:linux/arm64"
+        "targetKey": "yellowfin:xfce:linux/amd64"
       },
       "facets": {
         "base": [
@@ -6622,10 +5497,10 @@
           "generic"
         ],
         "platform": [
-          "linux/arm64"
+          "linux/amd64"
         ],
         "edition": [
-          "nvidia"
+          "standard"
         ]
       },
       "notices": []
@@ -6648,31 +5523,6 @@
         ],
         "platform": [
           "linux/amd64/v2"
-        ],
-        "edition": [
-          "standard"
-        ]
-      },
-      "notices": []
-    },
-    {
-      "id": "yellowfin:xfce:linux/arm64",
-      "source": {
-        "kind": "target",
-        "targetKey": "yellowfin:xfce:linux/arm64"
-      },
-      "facets": {
-        "base": [
-          "yellowfin"
-        ],
-        "desktop": [
-          "xfce"
-        ],
-        "hardware": [
-          "generic"
-        ],
-        "platform": [
-          "linux/arm64"
         ],
         "edition": [
           "standard"

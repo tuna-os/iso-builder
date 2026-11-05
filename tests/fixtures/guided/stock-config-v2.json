@@ -20,7 +20,7 @@
   },
   "default_selection": {
     "kind": "leaf",
-    "leaf_id": "yellowfin:gnome:linux/amd64/v2"
+    "leaf_id": "yellowfin:gnome:linux/amd64"
   },
   "desktops": [
     {
@@ -243,7 +243,7 @@
     ],
     "recommendations": [
       {
-        "leaf_id": "yellowfin:gnome:linux/amd64/v2",
+        "leaf_id": "yellowfin:gnome:linux/amd64",
         "label": "Recommended starting point",
         "reason": "The flagship base with the GNOME desktop. Check your target computer architecture before continuing."
       }
