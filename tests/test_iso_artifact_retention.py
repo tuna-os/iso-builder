@@ -302,7 +302,7 @@ def test_strict_choice_does_not_change_normal_full_route(mode):
     assert plan(env).returncode == 0
 
 
-@pytest.mark.parametrize('only', ['skipjack-gnome', 'bonito-kde', 'grouper-gnome'])
+@pytest.mark.parametrize('only', ['skipjack-gnome', 'bonito-kde', 'grouper-gnome', 'yellowfin-gnome', 'albacore-gnome'])
 def test_strict_both_plan_accepts_one_named_qualify_amd64_cell(only):
     env = valid()
     env.update(STRICT_ROUNDTRIP_TEST='true', STRICT_INSTALL_MODE='both', DIAGNOSTIC_UNQUALIFIED='false', ONLY=only)
@@ -312,8 +312,8 @@ def test_strict_both_plan_accepts_one_named_qualify_amd64_cell(only):
 
 
 @pytest.mark.parametrize('key,value', [
-    # amd64/v2 stays native; reference cells never qualify; one cell only.
-    ('ONLY', 'yellowfin-gnome'), ('ONLY', 'albacore-gnome'), ('ONLY', 'bluefin-dakota'),
+    # Reference cells never qualify; one cell only.
+    ('ONLY', 'bluefin-dakota'),
     ('ONLY', 'aurora-stable'), ('ONLY', 'bonito-kde,skipjack-gnome'), ('ONLY', ''),
     ('DIAGNOSTIC_UNQUALIFIED', 'true'), ('RUN_FULL', 'false'), ('BENCHMARK', 'true'), ('PAIR', 'true'),
     ('KEEP_ISO', 'true'), ('RETAIN_ISO_ARTIFACT', 'false'), ('RETAIN_CANDIDATE', 'true'),

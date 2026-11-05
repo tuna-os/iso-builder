@@ -44,7 +44,7 @@ test.describe("catalog gate with the diagnostic grant", () => {
     await expect(page.locator("#build")).toBeEnabled();
     const badge = page.locator(".badge.status");
     await expect(badge).toContainText("diagnostic-unqualified");
-    await expect(badge).toContainText("incomplete-qualification-provenance");
+    await expect(badge).toContainText("no-qualification-receipt");
     await expect(page.locator("#stage")).toContainText("diagnostic, unqualified build");
     await expect(page.locator("#log")).toContainText("DIAGNOSTIC, UNQUALIFIED BUILD");
     // Never reported as the qualified state.
@@ -98,9 +98,9 @@ test.describe("catalog gate with the diagnostic grant", () => {
     await expect(page.locator("#stage")).toContainText("Browser build unavailable");
     const stage = await page.locator("#stage").textContent();
     const reason = parseGateRefusal(stage);
-    expect(reason).toBe("unqualified (incomplete-qualification-provenance)");
+    expect(reason).toBe("unqualified (no-qualification-receipt)");
     const info = { image: IMAGE, platform: PLATFORM, reason, diagnosticRequested: false };
-    expect(gateRefusalSummary(info)).toContain("incomplete-qualification-provenance");
+    expect(gateRefusalSummary(info)).toContain("no-qualification-receipt");
     expect(gateRefusalMessage(info)).toContain("diagnostic override was NOT requested");
     expect(gateRefusalMessage({ ...info, diagnosticRequested: true })).toContain("requested but the app still refused");
     expect(parseGateRefusal("Image inspected — ready to build.")).toBeNull();
@@ -448,17 +448,17 @@ test.describe("production code and CI wiring", () => {
     const out = `${r.stdout}\n${r.stderr}`;
     expect(r.status, out).not.toBe(0);
     expect(out).toContain("browser build gated for tuna-os/skipjack:gnome");
-    expect(out).toContain("incomplete-qualification-provenance");
+    expect(out).toContain("no-qualification-receipt");
     expect(out).toContain("diagnostic override was NOT requested");
     expect(out).not.toContain("wedged");
     expect(elapsed).toBeLessThan(100);
     const md = fs.readFileSync(summary, "utf8");
-    expect(md).toContain("incomplete-qualification-provenance");
+    expect(md).toContain("no-qualification-receipt");
     const failed = JSON.parse(fs.readFileSync(path.join(failureRoot, "failed-build-qual-evidence-skipjack-gnome-s1.json"), "utf8"));
     expect(failed.kind).toBe("failed-browser-build-measurements");
     expect(failed.run.outcome).toBe("failed");
     expect(failed.phase).toBe("inspect");
-    expect(failed.error.message).toContain("incomplete-qualification-provenance");
+    expect(failed.error.message).toContain("no-qualification-receipt");
     expect(failed.elapsedMs).toBeGreaterThan(0);
     expect(failed.phaseElapsedMs).toBeGreaterThan(0);
     expect(failed.registryTransfers.observer.networkRequestsSeen).toBeGreaterThan(0);

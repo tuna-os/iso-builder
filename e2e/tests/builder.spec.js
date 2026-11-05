@@ -220,14 +220,14 @@ test.describe("iso builder", () => {
 
   test("an unqualified platform displays its status and exact local-build target", async ({ page }) => {
     test.setTimeout(30_000);
-    await page.goto("/?variant=yellowfin&flavor=gnome&platform=linux%2Farm64");
+    await page.goto("/?variant=yellowfin&flavor=kde&platform=linux%2Farm64");
     await inspectPreset(page);
     await expect(page.locator(".badge.status")).toContainText("unqualified");
     await expect(page.locator("#build")).toBeDisabled();
     await expect(page.locator("#fallbackcard")).toBeVisible();
     const request = JSON.parse(await page.locator("#fallbackjson").textContent());
     expect(request.target).toMatchObject({
-      variant: "yellowfin", flavor: "gnome", platform: "linux/arm64",
+      variant: "yellowfin", flavor: "kde", platform: "linux/arm64",
     });
   });
 

@@ -44,12 +44,10 @@ test('guided desktop and expanded320px layouts capture actual frontend',async({p
  await page.screenshot({path:path.join(dir,'guided-stock-mobile-expanded.png'),fullPage:true});
 });
 test('same-ref platform change clears previous inspection and result identity',async({page})=>{
- const snapshot=require('../../app/public/catalog-snapshot.json');const copy=structuredClone(snapshot);
- const arm=copy.targets.find(e=>e.targetKey==='yellowfin:gnome:linux/arm64');arm.availability.available=true;arm.scheduled=true;
- await page.route('**/catalog-snapshot.json',r=>r.fulfill({json:copy}));await guided(page);
- await expect.poll(()=>page.evaluate(()=>guidedModel.leaves.find(l=>l.id==='yellowfin:gnome:linux/arm64')?.selectable)).toBe(true);
+ await guided(page);
+ await expect.poll(()=>page.evaluate(()=>guidedModel.leaves.find(l=>l.id==='yellowfin:gnome:linux/amd64')?.selectable)).toBe(true);
  const before=await page.evaluate(()=>{currentOp.ready=true;currentOp.buildResult={test:'stale'};return currentOp.id;});
- await page.evaluate(()=>guidedPicker.select('yellowfin:gnome:linux/arm64'));
- await expect(page.locator('#image')).toHaveValue('ghcr.io/tuna-os/yellowfin:gnome');await expect(page.locator('#platform')).toHaveValue('linux/arm64');
+ await page.evaluate(()=>guidedPicker.select('yellowfin:gnome:linux/amd64'));
+ await expect(page.locator('#image')).toHaveValue('ghcr.io/tuna-os/yellowfin:gnome');await expect(page.locator('#platform')).toHaveValue('linux/amd64');
  const state=await page.evaluate(()=>({id:currentOp.id,ready:currentOp.ready,result:currentOp.buildResult}));expect(state.id).not.toBe(before);expect(state.ready).toBe(false);expect(state.result).toBeNull();
 });

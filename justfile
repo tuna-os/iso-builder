@@ -50,6 +50,12 @@ test-node:
 # Everything that runs offline.
 check: test test-node
 
+# Import a CatalogSnapshot made by tunaOS scripts/generate-catalog-snapshot.py
+# into the web, native and app.js copies, and regenerate the guided catalog.
+# Import a tunaOS-generated catalog snapshot.
+catalog-sync snapshot:
+    python3 scripts/sync-catalog-snapshot.py "{{ snapshot }}"
+
 # ── wasm job ───────────────────────────────────────────────────────────────
 
 # Expand native/go.mod's abbreviated tacklebox pin to a full commit SHA via
