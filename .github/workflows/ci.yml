@@ -498,7 +498,7 @@ jobs:
   # ISO, so this is not a per-push gate.
   full-matrix:
     needs: [full-plan, wasm]
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     # Widened from the workflow default for one purpose: a both-mode strict
     # run on main attests its qualification receipt with
     # actions/attest-build-provenance, which needs an OIDC token (id-token)
