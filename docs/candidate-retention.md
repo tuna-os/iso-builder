@@ -127,8 +127,8 @@ The steps run after the browser build, and also after a failed guest check:
 
 ### Optional strict test of the exact round-tripped bytes
 
-The bounded same-byte path is off by default. It accepts two single-mode
-contexts for `skipjack-gnome` only. The observed plain-install context is:
+The bounded same-byte path is off by default. It accepts two contexts with one
+mode each, for `skipjack-gnome` only. The observed plain-install context is:
 
 ```json
 {"run_full":true,"only":"skipjack-gnome","benchmark":false,"keep_iso":false,"retain_candidate":false,"pair":false,"retain_iso_artifact":true,"diagnostic_unqualified":false,"strict_roundtrip_test":true,"strict_install_mode":"plain","retain_iso_artifact_days":"7"}
@@ -170,9 +170,9 @@ attested receipt of a passed `both` run on `main` carries
 `not-assessed`.
 
 The job timeout is 360 minutes for this path. The capped build, artifact
-transfer, input preparation, and single-mode guest test total 275 minutes;
-`both` gives the guest 120 minutes (335). Each setup step has its own cap.
-The 360-minute limit also includes finalization and cleanup.
+transfer, input preparation, and guest test total 275 minutes for one mode.
+With `both`, the guest gets 120 minutes, so the total is 335. Each setup step
+has its own cap. The 360-minute limit also includes finalization and cleanup.
 
 ### Runner preparation
 

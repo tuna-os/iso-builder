@@ -76,9 +76,9 @@ That association now exists as a producer artifact. On `main`, a
 strict legs on one retained ISO. It then emits a
 `BrowserIsoQualificationReceipt/v1` and attests it with build provenance (see
 the README). The receipt binds the ISO bytes, the producer run and artifact,
-the harness revision and both harness results. The app catalog and its
-admission gate are unchanged. They still keep every target unqualified until a
-consumer verifies a receipt and publishes the result.
+the harness revision and both harness results. The receipt route does not change
+the app catalog or its admission gate. They still keep every target
+unqualified until a consumer verifies a receipt and publishes the result.
 
 ## Cold/warm pair protocol
 

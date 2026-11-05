@@ -141,14 +141,19 @@ against the round-tripped ISO. When that job passes on `refs/heads/main`,
 same-byte binding, the harness revision pinned in `ci.yml` and the run's
 `GITHUB_*` identity. The receipt is canonical JSON
 (`sort_keys`, `(",", ":")` separators, no trailing newline), so
-`sha256(receipt.json)` is the receipt digest. The builder refuses to emit a
-receipt unless both legs installed, cold- and warm-booted with distinct kernel
-boot IDs, created the GNOME Initial Setup account and logged in through GDM.
-The plain leg must show no passphrase prompt and the LUKS leg must show one.
-The booted digest must equal the source digest and image digest, and the
-imgref must be `ghcr.io/tuna-os/<variant>:<flavor>`. It also refuses a
-diagnostic run, a single-mode run and any ref other than `main`. A branch
-dispatch still runs both legs but emits no receipt.
+`sha256(receipt.json)` is the receipt digest.
+
+The builder writes a receipt only when these conditions are true:
+
+- Both legs installed and did a cold boot and a warm boot.
+- Each warm boot has a kernel boot ID that is different from the cold boot.
+- Each leg created the account in GNOME Initial Setup and logged in through GDM.
+- The plain leg shows no passphrase prompt and the LUKS leg shows one.
+- The booted digest equals the source digest and the image digest.
+- The imgref is `ghcr.io/tuna-os/<variant>:<flavor>`.
+- The run is not diagnostic, ran both modes, and ran on `main`.
+
+A branch dispatch still runs both legs but writes no receipt.
 
 The job attests `receipt.json` with `actions/attest-build-provenance`, which
 is why `full-matrix` alone holds `id-token: write` and `attestations: write`.
