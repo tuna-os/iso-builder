@@ -16,7 +16,7 @@ test('guided stock default has no manual reference field and preserves exact tar
  await expect(page.locator('#guided-picker')).not.toContainText('Browser build verified');
  const request=await page.evaluate(()=>window.tboxGetBuildRequest());
  expect(request.target.flavor).toBe('gnome');
- expect(request.target.platform).toBe('linux/amd64/v2');
+ expect(request.target.platform).toBe('linux/amd64');
 });
 test('base-first and desktop-first use one state and keyboard choices',async({page})=>{
  await guided(page);
@@ -45,9 +45,9 @@ test('guided desktop and expanded320px layouts capture actual frontend',async({p
 });
 test('same-ref platform change clears previous inspection and result identity',async({page})=>{
  await guided(page);
- await expect.poll(()=>page.evaluate(()=>guidedModel.leaves.find(l=>l.id==='yellowfin:gnome:linux/amd64')?.selectable)).toBe(true);
+ await expect.poll(()=>page.evaluate(()=>guidedModel.leaves.find(l=>l.id==='yellowfin:gnome:linux/amd64/v2')?.selectable)).toBe(true);
  const before=await page.evaluate(()=>{currentOp.ready=true;currentOp.buildResult={test:'stale'};return currentOp.id;});
- await page.evaluate(()=>guidedPicker.select('yellowfin:gnome:linux/amd64'));
- await expect(page.locator('#image')).toHaveValue('ghcr.io/tuna-os/yellowfin:gnome');await expect(page.locator('#platform')).toHaveValue('linux/amd64');
+ await page.evaluate(()=>guidedPicker.select('yellowfin:gnome:linux/amd64/v2'));
+ await expect(page.locator('#image')).toHaveValue('ghcr.io/tuna-os/yellowfin:gnome');await expect(page.locator('#platform')).toHaveValue('linux/amd64/v2');
  const state=await page.evaluate(()=>({id:currentOp.id,ready:currentOp.ready,result:currentOp.buildResult}));expect(state.id).not.toBe(before);expect(state.ready).toBe(false);expect(state.result).toBeNull();
 });

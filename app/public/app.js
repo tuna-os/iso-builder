@@ -778,12 +778,13 @@ let selectedDdi = null;
 let selectionWasExplicit = false;
 let VARIANTS = globalThis.TboxBuilderConfig.variants(BUILDER_CONFIG, catalogSnapshot);
 
-const ALMA_VARIANTS = new Set(["yellowfin", "albacore"]);
 const NATIVE_V3_VARIANTS = new Set(["skipjack", "wahoo"]);
 const VALID_PLATFORMS = new Set(["linux/amd64", "linux/amd64/v2", "linux/amd64/v3", "linux/arm64"]);
 
-function defaultPlatformForVariant(variantId) {
-  return ALMA_VARIANTS.has(variantId) ? "linux/amd64/v2" : "linux/amd64";
+// linux/amd64 is the platform a qualification receipt covers. The Alma
+// x86-64-v2 builds stay selectable by explicit choice.
+function defaultPlatformForVariant() {
+  return "linux/amd64";
 }
 
 // A platform the catalog publishes for the variant is kept as chosen. Otherwise

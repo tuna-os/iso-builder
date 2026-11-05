@@ -141,7 +141,7 @@ test('catalog updates remove unoffered configured choices and clear the selected
 
  test('automatic default still clears when its fetched catalog record is no longer admitted',async({page})=>{
  const reduced=copy(snapshot);
- for(const e of reduced.targets)if(e.target?.variant==='yellowfin'&&e.target?.flavor==='gnome'&&e.target?.platform==='linux/amd64/v2'){e.scheduled=false;e.availability={available:false};}
+ for(const e of reduced.targets)if(e.target?.variant==='yellowfin'&&e.target?.flavor==='gnome'&&e.target?.platform==='linux/amd64'){e.scheduled=false;e.availability={available:false};}
  await page.route('**/catalog-snapshot.json',r=>r.fulfill({json:reduced}));await page.goto('/');
  await expect(page.locator('#image')).toHaveValue('');await expect(page.locator('#introspect')).toBeDisabled();
  });
