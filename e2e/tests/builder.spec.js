@@ -162,7 +162,7 @@ test.describe("iso builder", () => {
     expect(req.schemaVersion).toBe(1);
     expect(req.kind).toBe("build-request");
     expect(req.customImage).toBe(false);
-    expect(req.image).toBe("tuna-os/yellowfin:gnome");
+    expect(req.image).toBe("ghcr.io/tuna-os/yellowfin:gnome");
     expect(req.target).toEqual({
       variant: "yellowfin",
       flavor: "gnome",
@@ -270,7 +270,7 @@ test.describe("iso builder", () => {
     const fallbackReq = await page.evaluate(() =>
       JSON.parse(document.getElementById("fallbackjson").textContent),
     );
-    expect(fallbackReq.image).toBe("tuna-os/sailfin:xfce");
+    expect(fallbackReq.image).toBe("ghcr.io/tuna-os/sailfin:xfce");
     expect(fallbackReq.target).toMatchObject({
       variant: "sailfin",
       flavor: "xfce",
