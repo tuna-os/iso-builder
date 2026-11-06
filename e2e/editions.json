@@ -3,7 +3,7 @@
   { "ref": "bonito:kde", "slug": "bonito-kde", "base": "Fedora 44", "platform": "linux/amd64", "qualify": true },
   { "ref": "sailfin:gnome", "slug": "sailfin-gnome", "base": "openSUSE Tumbleweed", "platform": "linux/amd64", "qualify": true },
   { "ref": "flounder:xfce", "slug": "flounder-xfce", "base": "Debian 13 Trixie", "platform": "linux/amd64", "qualify": true },
-  { "ref": "flounder:gnome", "slug": "flounder-gnome", "base": "Debian 13 Trixie", "platform": "linux/amd64", "qualify": true },
+  { "ref": "flounder-sid:gnome", "slug": "flounder-sid-gnome", "base": "Debian Sid (GNOME 50)", "platform": "linux/amd64", "qualify": true },
   { "ref": "grouper:gnome", "slug": "grouper-gnome", "base": "Ubuntu 26.04", "platform": "linux/amd64", "qualify": true },
   { "ref": "marlin:niri", "slug": "marlin-niri", "base": "Arch Linux", "platform": "linux/amd64", "qualify": true },
   { "ref": "skipjack:gnome", "slug": "skipjack-gnome", "base": "CentOS Stream 10", "platform": "linux/amd64", "qualify": true },
