@@ -42,7 +42,7 @@ Synthetic metadata exists only in UI fixtures, never as runtime evidence.
 
 ## Strict harness handoff
 
-The pinned tunaOS harness at `e89bf562d7488242295bf02c228bbba4c509b388`
+The tunaOS harness that the `ref:` lines in `.github/workflows/ci.yml` pin
 rejects `TBOX_E2E_IMAGE` in strict mode because it enables the generic CLI install
 fallback. Pass it only to the upstream-reference LUKS path. Explicitly unset it
 for strict GUI qualification. Keep the harness guard.

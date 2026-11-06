@@ -326,6 +326,7 @@ full-strict-inputs:
       --variant "$variant" --flavor "$flavor" --slug "$SLUG" --platform "$PLATFORM" \
       --install-mode "$STRICT_INSTALL_MODE" --diagnostic-unqualified "$DIAGNOSTIC_UNQUALIFIED" \
       --out-env "$RUNNER_TEMP/same-byte-inputs.env" \
+      --out-diagnostics "e2e/test-results/same-byte-receipt-diagnostics-${SLUG}.log" \
       --out-binding "e2e/test-results/same-byte-guest-test-binding-${SLUG}.json"
     cat "$RUNNER_TEMP/same-byte-inputs.env" >> "$GITHUB_ENV"
     {
