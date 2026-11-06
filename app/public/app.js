@@ -715,7 +715,7 @@ function watchEngineMemory() {
         op.error = msg;
         if ($("build")) $("build").disabled = true;
         if ($("postcard")) $("postcard").classList.add("hidden");
-        renderFallbackCard(op, `${msg} Build this exact target on your own machine instead. ${PUREBUILD_STEPS}`);
+        renderFallbackCard(op, `${msg} Build this exact target on your own machine instead.`);
         notify("ISO build failed", "Image too large for the browser engine");
         return;
       }
@@ -1124,10 +1124,10 @@ function renderFallbackCard(op = currentOp, reasonText = "") {
   const cmd = PUREBUILD_COMMAND;
   if ($("fallbackcmd")) $("fallbackcmd").textContent = cmd;
   if ($("fallbackjson")) $("fallbackjson").textContent = reqJson;
-  if ($("fallbackreason") && reasonText) {
-    $("fallbackreason").textContent = reasonText;
-  } else if ($("fallbackreason")) {
-    $("fallbackreason").textContent = "Export the pinned BuildRequest v1 contract to build this exact target locally without browser memory or storage limits.";
+  if ($("fallbackreason")) {
+    $("fallbackreason").textContent = reasonText
+      ? `${reasonText} ${PUREBUILD_STEPS}`
+      : `Build this exact target locally, without browser memory or storage limits. ${PUREBUILD_STEPS}`;
   }
   card.classList.remove("hidden");
 }
@@ -1369,7 +1369,7 @@ async function inspect() {
       op.storageBlocked = true;
       $("stage").textContent = `Browser build unavailable: insufficient storage (${quotaStatus.freeGB.toFixed(1)} GB free) — use local fallback below.`;
       $("build").disabled = true;
-      renderFallbackCard(op, `Insufficient browser storage (${quotaStatus.freeGB.toFixed(1)} GB free). Build this exact target on your own machine instead. ${PUREBUILD_STEPS}`);
+      renderFallbackCard(op, `Insufficient browser storage (${quotaStatus.freeGB.toFixed(1)} GB free). Build this exact target on your own machine instead.`);
     } else {
       op.state = "ready";
       op.ready = true;
@@ -1698,7 +1698,7 @@ async function build() {
     } else {
       $("stage").textContent = "Build failed.";
     }
-    renderFallbackCard(op, `Browser build failed (${String(e)}). Build this exact target on your own machine instead. ${PUREBUILD_STEPS}`);
+    renderFallbackCard(op, `Browser build failed (${String(e)}). Build this exact target on your own machine instead.`);
     notify(e.name === "AbortError" ? "Save cancelled" : "ISO build failed", String(e).slice(0, 120));
   } finally {
     stopWatch();
