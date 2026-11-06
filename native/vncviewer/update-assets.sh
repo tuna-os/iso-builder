@@ -1,11 +1,13 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-readonly assets_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/assets" && pwd)"
+assets_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/assets" && pwd)"
+readonly assets_dir
 readonly repository="https://github.com/novnc/noVNC.git"
 readonly version="v1.6.0"
 readonly commit="a8dfd6a3ea3c74244f5ebdaa5a7f1023007a7820"
-readonly temporary_dir="$(mktemp -d)"
+temporary_dir="$(mktemp -d)"
+readonly temporary_dir
 trap 'rm -rf -- "$temporary_dir"' EXIT
 
 readonly checkout_dir="$temporary_dir/repository"
