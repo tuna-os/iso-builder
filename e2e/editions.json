@@ -1,13 +1,20 @@
 [
-  { "ref": "yellowfin:gnome", "slug": "yellowfin-gnome", "base": "AlmaLinux Kitten 10 (flagship)", "platform": "linux/amd64/v2", "qualify": true },
+  { "ref": "yellowfin:gnome", "slug": "yellowfin-gnome", "base": "AlmaLinux Kitten 10 (flagship)", "platform": "linux/amd64", "qualify": true },
   { "ref": "bonito:kde", "slug": "bonito-kde", "base": "Fedora 44", "platform": "linux/amd64", "qualify": true },
   { "ref": "sailfin:gnome", "slug": "sailfin-gnome", "base": "openSUSE Tumbleweed", "platform": "linux/amd64", "qualify": true },
   { "ref": "flounder:xfce", "slug": "flounder-xfce", "base": "Debian 13 Trixie", "platform": "linux/amd64", "qualify": true },
   { "ref": "grouper:gnome", "slug": "grouper-gnome", "base": "Ubuntu 26.04", "platform": "linux/amd64", "qualify": true },
   { "ref": "marlin:niri", "slug": "marlin-niri", "base": "Arch Linux", "platform": "linux/amd64", "qualify": true },
   { "ref": "skipjack:gnome", "slug": "skipjack-gnome", "base": "CentOS Stream 10", "platform": "linux/amd64", "qualify": true },
-  { "ref": "albacore:gnome", "slug": "albacore-gnome", "base": "AlmaLinux 10", "platform": "linux/amd64/v2", "qualify": true },
+  { "ref": "albacore:gnome", "slug": "albacore-gnome", "base": "AlmaLinux 10", "platform": "linux/amd64", "qualify": true },
   { "ref": "guppy:gnome", "slug": "guppy-gnome", "base": "Gentoo", "platform": "linux/amd64", "qualify": true },
+  { "ref": "marlin:gnome", "slug": "marlin-gnome", "base": "Arch Linux", "platform": "linux/amd64", "qualify": true },
+  { "ref": "bonito:gnome", "slug": "bonito-gnome", "base": "Fedora 44", "platform": "linux/amd64", "qualify": true },
+  { "ref": "skipjack:gnome-nvidia", "slug": "skipjack-gnome-nvidia", "base": "CentOS Stream 10", "platform": "linux/amd64", "qualify": true },
+  { "ref": "yellowfin:gnome-nvidia", "slug": "yellowfin-gnome-nvidia", "base": "AlmaLinux Kitten 10", "platform": "linux/amd64", "qualify": true },
+  { "ref": "albacore:gnome-nvidia", "slug": "albacore-gnome-nvidia", "base": "AlmaLinux 10", "platform": "linux/amd64", "qualify": true },
+  { "ref": "bonito:gnome-nvidia", "slug": "bonito-gnome-nvidia", "base": "Fedora 44", "platform": "linux/amd64", "qualify": true },
+  { "ref": "marlin:gnome-nvidia", "slug": "marlin-gnome-nvidia", "base": "Arch Linux", "platform": "linux/amd64", "qualify": true },
   { "ref": "projectbluefin/dakota:stable", "slug": "bluefin-dakota", "base": "Bluefin GNOME (known-good reference)", "platform": "linux/amd64", "reference": true, "qualify": false },
   { "ref": "ublue-os/aurora:stable", "slug": "aurora-stable", "base": "Aurora KDE, Fedora 44 (known-good reference)", "platform": "linux/amd64", "reference": true, "qualify": false }
 ]

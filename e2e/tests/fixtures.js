@@ -25,23 +25,31 @@ const base = require("@playwright/test");
 const path = require("path");
 const fs = require("fs");
 
+async function useProfile({ browserType, root, workerIndex, mode, keep }, use) {
+  const dir = path.join(root, "tmp", `pw-prof-${workerIndex}`);
+  if (mode === "warm") {
+    if (!fs.existsSync(dir)) throw new Error(`warm run needs the cold run's profile at ${dir}`);
+  } else {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+  const ctx = await browserType.launchPersistentContext(dir, {
+    viewport: { width: 1180, height: 820 },
+    baseURL: "http://127.0.0.1:8931",
+    args: ["--disable-dev-shm-usage"],
+  });
+  try { await use(ctx); }
+  finally {
+    await ctx.close();
+    if (!keep) fs.rmSync(dir, { recursive: true, force: true });
+  }
+}
+exports.useProfile = useProfile;
 exports.test = base.test.extend({
   context: async ({ browserName }, use, testInfo) => {
-    const root = process.env.TBOX_E2E_PROFILE_ROOT || process.env.HOME;
-    const dir = path.join(root, "tmp", `pw-prof-${testInfo.workerIndex}`);
-    if (process.env.TBOX_E2E_CACHE_MODE === "warm") {
-      if (!fs.existsSync(dir)) throw new Error(`warm run needs the cold run's profile at ${dir}`);
-    } else {
-      fs.rmSync(dir, { recursive: true, force: true });
-    }
-    const ctx = await base[browserName].launchPersistentContext(dir, {
-      viewport: { width: 1180, height: 820 },
-      baseURL: "http://127.0.0.1:8931",
-      args: ["--disable-dev-shm-usage"],
-    });
-    await use(ctx);
-    await ctx.close();
-    if (process.env.TBOX_E2E_PROFILE_KEEP !== "1") fs.rmSync(dir, { recursive: true, force: true });
+    await useProfile({ browserType: base[browserName],
+      root: process.env.TBOX_E2E_PROFILE_ROOT || process.env.HOME,
+      workerIndex: testInfo.workerIndex, mode: process.env.TBOX_E2E_CACHE_MODE,
+      keep: process.env.TBOX_E2E_PROFILE_KEEP === "1" }, use);
   },
   page: async ({ context }, use) => {
     await use(context.pages()[0] || (await context.newPage()));

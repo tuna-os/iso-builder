@@ -25,11 +25,20 @@ if os.environ.get("RETAIN_ISO_ARTIFACT") == "true":
     if not days.isdigit() or not 1 <= int(days) <= 90:
         raise SystemExit("ISO artifact retention requires retain_iso_artifact_days between 1 and 90")
 if os.environ.get("STRICT_ROUNDTRIP_TEST") == "true":
-    expected = {"ONLY": "skipjack-gnome", "RUN_FULL": "true", "BENCHMARK": "false",
-                "KEEP_ISO": "false", "DIAGNOSTIC_UNQUALIFIED": "true",
+    mode = os.environ.get("STRICT_INSTALL_MODE", "plain")
+    diagnostic = os.environ.get("DIAGNOSTIC_UNQUALIFIED", "false")
+    if mode not in ("plain", "luks", "both") or diagnostic not in ("true", "false"):
+        raise SystemExit("strict_roundtrip_test requires strict_install_mode=plain|luks|both and diagnostic_unqualified=true|false")
+    if (mode, diagnostic) not in (("plain", "false"), ("luks", "true"), ("both", "false")):
+        raise SystemExit("strict_roundtrip_test requires plain or both with diagnostic_unqualified=false, or luks with diagnostic_unqualified=true")
+    expected = {"RUN_FULL": "true", "BENCHMARK": "false", "KEEP_ISO": "false",
                 "RETAIN_ISO_ARTIFACT": "true", "RETAIN_CANDIDATE": "false"}
+    # plain and diagnostic luks stay bounded to Skipjack GNOME; both (the
+    # qualification-receipt route) names one target, checked below.
+    if mode != "both":
+        expected["ONLY"] = "skipjack-gnome"
     if any(os.environ.get(k) != v for k, v in expected.items()):
-        raise SystemExit("strict_roundtrip_test requires run_full=true, only=skipjack-gnome, retain_iso_artifact=true, diagnostic_unqualified=true, benchmark=false, keep_iso=false, retain_candidate=false")
+        raise SystemExit("strict_roundtrip_test requires run_full=true, retain_iso_artifact=true, benchmark=false, keep_iso=false, retain_candidate=false, and only=skipjack-gnome unless strict_install_mode=both")
 if os.environ.get("RETAIN_CANDIDATE") == "true":
     expected = {"ONLY": "yellowfin-gnome", "RUN_FULL": "true", "BENCHMARK": "false", "KEEP_ISO": "false"}
     if any(os.environ.get(k) != v for k, v in expected.items()):
@@ -42,5 +51,10 @@ if only:
     if missing:
         raise SystemExit(f"no edition with slug(s) {missing} in e2e/editions.json")
     eds = [e for e in eds if e["slug"] in only]
+if os.environ.get("STRICT_ROUNDTRIP_TEST") == "true" and os.environ.get("STRICT_INSTALL_MODE") == "both":
+    # A qualification receipt covers one TunaOS linux/amd64 target. amd64/v2
+    # stays native; upstream reference cells are never qualified.
+    if len(eds) != 1 or eds[0].get("qualify") is not True or eds[0].get("platform") != "linux/amd64" or "/" in eds[0]["ref"]:
+        raise SystemExit("strict_install_mode=both requires exactly one only=<slug> naming a qualify:true linux/amd64 TunaOS edition")
 print("editions=" + json.dumps(eds))
 print("count=" + str(len(eds)))

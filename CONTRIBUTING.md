@@ -21,6 +21,11 @@ Never post account credentials or API keys in issues or pull requests.
 
 Before you open a pull request, test your changes locally in each affected component.
 
+Run the offline Python and JavaScript checks from the repository root with
+`just check`, or run only JavaScript with `just test-node`. That recipe gives
+the test filenames to Node: `node --test tests/ worker/` fails with
+`MODULE_NOT_FOUND` on Node 24.19 before it runs the tests.
+
 ### 1. Web Application (`app/public`)
 - Put `tbox.wasm` and `wasm_exec.js` in place, as [README.md](README.md#develop) describes.
 - Serve locally:
@@ -36,6 +41,8 @@ Before you open a pull request, test your changes locally in each affected compo
   npx playwright install --with-deps chromium
   npx playwright test --grep-invert @full
   ```
+
+Test user actions in the browser. Do not test the exact text in HTML.
 
 ### 3. Native Application (`native/`)
 - Run tests (see [`native/README.md`](native/README.md) for platform build prerequisites):

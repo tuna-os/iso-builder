@@ -25,8 +25,8 @@ function targetData() {
     'yellowfin:gnome:linux/amd64/v2',
     'yellowfin:kde:linux/amd64/v2',
     'yellowfin:gnome-hwe:linux/amd64/v2',
-    'yellowfin:kde-nvidia:linux/amd64/v2',
-    'yellowfin:gnome:linux/arm64',
+    'yellowfin:kde-nvidia:linux/amd64',
+    'yellowfin:kde:linux/arm64',
     'albacore:gnome:linux/amd64/v2',
   ];
   const targets = keys.map(key => {
@@ -34,6 +34,8 @@ function targetData() {
     assert.ok(entry, `real target fixture exists: ${key}`);
     return copy(entry);
   });
+  // Admission tests need one scheduled target the registry did not publish.
+  targets.find(entry => entry.targetKey === 'yellowfin:gnome-hwe:linux/amd64/v2').availability.available = false;
   const snapshot = { ...copy(realSnapshot), targets };
   const catalog = {
     schemaVersion: 1, kind: 'guided-image-catalog', catalogId: 'tunaos-test',

@@ -127,23 +127,113 @@ The steps run after the browser build, and also after a failed guest check:
 
 ### Optional strict test of the exact round-tripped bytes
 
-The bounded same-byte path is off by default and accepts only this dispatch:
+The bounded same-byte path is off by default. It accepts two contexts with one
+mode each, for `skipjack-gnome` only. The observed plain-install context is:
 
 ```json
-{"run_full":true,"only":"skipjack-gnome","benchmark":false,"keep_iso":false,"retain_iso_artifact":true,"diagnostic_unqualified":true,"strict_roundtrip_test":true,"retain_iso_artifact_days":"7"}
+{"run_full":true,"only":"skipjack-gnome","benchmark":false,"keep_iso":false,"retain_candidate":false,"pair":false,"retain_iso_artifact":true,"diagnostic_unqualified":false,"strict_roundtrip_test":true,"strict_install_mode":"plain","retain_iso_artifact_days":"7"}
 ```
 
+The diagnostic context uses the same bounds with `strict_install_mode: "luks"`
+and `diagnostic_unqualified: true`. The planner does not accept plain builds
+with diagnostics, or LUKS builds without diagnostics. Neither context lets CI publish an ISO.
+
+A third context, `strict_install_mode: "both"` with
+`diagnostic_unqualified: false`, runs plain and then LUKS on the same bytes.
+It is the qualification-receipt route (see the README). It accepts one `only=`
+cell that `e2e/editions.json` marks `qualify: true` on `linux/amd64`.
+`amd64/v2` cells stay native, and reference cells never qualify.
+
+### Admission and qualification boundaries
+
+CI can observe an image that the production catalog has not qualified.
+The browser harness enables this route only with `TBOX_E2E_STRICT_OBSERVED=1`,
+`TBOX_E2E_FULL=1`, and all the inputs above.
+The frozen `__TBOX_STRICT_OBSERVED__` grant binds `linux/amd64`, route
+`retained-iso-roundtrip`, and either install mode `plain` with
+`tuna-os/skipjack:gnome`, or install mode `both` with the one named
+`tuna-os/<variant>:<flavor>` cell. It is not a URL, UI, or browser-storage
+override and cannot coexist with the diagnostic grant.
+
+Observed builds retain `qualification: not-assessed`. The harness labels
+their `strictObserved` evidence `observed, not assessed`. It records the image,
+platform, and catalog pins, but supplies no `qualificationId`. The browser
+resolves the descriptor for the exact architecture and variant. It records
+the bytes it used. These observations do not prove qualification.
+
+Diagnostic builds retain `qualification: diagnostic-unqualified`. Their label
+states that CI used a diagnostic override. The production catalog keeps its
+qualification guards. If CI retains an artifact or a guest test passes for one
+mode, that result does not qualify an observed or diagnostic build. Only the
+attested receipt of a passed `both` run on `main` carries
+`qualification: browser-qualified`. The browser build itself stays
+`not-assessed`.
+
 The job timeout is 360 minutes for this path. The capped build, artifact
-transfer, input preparation, and guest test total 275 minutes. Setup and the
-pinned harness checkout have 45 minutes of caps. Finalization has 35 minutes;
-the job keeps 5 minutes for margin.
+transfer, input preparation, and guest test total 275 minutes for one mode.
+With `both`, the guest gets 120 minutes, so the total is 335. Each setup step
+has its own cap. The 360-minute limit also includes finalization and cleanup.
+
+### Runner preparation
+
+[Run 41249440653](https://github.com/tuna-os/iso-builder/actions/runs/41249440653)
+stopped before the browser build. The step that used apt to install `just`
+reached its 20-minute cap with no output. The next step reported
+`just: command not found`. No ISO or guest receipt exists for that try.
+
+The full job now uses the existing action `extractions/setup-just`, pinned at
+`53165ef7e734c5c07cb06b3c8e7b647c5aa16db3`. It does not use apt to install
+`just`. The job uses the x64 Ubuntu 24.04 runner and sets
+`PREINSTALLED_BROWSER_DEPS=true`. The recipe accepts that flag only in this
+GitHub Actions context.
+
+The recipe installs the exact Chromium that the Playwright lockfile selects.
+On a cache hit, it uses those cached bytes. It must launch and close Chromium
+with the libraries on the runner in both cases. A missing browser or library
+fails the step; the recipe does not ignore the error or try another source.
+Other contexts still install the system dependencies. The build and guest
+windows do not change.
+
 
 The workflow adds no cross-repository artifact credential and writes nothing to R2. It deletes the local ISO, downloads the artifact from this run, and checks each chunk and the full-file hash against the browser measurement. It restores the same bytes to a separate ISO file. It compares the manifest's repository, source SHA, run ID, try number, target, and measurements with this job. The upload action returns an artifact ID. The workflow records that ID in the binding sidecar before guest boot.
 
 Before guest execution, the workflow reads `live-source.json` and
 `live-installer-info` from the ISO payloads. These use SquashFS or the EROFS live
 root that the browser engine writes. The strict harness uses commit
-`64da1ea1af6b19487ad9cea85213c41646e3ff7f`.
+`9dabdc783e68b120ca5ef1bc8db6ccaa8c91d79b`. It checks a fragmented welcome
+heading against one exact, original-pixel OCR crop and the complete Install action.
+It does not relax confidence, phase, geometry, or duplicate guards.
+
+Runs `41262519173` and `41262520834` reached the current summary but stopped before submission.
+The old harness expected a different layout and a purple action.
+The pinned harness reads Target disk, Filesystem, Encryption, and Image from the same verified frame.
+Image must exactly match the browser's source reference from its receipt for the media.
+
+The cards retain their measured OCR pipeline: threefold enlargement and grayscale.
+The warning and final action use bounded crops of original pixels.
+The final action must read exactly `Install`.
+It must match the measured GTK state for an enabled destructive action, in both fill and dark-red text.
+Disabled red-tinted pills do not pass.
+Refuse clipped, moved, duplicate, uncertain, or contradictory observations.
+
+Runs `41270163456` and `41270164971` passed those checks and submitted through
+the real GUI. The installer then refused `bound blob size mismatch`.
+The ISO retained from the run had the correct manifest (10,834 bytes).
+Its OCI index entry had no `size`. The engine must put the manifest's
+measured length in that entry. Keep the installer's size, hash and read-only checks.
+
+A submitted request does not prove a completed install or a boot.
+
+Runs `41388681015` and `41388683676` exercised the engine's size fix.
+In both runs, media passed upload and download checks. The real installer reached 22–24%.
+The old observer still expected progress at the lower left and stopped both legs.
+
+The pinned harness verifies the published centered title, bar, elapsed clock
+and warning with exact original-pixel crops and strict OCR confidence.
+Product titles must match the verified welcome; generic stage titles stay distinct.
+Reject duplicate, dimmed, editable or contradictory pages.
+After accepted progress, send no input. Progress is not completion.
+The actual installed page and receipts for detached cold and warm boots are still needed.
 
 The published overlay carries the installer identity. At build time, the engine
 completes `live-source.json` with the base and overlay manifest digests it applied.
@@ -154,24 +244,52 @@ is missing or disagrees with the overlay.
 The workflow compares source and overlay digests with the browser's
 `engineBuildResult`. It compares the engine digest with the harness's independent
 `loadedWasm` measurement. The workflow uses the installer identity from the media
-receipt. It passes the browser name and version, plus same-runner memory and
-free-disk measurements, through `sudo`. It removes `TBOX_E2E_IMAGE` and
-`FISHERMAN_OVERRIDE` from the environment. If an identity is missing or
-inconsistent, the workflow stops before guest execution.
+receipt. It passes the browser name and version, plus the memory and free disk
+that CI measured, to the guest harness.
 
-The sidecar uses the diagnostic-unqualified label. The guest output directory is
-`luks-verify-<slug>-diag`. The harness creates Unix sockets inside this short
+The plain leg uses `sudo`. The diagnostic leg uses an unprivileged service.
+Neither path forwards `TBOX_E2E_IMAGE` or
+`FISHERMAN_OVERRIDE`. If an identity is missing or inconsistent, the workflow
+stops before guest execution.
+
+The sidecar preserves `not-assessed` for the observed plain context and
+`diagnostic-unqualified` for the diagnostic LUKS context. The guest output directory is
+`luks-verify-<slug>` for observed and both-mode runs and `luks-verify-<slug>-diag` for diagnostic LUKS. The harness creates Unix sockets inside this short
 directory; `sun_path` holds 107 bytes. The recipe stops before guest execution if
 `strict-plain-warm-serial.sock` there would exceed that limit.
+
+### Isolated LUKS diagnostics
+
+[Run 41249448336](https://github.com/tuna-os/iso-builder/actions/runs/41249448336)
+built and retained an ISO. It checked the downloaded bytes and the binding to
+the same run. The strict harness then returned 77 before it started a VM:
+`TUNAOS_INSTALLED_BOOT_DIAGNOSTIC=1` needs a real supervisor socket.
+That run proves no install or detached boot.
+
+The browser adapter imports `ContainedProcess` and `OwnedQemu` from the
+immutable harness above. These existing classes own each service, its signals,
+and cleanup. The adapter starts the real socket and proxy for that owner.
+It does not create a dummy socket or run the native producer's CLI.
+
+The adapter checks the same-run binding and ISO hash again. It keeps the browser
+identity, the diagnostic label, and the full 900-second window for the harness.
+The service does not retain raw stdout or stderr. The adapter stops all owned
+services on every exit. A cleanup failure cannot turn a failure into a pass.
+
+The receipt reports the primary exit and the result of cleanup. It never
+qualifies an image.
+
 
 This test does not authenticate the producer or frontend. It does not turn a
 failed browser identity into a pass, qualify the target, publish an ISO, or change
 catalog or download status. The sidecar records `baseAnnotationMatched` as
-evidence; that value does not prove a match. This change has no hosted run.
+evidence; that value does not prove a match. These identities alone do not prove a guest boot.
 
-Before upload, the finalizer renames each nested qualification receipt to a diagnostic name.
-It uses `diagnostic-unqualified-evidence.json`, with a number if that name exists.
-The finalizer writes `DIAGNOSTIC-UNQUALIFIED.txt` in the guest output directory.
+Before upload, the diagnostic-context finalizer renames each nested qualification
+receipt to `diagnostic-unqualified-evidence.json`, with a number if that name
+exists, and writes `DIAGNOSTIC-UNQUALIFIED.txt` in the guest output directory.
+Observed evidence must retain its `not-assessed` label. It must not claim that
+CI used a diagnostic override or proved full qualification.
 The diagnostics artifact includes the renamed receipt and marker.
 The strict path skips the separate `qual-*` evidence upload.
 
@@ -179,7 +297,7 @@ To fetch and check the ISO yourself, use a hash that you saved independently:
 
 ```sh
 gh run download RUN -R tuna-os/iso-builder -n iso-skipjack-gnome-runRUN-aATTEMPT -D dl
-python3 scripts/retain-iso-artifact.py verify --dir dl \
+python3 scripts/retain-iso-artifact.py verify --dir dl --diagnostic-unqualified true \
   --expected-sha256 sha256:INDEPENDENT_ISO_HASH --output skipjack-gnome.iso
 ```
 

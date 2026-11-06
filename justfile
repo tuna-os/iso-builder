@@ -45,10 +45,16 @@ test:
 
 # Node unit tests that run offline (builder config, guided catalog, relay shim).
 test-node:
-    node --test tests/ worker/
+    node --test tests/*.test.cjs worker/*.test.js
 
 # Everything that runs offline.
 check: test test-node
+
+# Import a CatalogSnapshot made by tunaOS scripts/generate-catalog-snapshot.py
+# into the web, native and app.js copies, and regenerate the guided catalog.
+# Import a tunaOS-generated catalog snapshot.
+catalog-sync snapshot:
+    python3 scripts/sync-catalog-snapshot.py "{{ snapshot }}"
 
 # ── wasm job ───────────────────────────────────────────────────────────────
 
@@ -82,16 +88,26 @@ wasm-build:
 
 # ── e2e + full-matrix: shared browser setup ────────────────────────────────
 
-# Install the Playwright deps and chromium. CACHE_HIT=true (the
-# actions/cache output) skips the browser download and installs only the OS
-# libraries.
+# CACHE_HIT=true skips the exact Playwright browser download. Only the full
+# Ubuntu 24.04 Actions runner uses its preinstalled libraries; actual Chromium
+# launch and close must succeed there. Other contexts install the OS libraries.
 # Install Playwright deps and chromium.
 e2e-install:
     #!/usr/bin/env bash
     set -euo pipefail
     cd e2e
+    if [ -n "${PREINSTALLED_BROWSER_DEPS:-}" ]; then
+      if [ "$PREINSTALLED_BROWSER_DEPS" != "true" ] || [ "${GITHUB_ACTIONS:-}" != "true" ] || \
+         [ "${RUNNER_OS:-}" != "Linux" ] || [ "${RUNNER_ARCH:-}" != "X64" ] || [ "${ImageOS:-}" != "ubuntu24" ]; then
+        echo "PREINSTALLED_BROWSER_DEPS requires the Ubuntu 24.04 x64 GitHub Actions runner" >&2
+        exit 1
+      fi
+    fi
     npm ci
-    if [ "${CACHE_HIT:-}" != "true" ]; then
+    if [ "${PREINSTALLED_BROWSER_DEPS:-}" = "true" ]; then
+      if [ "${CACHE_HIT:-}" != "true" ]; then npx playwright install chromium; fi
+      node -e 'const { chromium } = require("@playwright/test"); (async () => { const browser = await chromium.launch({ args: ["--disable-dev-shm-usage"] }); console.log("Chromium runtime ready:", browser.version()); await browser.close(); })().catch(error => { console.error(error); process.exitCode = 1; });'
+    elif [ "${CACHE_HIT:-}" != "true" ]; then
       npx playwright install --with-deps chromium
     else
       npx playwright install-deps chromium
@@ -122,11 +138,10 @@ full-plan:
 # takes three cold samples. Pair mode (PAIR=true) takes three cold/warm pairs:
 # samples 1, 3, 5 are cold (fresh profile, kept on disk) and 2, 4, 6 are warm
 # (the preceding cold sample's profile and OPFS layer cache, identical inputs;
-# the spec fails a warm sample that fetches any complete layer blob). The
-# guest-verify step expects ${SLUG}.iso: the last sample is kept there and the
-# others are dropped as soon as their sample passes (multi-GB, never
-# retained). Needs SLUG and RUNNER_TEMP; the TBOX_E2E_* build env comes from
-# the workflow step.
+# the spec fails a warm sample that fetches any complete layer blob).
+# Pair measurements are build-only; they do not retain an ISO or start a guest.
+# JSON receipts and attempt outcomes are preserved outside Playwright's output
+# directory between invocations, including the first failing attempt.
 # Build the edition's ISO in the browser (@full).
 full-build:
     #!/usr/bin/env bash
@@ -144,6 +159,16 @@ full-build:
     elif [ "${BENCHMARK:-}" = "true" ]; then SAMPLES="1 2 3"
     else SAMPLES="1"; fi
     last="${SAMPLES##* }"
+    evidence_dir="${RUNNER_TEMP}/browser-samples-${SLUG}-${GITHUB_RUN_ID:-local}-${GITHUB_RUN_ATTEMPT:-1}"
+    mkdir "${evidence_dir}"
+    export TBOX_E2E_PAIR_STATE="${evidence_dir}/pair-inputs.json"
+    restore_evidence() {
+      mkdir -p test-results
+      shopt -s nullglob
+      saved=("${evidence_dir}/"*.json)
+      if [ "${#saved[@]}" -gt 0 ]; then cp "${saved[@]}" test-results/; fi
+    }
+    trap restore_evidence EXIT
     for s in $SAMPLES; do
       echo "=== @full sample ${s} ==="
       if [ "${PAIR:-}" = "true" ]; then
@@ -152,14 +177,23 @@ full-build:
         echo "=== pair ${pair}: ${mode} ==="
         export TBOX_E2E_PAIR="${pair}" TBOX_E2E_CACHE_MODE="${mode}" TBOX_E2E_PROFILE_KEEP="${keep}"
       fi
+      copy="${RUNNER_TEMP}/${SLUG}-s${s}.iso"
+      if [ "${PAIR:-}" = "true" ]; then copy=""; fi
+      status=0
       TBOX_E2E_SAMPLE="${s}" \
-        TBOX_E2E_ISO_COPY="${RUNNER_TEMP}/${SLUG}-s${s}.iso" \
+        TBOX_E2E_ISO_COPY="${copy}" \
         TBOX_E2E_EVIDENCE="test-results/qual-evidence-${SLUG}-s${s}.json" \
-        npx playwright test --grep @full --timeout=4500000
-      if [ "${s}" != "${last}" ]; then rm -f "${RUNNER_TEMP}/${SLUG}-s${s}.iso"; fi
+        npx playwright test --grep @full --timeout=4500000 || status=$?
+      printf '{"sample":%s,"exitCode":%s}\n' "${s}" "${status}" > "${evidence_dir}/build-attempt-${SLUG}-s${s}.json"
+      shopt -s nullglob
+      receipts=(test-results/*"qual-evidence-${SLUG}-s${s}.json")
+      if [ "${#receipts[@]}" -gt 0 ]; then cp "${receipts[@]}" "${evidence_dir}/"; fi
+      if [ "${status}" -ne 0 ]; then exit "${status}"; fi
+      if [ "${s}" != "${last}" ] && [ -n "${copy}" ]; then rm -f "${copy}"; fi
     done
-    # The guest-verify step below expects ${SLUG}.iso: keep the last sample there.
-    cp "${RUNNER_TEMP}/${SLUG}-s${last}.iso" "${RUNNER_TEMP}/${SLUG}.iso"
+    if [ "${PAIR:-}" != "true" ]; then
+      cp "${RUNNER_TEMP}/${SLUG}-s${last}.iso" "${RUNNER_TEMP}/${SLUG}.iso"
+    fi
 
 # Install the built ISO under QEMU with LUKS and verify the installed system
 # reboots (tunaOS scripts/iso-e2e.sh from the pinned tunaos-e2e checkout).
@@ -220,6 +254,7 @@ iso-artifact-split:
       --iso "$RUNNER_TEMP/${SLUG}.iso" \
       --measurements "e2e/test-results/build-measurements-qual-evidence-${SLUG}-s1.json" \
       --out "$RUNNER_TEMP/iso-artifact" --slug "$SLUG" \
+      --diagnostic-unqualified "${DIAGNOSTIC_UNQUALIFIED:-false}" \
       --repository "$GITHUB_REPOSITORY" --run-id "$GITHUB_RUN_ID" \
       --run-attempt "$GITHUB_RUN_ATTEMPT" --sha "$GITHUB_SHA" \
       > "$RUNNER_TEMP/iso-artifact-manifest.json"
@@ -252,9 +287,10 @@ iso-artifact-verify:
       output_args=(--output "$RUNNER_TEMP/${SLUG}-roundtrip.iso")
     fi
     python3 scripts/retain-iso-artifact.py verify --dir "$RUNNER_TEMP/iso-roundtrip" \
+      --diagnostic-unqualified "${DIAGNOSTIC_UNQUALIFIED:-false}" \
       --expected-sha256 "$ISO_SHA256" "${output_args[@]}" > "$RUNNER_TEMP/iso-roundtrip-result.json"
     {
-      echo "### ISO retained as GitHub artifact (diagnostic, not qualified)"
+      echo "### ISO retained as GitHub artifact (observed, not qualified)"
       echo ""
       echo "- artifact: \`${ARTIFACT}\` (id ${ARTIFACT_ID}), retention ${RETAIN_ISO_ARTIFACT_DAYS} day(s)"
       echo "- ISO sha256: \`${ISO_SHA256}\`"
@@ -262,7 +298,7 @@ iso-artifact-verify:
       echo '```json'
       cat "$RUNNER_TEMP/iso-roundtrip-result.json"
       echo '```'
-      echo "Fetch: \`gh run download ${GITHUB_RUN_ID} -R ${GITHUB_REPOSITORY} -n ${ARTIFACT}\` then \`python3 scripts/retain-iso-artifact.py verify --dir <dir> --expected-sha256 <browser-measured hash> --output ${SLUG}.iso\`."
+      echo "Fetch: \`gh run download ${GITHUB_RUN_ID} -R ${GITHUB_REPOSITORY} -n ${ARTIFACT}\` then \`python3 scripts/retain-iso-artifact.py verify --dir <dir> --diagnostic-unqualified ${DIAGNOSTIC_UNQUALIFIED:-false} --expected-sha256 <browser-measured hash> --output ${SLUG}.iso\`."
     } >> "$GITHUB_STEP_SUMMARY"
 
 # Derive the strict-guest inputs from the round-tripped media receipts and
@@ -288,25 +324,40 @@ full-strict-inputs:
       --repository "$REPOSITORY" --run-id "$RUN_ID" --run-attempt "$RUN_ATTEMPT" \
       --source-sha "$SOURCE_SHA" --artifact-id "$ARTIFACT_ID" --artifact-name "$ARTIFACT_NAME" \
       --variant "$variant" --flavor "$flavor" --slug "$SLUG" --platform "$PLATFORM" \
+      --install-mode "$STRICT_INSTALL_MODE" --diagnostic-unqualified "$DIAGNOSTIC_UNQUALIFIED" \
       --out-env "$RUNNER_TEMP/same-byte-inputs.env" \
       --out-binding "e2e/test-results/same-byte-guest-test-binding-${SLUG}.json"
     cat "$RUNNER_TEMP/same-byte-inputs.env" >> "$GITHUB_ENV"
     {
-      echo "### Same-byte strict guest test inputs (diagnostic only)"
+      echo "### Same-byte strict guest test inputs (${STRICT_INSTALL_MODE}, diagnostic-unqualified=${DIAGNOSTIC_UNQUALIFIED})"
       echo "Media receipts, browser measurements, run/attempt and artifact id matched. This does not qualify the target."
       cat "e2e/test-results/same-byte-guest-test-binding-${SLUG}.json"
     } >> "$GITHUB_STEP_SUMMARY"
 
-# Run the exact retained ISO under the current strict harness (diagnostic,
-# never a qualification). The TUNAOS_QUAL_* identities come from
-# $GITHUB_ENV, written by full-strict-inputs. Env: SLUG.
+# Run the exact retained ISO through the strict harness: one install mode
+# (plain, or diagnostic luks; observed, never full qualification) or both legs
+# (STRICT_INSTALL_MODE=both: plain then LUKS on the same bytes in one harness
+# run, the input to build-qualification-receipt). The TUNAOS_QUAL_* identities
+# come from $GITHUB_ENV, written by full-strict-inputs.
+# Env: SLUG, STRICT_INSTALL_MODE, DIAGNOSTIC_UNQUALIFIED.
 # Run the exact retained ISO under the current strict harness.
 full-guest-verify-strict:
     #!/usr/bin/env bash
     set -euo pipefail
+    STRICT_INSTALL_MODE="${STRICT_INSTALL_MODE:-plain}"
+    DIAGNOSTIC_UNQUALIFIED="${DIAGNOSTIC_UNQUALIFIED:-false}"
+    case "$STRICT_INSTALL_MODE" in
+      plain|luks) HARNESS_MODES="$STRICT_INSTALL_MODE" ;;
+      both) HARNESS_MODES="plain,luks" ;;
+      *) echo "::error::STRICT_INSTALL_MODE must be plain, luks or both (got '$STRICT_INSTALL_MODE')"; exit 1 ;;
+    esac
     # The harness binds monitor/vnc/swtpm/serial sockets under OUTPUT; the
     # longest is strict-plain-warm-serial.sock, and sun_path holds 107 bytes.
-    OUT="luks-verify-${SLUG}-diag"
+    # No suffix on the observed dir: yellowfin-gnome-nvidia with "-obs" reached
+    # 110 bytes on the runner workspace. The non-strict guest step never runs
+    # in the same job, and ci-cleanup already owns luks-verify-<slug>.
+    OUT="luks-verify-${SLUG}"
+    if [ "$DIAGNOSTIC_UNQUALIFIED" = "true" ]; then OUT="luks-verify-${SLUG}-diag"; fi
     SOCK="$PWD/$OUT/strict-plain-warm-serial.sock"
     if [ "${#SOCK}" -ge 108 ]; then
       echo "::error::Harness socket path is ${#SOCK} bytes, over the 107-byte sun_path limit: $SOCK"
@@ -321,7 +372,18 @@ full-guest-verify-strict:
       sudo tee /etc/udev/rules.d/99-kvm4all.rules
     sudo udevadm control --reload-rules
     sudo udevadm trigger --name-match=kvm || true
-    sudo env -u TBOX_E2E_IMAGE -u FISHERMAN_OVERRIDE \
+    if [ "$DIAGNOSTIC_UNQUALIFIED" = "true" ]; then
+      if [ "$STRICT_INSTALL_MODE" != "luks" ]; then
+        echo "::error::Diagnostic strict testing requires LUKS"
+        exit 1
+      fi
+      STRICT_INSTALL_MODE="$STRICT_INSTALL_MODE" DIAGNOSTIC_UNQUALIFIED="$DIAGNOSTIC_UNQUALIFIED" \
+        python3 scripts/browser-strict-diagnostic.py \
+        --harness-root "$GITHUB_WORKSPACE/tunaos-e2e-current" \
+        --iso "$ISO" --binding "e2e/test-results/same-byte-guest-test-binding-${SLUG}.json" \
+        --output "$OUT"
+    else
+      sudo env -u TBOX_E2E_IMAGE -u FISHERMAN_OVERRIDE -u TUNAOS_INSTALLED_BOOT_DIAGNOSTIC \
       VARIANT="$VARIANT" FLAVOR="$FLAVOR" \
       TUNAOS_QUAL_EXECUTION_KIND="$TUNAOS_QUAL_EXECUTION_KIND" \
       STRICT_PUBLISHED_MEDIA="$STRICT_PUBLISHED_MEDIA" \
@@ -338,22 +400,83 @@ full-guest-verify-strict:
       TUNAOS_QUAL_BROWSER_VERSION="$TUNAOS_QUAL_BROWSER_VERSION" \
       TUNAOS_QUAL_BROWSER_MEMORY_GIB="$TUNAOS_QUAL_BROWSER_MEMORY_GIB" \
       TUNAOS_QUAL_BROWSER_FREE_DISK_GIB="$TUNAOS_QUAL_BROWSER_FREE_DISK_GIB" \
-      "$GITHUB_WORKSPACE/tunaos-e2e-current/scripts/iso-e2e.sh" "$ISO" --strict-offline-gui \
+      "$GITHUB_WORKSPACE/tunaos-e2e-current/scripts/iso-e2e.sh" "$ISO" --strict-offline-gui="$HARNESS_MODES" \
       --output "$OUT" --timeout 900
+    fi
+    if [ "$STRICT_INSTALL_MODE" = "both" ]; then
+      scope="plain and LUKS legs passed; a qualification receipt is built only on refs/heads/main"
+    else
+      scope="not full qualification"
+    fi
     {
-      echo "### Same-byte strict guest test completed (diagnostic, not qualified)"
+      echo "### Same-byte strict guest test completed (${STRICT_INSTALL_MODE}, diagnostic-unqualified=${DIAGNOSTIC_UNQUALIFIED}; ${scope})"
       echo "- ISO: \`${TUNAOS_QUAL_MEDIA_DIGEST}\`"
-      echo "- Browser test diagnostics and media-bound identities are attached; producer/frontend authentication remains absent."
+      echo "- Harness modes \`${HARNESS_MODES}\`; observations and media-bound identities are attached."
     } >> "$GITHUB_STEP_SUMMARY"
+
+# Build the BrowserIsoQualificationReceipt/v1 from a passed both-mode strict
+# run (harness fragments + same-byte binding + this run's GITHUB_* identity),
+# writing canonical receipt.json for attestation. Refuses anything but a
+# non-diagnostic both-mode run on refs/heads/main. Env: SLUG,
+# STRICT_INSTALL_MODE, DIAGNOSTIC_UNQUALIFIED (plus the GITHUB_* defaults).
+# Build the canonical qualification receipt from a passed both-mode run.
+full-qualification-receipt:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    mkdir -p "$RUNNER_TEMP/qualification-receipt"
+    python3 scripts/build-qualification-receipt.py \
+      --harness-output "luks-verify-${SLUG}" \
+      --binding "e2e/test-results/same-byte-guest-test-binding-${SLUG}.json" \
+      --workflow .github/workflows/ci.yml \
+      --harness-checkout "$GITHUB_WORKSPACE/tunaos-e2e-current" \
+      --slug "$SLUG" \
+      --install-mode "$STRICT_INSTALL_MODE" --diagnostic-unqualified "$DIAGNOSTIC_UNQUALIFIED" \
+      --out "$RUNNER_TEMP/qualification-receipt/receipt.json"
+    digest="sha256:$(sha256sum "$RUNNER_TEMP/qualification-receipt/receipt.json" | cut -d' ' -f1)"
+    {
+      echo "### Browser ISO qualification receipt (${SLUG})"
+      echo "- receipt digest: \`${digest}\`"
+      echo '```json'
+      python3 -m json.tool "$RUNNER_TEMP/qualification-receipt/receipt.json"
+      echo '```'
+    } >> "$GITHUB_STEP_SUMMARY"
+
+# Put the attestation bundle beside the receipt as bundle.jsonl and
+# authenticate it exactly as the consumer will, including that the signing
+# certificate names this run attempt and source commit. Env: BUNDLE_PATH
+# (attest-build-provenance's bundle-path output), GH_TOKEN.
+# Verify the receipt's attestation bundle as the consumer will.
+full-qualification-receipt-verify:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    dir="$RUNNER_TEMP/qualification-receipt"
+    if [ -z "${BUNDLE_PATH:-}" ] || [ ! -s "$BUNDLE_PATH" ]; then
+      echo "::error::attestation bundle is missing: '${BUNDLE_PATH:-}'"
+      exit 1
+    fi
+    cp "$BUNDLE_PATH" "$dir/bundle.jsonl"
+    gh attestation verify "$dir/receipt.json" --repo tuna-os/iso-builder \
+      --signer-workflow tuna-os/iso-builder/.github/workflows/ci.yml \
+      --source-ref refs/heads/main --bundle "$dir/bundle.jsonl" \
+      --format json > "$dir/verify.json"
+    python3 - "$dir/verify.json" <<'PY'
+    import json, os, sys
+    results = json.load(open(sys.argv[1]))
+    run = f"{os.environ['GITHUB_SERVER_URL']}/{os.environ['GITHUB_REPOSITORY']}/actions/runs/{os.environ['GITHUB_RUN_ID']}/attempts/{os.environ['GITHUB_RUN_ATTEMPT']}"
+    certs = [r["verificationResult"]["signature"]["certificate"] for r in results]
+    if not certs or any(c.get("runInvocationURI") != run or c.get("sourceRepositoryDigest") != os.environ["GITHUB_SHA"] for c in certs):
+        sys.exit(f"attestation certificate does not name {run} at {os.environ['GITHUB_SHA']}: {certs}")
+    print(f"receipt attestation verified for {run}")
+    PY
 
 # The guest harness runs under sudo, so its output starts root-owned. Label
 # the strict receipt first, then hand the tree back to the runner user so
-# upload-artifact can read it. Env: SLUG, STRICT_ROUNDTRIP_TEST.
-# Label diagnostic output and hand harness output back to the runner user.
+# upload-artifact can read it. Env: SLUG, STRICT_ROUNDTRIP_TEST, DIAGNOSTIC_UNQUALIFIED.
+# Label diagnostic output when requested and hand harness output back to the runner user.
 full-label-output:
     #!/usr/bin/env bash
     set -euo pipefail
-    if [ "$STRICT_ROUNDTRIP_TEST" = "true" ]; then
+    if [ "$STRICT_ROUNDTRIP_TEST" = "true" ] && [ "$DIAGNOSTIC_UNQUALIFIED" = "true" ]; then
       sudo python3 scripts/finalize-diagnostic-output.py \
         "luks-verify-${SLUG}-diag"
     fi

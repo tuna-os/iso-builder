@@ -14,9 +14,10 @@ require('./legacy-deployment').useLegacyDeployment(test);
 const path = require("path");
 const fs = require("fs");
 const { qualifiedCatalogFixture } = require("./qualified-catalog-fixture");
-const { observeLoadedWasm, loadedWasmMeasurement, hashSavedIso, buildOperationIdentity, completedBuildResult, diagnosticRecord, observeRegistryTransfers } = require("./build-measurements");
+const { observeLoadedWasm, loadedWasmMeasurement, hashSavedIso, buildOperationIdentity, completedBuildResult, diagnosticRecord, observeRegistryTransfers, observeConsumedBuildInputs, completedInputMeasurements, observeFrontendResponses, browserObservedInputRecord, captureExecutingSource, finalizeExecutingSource } = require("./build-measurements");
 const { removeSavePicker, buildFailedSignature } = require("./full-harness");
-const { diagnosticGrantFromEnv, installDiagnosticGrant, resolveLiveDigests, catalogEntryFor, refreshDiagnosticSnapshot, parseGateRefusal, gateRefusalMessage, gateRefusalSummary } = require("./diagnostic-gate");
+const { diagnosticGrantFromEnv, installDiagnosticGrant, strictObservedGrantFromEnv, installStrictObservedGrant, resolveLiveDigests, catalogEntryFor, refreshDiagnosticSnapshot, parseGateRefusal, gateRefusalMessage, gateRefusalSummary } = require("./diagnostic-gate");
+const { campaignValue, pairEnvironment, digest: pairDigest } = require("./pair-protocol");
 const CATALOG = require("../../app/public/catalog-snapshot.json");
 
 const SHOTS = process.env.TBOX_E2E_SHOTS
@@ -161,7 +162,7 @@ test.describe("iso builder", () => {
     expect(req.schemaVersion).toBe(1);
     expect(req.kind).toBe("build-request");
     expect(req.customImage).toBe(false);
-    expect(req.image).toBe("tuna-os/yellowfin:gnome");
+    expect(req.image).toBe("ghcr.io/tuna-os/yellowfin:gnome");
     expect(req.target).toEqual({
       variant: "yellowfin",
       flavor: "gnome",
@@ -219,14 +220,14 @@ test.describe("iso builder", () => {
 
   test("an unqualified platform displays its status and exact local-build target", async ({ page }) => {
     test.setTimeout(30_000);
-    await page.goto("/?variant=yellowfin&flavor=gnome&platform=linux%2Farm64");
+    await page.goto("/?variant=yellowfin&flavor=kde&platform=linux%2Farm64");
     await inspectPreset(page);
     await expect(page.locator(".badge.status")).toContainText("unqualified");
     await expect(page.locator("#build")).toBeDisabled();
     await expect(page.locator("#fallbackcard")).toBeVisible();
     const request = JSON.parse(await page.locator("#fallbackjson").textContent());
     expect(request.target).toMatchObject({
-      variant: "yellowfin", flavor: "gnome", platform: "linux/arm64",
+      variant: "yellowfin", flavor: "kde", platform: "linux/arm64",
     });
   });
 
@@ -258,9 +259,10 @@ test.describe("iso builder", () => {
     });
 
     await page.locator("#build").click();
+    await page.locator("#review-create").click();
 
     await expect(page.locator("#stage")).toContainText(/Build failed — sink write error/i);
-    await expect(page.locator("#stage")).not.toContainText(/Done/);
+    await expect(page.locator("#stage")).not.toContainText(/ISO saved|download started/);
     await expect(page.locator("#postcard")).toBeHidden();
     await expect(page.locator("#fallbackcard")).toBeVisible();
     expect(await page.evaluate(() => Boolean(window.__sinkAborted))).toBe(true);
@@ -268,7 +270,7 @@ test.describe("iso builder", () => {
     const fallbackReq = await page.evaluate(() =>
       JSON.parse(document.getElementById("fallbackjson").textContent),
     );
-    expect(fallbackReq.image).toBe("tuna-os/sailfin:xfce");
+    expect(fallbackReq.image).toBe("ghcr.io/tuna-os/sailfin:xfce");
     expect(fallbackReq.target).toMatchObject({
       variant: "sailfin",
       flavor: "xfce",
@@ -324,6 +326,7 @@ test.describe("iso builder", () => {
     });
 
     await page.locator("#build").click();
+    await page.locator("#review-create").click();
     await expect(page.locator("#stage")).toContainText("Authoring EROFS");
     await expect(page.locator("#bar")).toHaveJSProperty("value", 1);
     await expect(page.locator("#postcard")).toBeHidden();
@@ -333,7 +336,7 @@ test.describe("iso builder", () => {
     expect(await page.evaluate(() => window.tboxLayerCache.hasActiveLease())).toBe(true);
     await page.evaluate(() => window.__continueBuild());
 
-    await expect(page.locator("#stage")).toContainText(/Done/);
+    await expect(page.locator("#stage")).toContainText(/ISO saved|download started/);
     await expect(page.locator("#postcard")).toBeVisible();
     await expect(page.locator("#tab-etcher")).toContainText("USB");
     await page.getByRole("button", { name: "Terminal (dd)", exact: true }).click();
@@ -383,19 +386,43 @@ test.describe("iso builder", () => {
 
   test("full build streams a bootable ISO @full", async ({ page }) => {
     test.skip(!process.env.TBOX_E2E_FULL, "set TBOX_E2E_FULL=1 for the full build");
+    let registry = null, frontend = null, wallStartedAt = null, pairProtocol = null, ownedOutput = null;
+    let activePhase = "preflight", phaseStartedAt = performance.now();
+    const attemptStartedAt = phaseStartedAt;
+    let phases = { inspectMs: null, buildMs: null, saveMs: null };
+    try {
+    const executingSourceBefore = await captureExecutingSource();
     await page.addInitScript(observeLoadedWasm);
+    await page.addInitScript(observeConsumedBuildInputs);
     await page.addInitScript(removeSavePicker);
     // Test-only, explicit, named-target override of the catalog gate. Null
     // (the default) leaves the production gate untouched.
     let diagnosticPins = null;
+    pairProtocol = process.env.TBOX_E2E_PAIR ? { environment: pairEnvironment() } : null;
     const diagnosticGrant = diagnosticGrantFromEnv(process.env, { image: IMAGE, platform: process.env.TBOX_E2E_PLATFORM || undefined });
+    const strictObserved = strictObservedGrantFromEnv(process.env, { image: IMAGE, platform: process.env.TBOX_E2E_PLATFORM || undefined });
     if (diagnosticGrant) {
       console.log(`DIAGNOSTIC, UNQUALIFIED BUILD requested for ${IMAGE}: result is not a qualification`);
       await page.addInitScript(installDiagnosticGrant, diagnosticGrant);
+    }
+    if (strictObserved) {
+      console.log(`STRICT OBSERVED BUILD requested for ${IMAGE}: qualification is not assessed`);
+      await page.addInitScript(installStrictObservedGrant, strictObserved);
+    }
+    if (diagnosticGrant || strictObserved) {
       const entry = catalogEntryFor(CATALOG, IMAGE, process.env.TBOX_E2E_PLATFORM || undefined);
       if (!entry) throw new Error(`diagnostic target ${IMAGE} is not in the catalog snapshot`);
       const live = await resolveLiveDigests({ repository: entry.publication.repository, tag: entry.publication.tag, platform: entry.target.platform });
+      if (pairProtocol) campaignValue("source", live);
       const refreshed = refreshDiagnosticSnapshot(CATALOG, entry.targetKey, live);
+      if (pairProtocol) {
+        const overlay = await resolveLiveDigests({ repository: "ghcr.io/tuna-os/live-overlay",
+          tag: `${entry.target.variant}-${entry.target.flavor}`, platform: entry.target.platform });
+        campaignValue("overlay", overlay);
+        refreshed.doc.targets.find(t => t.targetKey === entry.targetKey).resolvedInputs.liveOverlayDigest = overlay.platformManifestDigest;
+        pairProtocol.source = live;
+        pairProtocol.overlay = overlay;
+      }
       diagnosticPins = refreshed.record;
       console.log(`diagnostic pin refresh for ${entry.targetKey}: ${JSON.stringify(refreshed.record)}`);
       await page.route("**/catalog-snapshot.json", (route) => route.fulfill({ json: refreshed.doc }));
@@ -444,9 +471,12 @@ test.describe("iso builder", () => {
 
     // Registry blob transfers the browser makes for this build (page and
     // layer-download worker), from navigation on. Wall time starts here too.
-    const registry = observeRegistryTransfers(page.context());
-    const wallStartedAt = performance.now();
+    registry = observeRegistryTransfers(page.context());
+    frontend = observeFrontendResponses(page);
+    wallStartedAt = performance.now();
+    activePhase = "navigation"; phaseStartedAt = wallStartedAt;
     await page.goto(`/?image=${encodeURIComponent(IMAGE)}&autodl=1&autorun=1${initrd ? `&initrd=${encodeURIComponent(initrd)}` : ""}`);
+    activePhase = "inspect"; phaseStartedAt = performance.now();
 
     const stageText = () => page.locator("#stage").textContent().catch(() => "<unreadable>");
     // Engine linear memory alongside the stage: a stall that plateaus at a
@@ -485,7 +515,7 @@ test.describe("iso builder", () => {
     // engine instrumentation.
     const T0 = Date.now();
     const inspectStartedAt = performance.now();
-    const phases = { inspectMs: null, buildMs: null, saveMs: null };
+    phases = { inspectMs: null, buildMs: null, saveMs: null };
     const peaks = { tboxWasmMB: -1, tboxJsHeapMB: -1 };
     const samplePeaks = async () => {
       const w = await wasmMB();
@@ -590,7 +620,19 @@ test.describe("iso builder", () => {
     }
     phases.inspectMs = performance.now() - inspectStartedAt;
     await samplePeaks();
+    if (pairProtocol) {
+      const request = await page.evaluate(() => globalThis.tboxGetBuildRequest());
+      pairProtocol.requestSha256 = campaignValue("requestSha256", pairDigest(JSON.stringify(request)));
+      pairProtocol.profile = pairDigest(path.join(process.env.TBOX_E2E_PROFILE_ROOT || process.env.HOME, "tmp", `pw-prof-${test.info().workerIndex}`));
+      pairProtocol.storageBefore = await page.evaluate(() => navigator.storage.estimate());
+      const session = await page.context().newCDPSession(page);
+      try {
+        const browser = await session.send("Browser.getVersion");
+        campaignValue("browser", { product: browser.product, userAgent: browser.userAgent });
+      } finally { await session.detach(); }
+    }
 
+    activePhase = "build"; phaseStartedAt = performance.now();
     const buildWatch = watch("build", BUILD_STALL_MS);
     let dl;
     let buildIdentity;
@@ -598,6 +640,7 @@ test.describe("iso builder", () => {
       const download = page.waitForEvent("download", { timeout: BUILD_WAIT_MS });
       const buildClickedAt = performance.now();
       await page.locator("#build").click();
+    await page.locator("#review-create").click();
       buildIdentity = await buildOperationIdentity(page);
       await shot(page, "05-building.png");
       dl = await Promise.race([download, buildWatch.promise]);
@@ -609,6 +652,8 @@ test.describe("iso builder", () => {
       buildWatch.cancel();
     }
     const out = process.env.TBOX_E2E_ISO_OUT || path.join(SHOTS, "..", "iso-builder-e2e-output.iso");
+    activePhase = "save"; phaseStartedAt = performance.now();
+    if (process.env.TBOX_E2E_PAIR && !fs.existsSync(out)) ownedOutput = out;
     console.log("saving iso to:", out, "(env override:", process.env.TBOX_E2E_ISO_OUT || "none", ")");
     const saveStartedAt = performance.now();
     await dl.saveAs(out);
@@ -622,6 +667,7 @@ test.describe("iso builder", () => {
     }
     phases.saveMs = performance.now() - saveStartedAt;
     await samplePeaks();
+    activePhase = "media-integrity"; phaseStartedAt = performance.now();
     const size = fs.statSync(out).size;
     expect(size).toBeGreaterThan(100 * 1024 * 1024);
     // ISO9660 PVD signature at sector 16.
@@ -630,7 +676,7 @@ test.describe("iso builder", () => {
     fs.readSync(fd, buf, 0, 6, 16 * 2048);
     fs.closeSync(fd);
     expect(buf.toString("latin1", 1, 6)).toBe("CD001");
-    await expect(page.locator("#stage")).toContainText(/Done/, { timeout: 120_000 });
+    await expect(page.locator("#stage")).toContainText(/ISO saved|download started/, { timeout: 120_000 });
     const buildResult = await completedBuildResult(page, buildIdentity);
     const wallMs = performance.now() - wallStartedAt;
     const transfers = await registry.summary();
@@ -663,19 +709,27 @@ test.describe("iso builder", () => {
       expect(reason, "gate reason shown by the app").toBeTruthy();
       diagnostic = { image: IMAGE, platform: evPlatform, gateReason: reason, catalogPins: diagnosticPins };
     }
+    let observed = null;
+    if (strictObserved) {
+      const badge = ((await page.locator(".badge.status").first().textContent().catch(() => "")) || "").trim();
+      expect(badge, "app must label the retained strict-observed build as not-assessed").toContain("not-assessed");
+      expect(await page.evaluate(() => globalThis.tboxGetBuildRequest().qualificationId)).toBeUndefined();
+      observed = { label: "observed, not assessed", image: IMAGE, platform: evPlatform, catalogPins: diagnosticPins };
+    }
     const evidence = {
       schemaVersion: 1,
       kind: "qualification-evidence",
       ...(diagnostic ? { qualification: "diagnostic-unqualified", diagnosticUnqualified: { label: "diagnostic, unqualified build", ...diagnostic } } : {}),
+      ...(observed ? { qualification: "not-assessed", strictObserved: observed } : {}),
       half: "browser",
       browser: { name: "chromium", userAgent },
       target: {
         image: IMAGE,
         slug: slug(IMAGE),
         platform: evPlatform,
-        digest: (catalogEntry && catalogEntry.facts.digest) || null,
-        layerCount: (catalogEntry && catalogEntry.facts.layerCount) || null,
-        compressedBytes: (catalogEntry && catalogEntry.facts.compressedSize) || null,
+        digest: diagnosticPins?.after?.platformManifestDigest || (catalogEntry && catalogEntry.facts.digest) || null,
+        layerCount: diagnosticPins ? null : (catalogEntry && catalogEntry.facts.layerCount) || null,
+        compressedBytes: diagnosticPins ? null : (catalogEntry && catalogEntry.facts.compressedSize) || null,
       },
       run: {
         cacheMode: process.env.TBOX_E2E_CACHE_MODE || "unknown",
@@ -685,6 +739,7 @@ test.describe("iso builder", () => {
       },
       phasesMs: { inspect: phases.inspectMs, build: phases.buildMs, save: phases.saveMs, wall: wallMs },
       registryTransfers: transfers,
+      ...(pairProtocol ? { pairProtocol } : {}),
       resources: {
         peakTboxWasmMB: peaks.tboxWasmMB,
         peakTboxJsHeapMB: peaks.tboxJsHeapMB,
@@ -703,9 +758,9 @@ test.describe("iso builder", () => {
     fs.mkdirSync(path.dirname(evPath), { recursive: true });
     fs.writeFileSync(evPath, `${JSON.stringify(evidence, null, 2)}\n`);
     console.log("wrote browser evidence:", evPath);
-    // Join operation-local engine observations only to independently measured
-    // saved ISO and loaded WASM bytes. Producer/frontend identity is still absent;
-    // keep this diagnostic separate from qualification evidence.
+    // Join operation-local observations only to the saved ISO, actually loaded
+    // frontend responses and native WASM instantiation. Neither record is
+    // authenticated provenance or qualification evidence.
     const wasm = await loadedWasmMeasurement(page);
     const iso = await hashSavedIso(out, size);
     if (process.env.TBOX_E2E_ISO_COPY) {
@@ -723,19 +778,72 @@ test.describe("iso builder", () => {
     });
     const measurementPath = path.join(path.dirname(evPath), `build-measurements-${path.basename(evPath)}`);
     fs.writeFileSync(measurementPath, `${JSON.stringify(measurements, null, 2)}\n`);
+    if (pairProtocol) {
+      campaignValue("browser", measurements.browser);
+      campaignValue("loadedWasm", measurements.loadedWasm);
+      campaignValue("observedInputs", measurements.engineBuildResult?.observedInputs);
+      expect(measurements.engineBuildResult?.observedInputs?.overlay?.baseAnnotationMatched).toBe(true);
+    }
     console.log("wrote diagnostic measurements:", measurementPath);
+    const inputs = await completedInputMeasurements(page, buildIdentity);
+    const frontendResponses = await frontend.summary();
+    const executingSource = await finalizeExecutingSource(executingSourceBefore);
+    expect(await completedBuildResult(page, buildIdentity)).toEqual(buildResult);
+    const observedInputs = browserObservedInputRecord({
+      iso, wasm, browser: browserVersion, buildResult, identity: buildIdentity,
+      inputs, frontend: frontendResponses, executingSource,
+    });
+    const observationPath = path.join(path.dirname(evPath), `browser-observed-input-${path.basename(evPath)}`);
+    fs.writeFileSync(observationPath, `${JSON.stringify(observedInputs, null, 2)}\n`);
+    console.log("wrote incomplete browser observations:", observationPath);
     fs.unlinkSync(out);
     // Pair protocol (PAIR=true): the cold build must show the observer sees
     // layer downloads at all, and the warm build, same profile and inputs,
     // must fetch none. Evidence is written first so a failure keeps it.
     if (process.env.TBOX_E2E_PAIR) {
       const mode = evidence.run.cacheMode;
+      expect(transfers.observer.errors, "manifest observer must not lose input identities").toEqual([]);
+      expect(transfers.inFlightBlobRequests, "unfinished blobs cannot prove zero transfers").toBe(0);
+      expect(transfers.unknownSizeRequests, "missing byte observations cannot prove zero transfers").toBe(0);
       const observed = JSON.stringify(transfers.completeLayers, null, 2);
       if (mode === "cold") {
         expect(transfers.completeLayerBlobs, "cold pair sample must observe complete layer downloads").toBeGreaterThan(0);
       } else {
         expect(mode, "pair samples are cold or warm").toBe("warm");
         expect(transfers.completeLayerBlobs, `warm pair sample fetched complete layer blobs:\n${observed}`).toBe(0);
+      }
+    }
+    } catch (error) {
+      if (process.env.TBOX_E2E_PAIR) {
+        const evPath = process.env.TBOX_E2E_EVIDENCE ||
+          path.join(SHOTS, "..", "test-results", `qual-evidence-${slug(IMAGE)}-s${process.env.TBOX_E2E_SAMPLE || 1}.json`);
+        const failure = {
+          schemaVersion: 1, kind: "failed-browser-build-measurements", qualification: "not-assessed",
+          target: { image: IMAGE, platform: process.env.TBOX_E2E_PLATFORM || null },
+          run: { sample: Number(process.env.TBOX_E2E_SAMPLE || 1), pair: Number(process.env.TBOX_E2E_PAIR),
+            cacheMode: process.env.TBOX_E2E_CACHE_MODE || "unknown", outcome: "failed" },
+          phase: activePhase, phaseElapsedMs: performance.now() - phaseStartedAt,
+          elapsedMs: performance.now() - attemptStartedAt, phasesMs: phases,
+          error: { name: error.name, message: String(error.message).slice(0, 4096) },
+          pairProtocol, registryTransfers: null, outputIntegrity: "not-established",
+        };
+        try {
+          failure.registryTransfers = registry ? registry.snapshot() : null;
+          if (!registry) failure.observationUnavailable = "preflight failed before observer installation";
+          const state = process.env.TBOX_E2E_PAIR_STATE;
+          failure.fixedIdentity = state && fs.existsSync(state) ? JSON.parse(fs.readFileSync(state, "utf8")) : null;
+          fs.mkdirSync(path.dirname(evPath), { recursive: true });
+          fs.writeFileSync(path.join(path.dirname(evPath), `failed-build-${path.basename(evPath)}`),
+            JSON.stringify(failure, null, 2) + "\n");
+        } catch (receiptError) { console.error("failed to preserve failed-sample evidence:", receiptError); }
+      }
+      throw error;
+    } finally {
+      registry?.stop();
+      frontend?.stop();
+      if (ownedOutput) {
+        try { fs.rmSync(ownedOutput, { force: true }); }
+        catch (cleanupError) { console.error("failed to remove this pair's output:", cleanupError); }
       }
     }
   });

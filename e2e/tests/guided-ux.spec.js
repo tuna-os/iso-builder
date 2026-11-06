@@ -10,6 +10,8 @@ const firefox = {
   arches: ['x86_64', 'aarch64'],
 };
 async function setup(page) {
+  // Metadata UI coverage must not depend on the external icon CDN.
+  await page.route(firefox.icon, r => r.fulfill({contentType:'image/svg+xml',body:'<svg xmlns="http://www.w3.org/2000/svg" width="44" height="44"><rect width="44" height="44" fill="blue"/></svg>'}));
   await page.route('**/wasm_exec.js', r => r.fulfill({ body: '' }));
   await page.route('**/tbox.wasm', r => r.abort());
   await page.route('**/flathub/search', r => r.fulfill({ json: { hits: [firefox] } }));

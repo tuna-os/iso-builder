@@ -47,9 +47,9 @@ def test_slugs_unique_and_stable():
 
 
 
-# guppy:gnome is offered in editions.json but the snapshot only carries
-# guppy:{base,kde,xfce} — known gap, asserted explicitly below so the
-# suite stays green without losing the signal.
+# The snapshot is generated from tunaos.toml (tunaOS
+# scripts/generate-catalog-snapshot.py), so every qualify cell names a built
+# target. A receipt qualifies linux/amd64 only, so the Alma cells use it too.
 def test_qualify_matrix_entries_have_platform_in_snapshot():
     keys = {t["targetKey"] for t in _snapshot_targets()}
     matrix = _matrix_entries()
@@ -60,7 +60,7 @@ def test_qualify_matrix_entries_have_platform_in_snapshot():
         expected = f"{e['ref']}:{e['platform']}"
         if expected not in keys:
             missing.append(expected)
-    assert missing == ["guppy:gnome:linux/amd64"], f"unexpected snapshot gaps: {missing}"
+    assert missing == [], f"unexpected snapshot gaps: {missing}"
 
 
 def test_reference_entries_flagged_and_not_qualified():

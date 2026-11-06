@@ -21,6 +21,8 @@ Never post account credentials or API keys in issues or pull requests.
 
 ## The Intended Experience
 
+For step-by-step browser instructions and current limits, see the [browser quickstart](docs/browser-quickstart.md).
+
 1. **Pick a Base & Desktop:** Select your base (AlmaLinux Kitten, Fedora, Debian, etc.). Then select a desktop (GNOME, KDE Plasma, COSMIC, Niri, XFCE).
 2. **Instant Inspection:** The builder downloads metadata and inspects the image layers in seconds.
 3. **Build ISO:** Click build. The builder streams a custom bootable ISO to your local storage.
@@ -94,6 +96,77 @@ cd e2e && npm ci && npx playwright install --with-deps chromium
 npx playwright test --grep-invert @full        # Runs UI & inspect network flow
 ```
 
+### Retained same-byte strict guest observations
+
+CI's opt-in `strict_roundtrip_test` route needs `run_full=true`,
+`retain_iso_artifact=true`, `keep_iso=false`, `retain_candidate=false`,
+`benchmark=false`, `pair=false` and exactly one `only=` cell. Its
+`strict_install_mode` choice applies **only** to this route:
+
+| Strict install mode | `diagnostic_unqualified` | `only=` | Evidence scope |
+|---|---|---|---|
+| `plain` (default) | `false` | `skipjack-gnome` | Observed plain install; `not-assessed`, not full qualification |
+| `luks` | `true` | `skipjack-gnome` | Diagnostic LUKS install; `diagnostic-unqualified`, never qualification |
+| `both` | `false` | one `qualify: true` `linux/amd64` cell | Plain then LUKS on the same ISO in one harness run; on `main`, an attested qualification receipt |
+
+For example, dispatch an observed plain run with:
+
+```sh
+gh workflow run ci.yml \
+  -f run_full=true -f only=skipjack-gnome -f retain_iso_artifact=true \
+  -f strict_roundtrip_test=true -f strict_install_mode=plain \
+  -f diagnostic_unqualified=false -f keep_iso=false \
+  -f retain_candidate=false -f benchmark=false -f pair=false
+```
+
+For diagnostic LUKS, use `strict_install_mode=luks` and
+`diagnostic_unqualified=true` together. The catalog/source admission guards
+still apply; a non-diagnostic run does not bypass them.
+
+All three modes retain the browser-built ISO and discard the local original.
+They download the chunks again, reconstruct the ISO, and verify its hash against
+the browser measurement **before** the guest starts. The helper checks that the
+receipt agrees with the source, browser, `GITHUB_RUN_ID`, `GITHUB_RUN_ATTEMPT`,
+and artifact identities for the strict invocation. Only LUKS with diagnostics
+sets `TUNAOS_INSTALLED_BOOT_DIAGNOSTIC=1`. Neither single-mode result is full
+qualification evidence.
+
+#### Qualification receipts (`strict_install_mode=both`)
+
+`both` runs the strict harness once with `--strict-offline-gui=plain,luks`
+against the round-tripped ISO. When that job passes on `refs/heads/main`,
+`scripts/build-qualification-receipt.py` writes a
+`BrowserIsoQualificationReceipt/v1`. Its inputs are the harness's
+`strict-qual-plain.json` and `strict-qual-luks.json` (copied verbatim), the
+same-byte binding, the harness revision pinned in `ci.yml` and the run's
+`GITHUB_*` identity. The receipt is canonical JSON
+(`sort_keys`, `(",", ":")` separators, no trailing newline), so
+`sha256(receipt.json)` is the receipt digest.
+
+The builder writes a receipt only when these conditions are true:
+
+- Both legs installed and did a cold boot and a warm boot.
+- Each warm boot has a kernel boot ID that is different from the cold boot.
+- Each leg created the account in GNOME Initial Setup and logged in through GDM.
+- The plain leg shows no passphrase prompt and the LUKS leg shows one.
+- The booted digest equals the source digest and the image digest.
+- The imgref is `ghcr.io/tuna-os/<variant>:<flavor>`.
+- The run is not diagnostic, ran both modes, and ran on `main`.
+
+A branch dispatch still runs both legs but writes no receipt.
+
+The job attests `receipt.json` with `actions/attest-build-provenance`, which
+is why `full-matrix` alone holds `id-token: write` and `attestations: write`.
+It then checks the bundle the way a consumer will and uploads `receipt.json`
+and `bundle.jsonl` as `qualification-receipt-<slug>-run<id>-a<attempt>`.
+To authenticate a downloaded receipt:
+
+```sh
+gh attestation verify receipt.json --repo tuna-os/iso-builder \
+  --signer-workflow tuna-os/iso-builder/.github/workflows/ci.yml \
+  --source-ref refs/heads/main --bundle bundle.jsonl
+```
+
 ### Brand assets and primary configuration
 
 The wide header uses `/wordmark.svg`, copied without modification from
@@ -156,6 +229,21 @@ Normally this is automatic: the `deploy` job in `.github/workflows/ci.yml` deplo
 ---
 
 ## Updating the WASM Engine
+
+Update the tacklebox module pin in `native/go.mod` and its checksums in
+`native/go.sum`. CI resolves that pin to a full commit, builds the WASM,
+tests it, and deploys the same artifact. A source fix in tacklebox alone
+does not change the engine served by ISO Builder.
+
+For example, browser install run
+[`41270163456`](https://github.com/tuna-os/iso-builder/actions/runs/41270163456)
+reached the installer but failed with `bound blob size mismatch`: the
+index in `/OCI/index.json` omitted the retained manifest's size. The engine repair
+in [tacklebox#437](https://github.com/tuna-os/tacklebox/pull/437) supplies
+that exact byte count and preserves the manifest bytes and installer
+validation. The new pin needs a fresh browser-built ISO; retained
+media from the old engine still contains the defect. Build and source checks
+do not prove an offline installation through the GUI or detached cold and warm login.
 
 `app/public/tbox.wasm` is built from the [tacklebox](https://github.com/tuna-os/tacklebox) repository:
 
