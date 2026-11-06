@@ -199,10 +199,20 @@ The workflow adds no cross-repository artifact credential and writes nothing to 
 
 Before guest execution, the workflow reads `live-source.json` and
 `live-installer-info` from the ISO payloads. These use SquashFS or the EROFS live
-root that the browser engine writes. The strict harness uses commit
-`9dabdc783e68b120ca5ef1bc8db6ccaa8c91d79b`. It checks a fragmented welcome
+root that the browser engine writes. The strict harness is the commit that the
+`ref:` lines in `.github/workflows/ci.yml` pin. It checks a fragmented welcome
 heading against one exact, original-pixel OCR crop and the complete Install action.
 It does not relax confidence, phase, geometry, or duplicate guards.
+
+Each `unsquashfs` probe, and the payload extractor, has a time limit and an
+output limit. A probe that does not end stops the step. A payload that you cannot
+read, or an empty receipt, also stops the step, even if another payload has valid
+receipts.
+
+The step writes `e2e/test-results/same-byte-receipt-diagnostics-<slug>.log`.
+It lists each payload, its file system, and the status of each receipt member. It
+never holds the content of a receipt. The log has the diagnostic-unqualified
+label and does not qualify the target.
 
 Runs `41262519173` and `41262520834` reached the current summary but stopped before submission.
 The old harness expected a different layout and a purple action.
