@@ -18,11 +18,11 @@ also be deployed by hand with `npx wrangler deploy` from `app/` or `worker/`.
 `app/public/` — with the freshly built engine dropped in. It proves the committed
 source works when served locally, against the live relay and live GHCR.
 
-It proves nothing about production. Nothing in CI has ever fetched
-`https://iso.tunaos.org/`. A `wrangler deploy` that exits 0 means the Cloudflare
-API accepted an upload; it does not mean the custom domain resolves, that the
-route is attached to the new version, or that the asset the browser downloads is
-the one CI built.
+It proves nothing about production. A `wrangler deploy` that exits 0 means the
+Cloudflare API accepted an upload; it does not mean the custom domain resolves,
+that the route is attached to the new version, or that the asset the browser
+downloads is the one CI built. The `deploy` job therefore ends with a
+`verify production` step (see "Verify a deploy").
 
 The relay is also a hard dependency of every build: if `relay.tunaos.org` stops
 answering, the app loads fine and then fails at the first layer pull. Treat a
@@ -74,11 +74,18 @@ a single image tag is retired (that failure mode belongs to
 
 ## Verify a deploy
 
-Run the four checks above immediately after the `deploy` job goes green, and
-compare check 2 against the size of the artifact that run built (the `wasm` job's
-`report` step prints `ls -l app/public/tbox.wasm`). A mismatch means users are
-downloading a different engine than CI tested — that is a rollback, not a
-"wait and see".
+The `deploy` job runs these checks itself in its last step, `verify production`.
+For up to six attempts, 20 seconds apart, it requires:
+
+- `https://iso.tunaos.org/` answers 200 and loads `app.js` (check 1).
+- The sha256 of `https://iso.tunaos.org/tbox.wasm` equals the engine that run
+  built and `e2e` tested (check 2).
+- `https://relay.tunaos.org/healthz` answers 200 (check 3).
+
+If that step fails, the deploy is bad or the relay cannot reach GHCR. Read the
+step log and `healthz.json` in it, then roll back. A wrong engine digest means
+users download a different engine than CI tested. That is a rollback, not a
+"wait and see". After a deploy by hand, run the four checks yourself.
 
 ## Roll back
 
@@ -124,8 +131,8 @@ fires on a push to `main`, so a roll-forward carries the full `wasm` + `e2e` wai
 
 ## Known gaps
 
-- No post-deploy verification runs automatically. Until CI performs the checks
-  above, the first detector of a bad deploy is a user.
+- Production is verified only once, at deploy time, by the `verify production`
+  step. A failure there does not roll back by itself; a person must roll back.
 - No external monitoring polls `/healthz`, so relay downtime between deploys is
   detected only by the weekly scheduled CI run (Mondays, 05:40 UTC) — and that
   run exercises the relay through a local copy of the app, so it would not catch
