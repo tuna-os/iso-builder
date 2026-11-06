@@ -71,3 +71,16 @@ live).
 ```sh
 go test ./...
 ```
+
+## Updating bundled noVNC assets
+
+`vncviewer` embeds a minimal noVNC tree from the pinned commit recorded in
+`vncviewer/assets/VENDORED_VERSION`. To refresh the vendored files from that
+commit, run:
+
+```sh
+./native/vncviewer/update-assets.sh
+```
+
+The script fetches the pinned commit, copies only the embedded noVNC files, and
+rewrites the version marker and renamed license files.
