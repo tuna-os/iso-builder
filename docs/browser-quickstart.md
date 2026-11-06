@@ -32,6 +32,61 @@ for local use. This downloads a JSON request.
 See [browser qualification](QUALIFICATION.md) for the evidence still required;
 neither inspection nor saving an ISO proves that it boots or installs.
 
+## Optional live filesystem compression
+
+Under **Advanced settings → Live filesystem compression**, choose **None
+(default)** or **LZ4** for this build. None keeps the live filesystem
+uncompressed; LZ4 is opt-in and does not change the default for later visits.
+Label, app-request and image-selection edits retain the selected mode in the
+current page. Changing compression clears a previous completed build result,
+not the inspected source-image facts. The selector is locked while checking
+an image or building/saving output.
+
+LZ4 requires both an implementation in the loaded engine and support in the
+**exact kernel selected for the live image**. The engine checks that kernel;
+an advertised engine capability alone does not prove kernel compatibility.
+Do not infer support from a distribution name or from another kernel's
+configuration. DDI channels reject LZ4 rather than silently changing the codec.
+Select None explicitly if you want to build a DDI channel.
+
+An older loaded engine without the compression-capability API, an invalid
+capability response, or an engine that does not advertise LZ4 is refused before
+the app opens ISO output or invokes the build engine. The LZ4 selection stays
+visible after refusal; it is never silently downgraded to None. None remains
+compatible with older engines. This option does not upgrade catalog admission,
+browser qualification, bootability or installation status.
+
+For LZ4, **Build ISO** opens the review dialog and loads/checks engine support
+before enabling **Create ISO file**. You can go back while it loads. The final
+confirmation is a fresh user gesture for the native save picker; it does not
+wait for a cold engine download. None retains the existing picker-before-engine
+ordering. A failed support check leaves confirmation disabled and preserves
+the selected mode and same-mode local fallback.
+
+A visible LZ4 control does not mean the deployment's engine has been updated.
+If the currently loaded module predates the capability API, it will refuse
+LZ4 even though the form offers the choice; use None or a supporting local
+tacklebox version instead.
+
+**Download build-request.json** includes
+`options.rootfsCompression` as `none` or `lz4`. The rendered local command and
+**Copy command & request** preserve the same choice. For LZ4, the command is:
+
+```sh
+tacklebox purebuild --request build-request.json --rootfs-compression=lz4
+```
+
+Use a native tacklebox version that supports this option and the selected
+kernel. The explicit flag makes an older CLI refuse an unknown option instead
+of silently ignoring the new JSON property. None uses the existing local
+command without the LZ4 flag. This is a per-build BuildRequest option, **not a
+new primary TOML field** or a replacement configuration format.
+
+LZ4 can reduce ISO size, but no size reduction or full-browser boot/install
+qualification is promised here. Size depends on the source image and must be
+measured on the actual output; component tests with bounded engine/output
+fixtures are not full ISO or kernel evidence.
+
 ## Build and save when enabled
 
 When the status says **Image inspected — ready to build.** and **Build ISO**
@@ -87,12 +142,18 @@ before you post them; remove tokens, credentials, private URLs and personal path
 
 ## Guide validation
 
-We compared control labels and save/storage behavior with
+The original guided controls and save/storage behavior were compared with
 [`index.html`](../app/public/index.html), [`app.js`](../app/public/app.js),
 [`guided-picker.js`](../app/public/guided-picker.js) and
 [`builder-config.json`](../app/public/builder-config.json) at `d2521c7`.
 We checked relative links. We did not run a full ISO build, USB write or
 installation to validate this guide.
+
+The compression consumer tests in
+[`rootfs-compression.spec.js`](../e2e/tests/rootfs-compression.spec.js) exercise
+the served app with bounded engine-registration and output fixtures. They do
+not establish real-engine compression, kernel support, ISO size or successful
+boot/installation.
 
 ### Interpreting output delivery
 
@@ -120,7 +181,9 @@ Check the architecture of the installation target, not the browser host.
 Before you create media, review the target, temporary storage needs, and limits for app requests.
 Back or Escape keeps the form unchanged.
 On phones, use the setup link to move supported choices to a desktop.
-The link does not use cloud storage.
+The link does not use cloud storage. It deliberately excludes live filesystem
+compression: opening a shared setup starts with None, even if the sender
+selected LZ4. Keep BuildRequest JSON and its local command to retain LZ4.
 
 This stage does not restore unsaved changes after refresh.
 It does not import TOML setups.
@@ -139,7 +202,10 @@ The action checks the version, experience, catalog identity, selected leaf and e
 It keeps only catalog choices, app requests, package names and an uppercase ISO label.
 
 The restore action does not restore build readiness, receipts or notice acknowledgements.
-Advanced images, commands and overrides for boot or connections prevent a save or restore.
+Advanced images, commands, overrides for boot or connections, and nondefault
+live filesystem compression prevent a save or restore. A selected LZ4 value is
+not represented in the planning subset, so restoring a draft must not replace
+or erase it. Select None explicitly before using planning recovery.
 The action does not silently drop these values.
 Use `Forget saved plan` to clear stored data. It does not clear the current form.
 

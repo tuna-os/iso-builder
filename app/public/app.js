@@ -500,6 +500,7 @@ let wasmReady = null;
 let wasmNativeIntrospect = null;
 let wasmNativeBuildIso = null;
 let wasmNativeBuildIsoWithResult = null;
+let wasmNativeGetCapabilities = null;
 
 // System packages (remora) + custom repo/setup commands (extra_run).
 const pkgItems = new Map();  // pkg -> {checked, summary}
@@ -640,10 +641,13 @@ function defaultLoadWasm() {
     .then(([r, digest]) => {
       wasmEngineDigest = digest;
       wasmMemory = r.instance.exports.mem || go.mem || null;
+      // An older module must not inherit a stale or injected advertisement.
+      globalThis.tboxGetCapabilities = undefined;
       go.run(r.instance);
       wasmNativeIntrospect = globalThis.tboxIntrospect || null;
       wasmNativeBuildIso = globalThis.tboxBuildIso || null;
       wasmNativeBuildIsoWithResult = globalThis.tboxBuildIsoWithResult || null;
+      wasmNativeGetCapabilities = globalThis.tboxGetCapabilities || null;
       observeEngineResets();
       log("engine loaded (tacklebox wasm)");
     });
@@ -939,7 +943,7 @@ function syncInspectAction() {
 function setOperationBusy(busy, phase = null) {
   activeBusyPhase = busy ? (phase || "busy") : null;
   guidedPicker?.setBusy(busy);
-  for (const id of ["variant", "platform", "image", "introspect", "clearcache", "experience"]) {
+  for (const id of ["variant", "platform", "image", "introspect", "clearcache", "experience", "rootfs-compression"]) {
     const el = $(id);
     if (el) el.disabled = Boolean(busy) || (id === "introspect" && BUILDER_CONFIG.preview_only);
   }
@@ -951,6 +955,47 @@ function setOperationBusy(busy, phase = null) {
     for (const btn of box.querySelectorAll("button.edition")) {
       btn.disabled = Boolean(busy);
     }
+  }
+}
+
+function requestRootfsCompression(request) {
+  const mode = request.options?.rootfsCompression;
+  return mode === undefined || mode === null || mode === "" ? "none" : mode;
+}
+
+function selectedRootfsCompression() {
+  return $("rootfs-compression")?.value ?? "none";
+}
+
+function rootfsCompressionError(message) {
+  const error = new Error(message);
+  error.name = "RootfsCompressionError";
+  return error;
+}
+
+function assertRootfsCompressionSupported(request) {
+  const mode = requestRootfsCompression(request);
+  if (mode === "none") return; // Old engines retain their uncompressed default.
+  if (mode !== "lz4") {
+    throw rootfsCompressionError(`Unsupported live filesystem compression: ${mode}. Select None or LZ4 explicitly.`);
+  }
+  const unavailable = reason => rootfsCompressionError(
+    `LZ4 live filesystem compression is unavailable: ${reason}. No ISO output was opened. Select None explicitly to use this engine, or use the LZ4 local fallback with a supporting tacklebox version. Your LZ4 choice is preserved.`,
+  );
+  if (typeof wasmNativeGetCapabilities !== "function" ||
+      globalThis.tboxGetCapabilities !== wasmNativeGetCapabilities) {
+    throw unavailable("the loaded engine does not advertise compression capabilities");
+  }
+  let capabilities;
+  try { capabilities = globalThis.tboxGetCapabilities(); }
+  catch { throw unavailable("the loaded engine could not report compression capabilities"); }
+  if (!capabilities || capabilities.schemaVersion !== 1 ||
+      !Array.isArray(capabilities.rootfsCompression) ||
+      !capabilities.rootfsCompression.every(value => typeof value === "string")) {
+    throw unavailable("the loaded engine returned malformed compression capabilities");
+  }
+  if (!capabilities.rootfsCompression.includes(mode)) {
+    throw unavailable("the loaded engine does not advertise LZ4 support");
   }
 }
 
@@ -1023,6 +1068,7 @@ function buildRequestFromForm(existingOp = null) {
     ...(resolvedInputs ? { resolvedInputs } : {}),
     options: {
       label,
+      rootfsCompression: selectedRootfsCompression(),
       packages,
       flatpaks,
       extraRun,
@@ -1112,12 +1158,19 @@ function invalidateOperation(reason = "selection-changed") {
   return reason;
 }
 
+function fallbackCommand(request) {
+  const command = "tacklebox purebuild --request build-request.json";
+  return requestRootfsCompression(request) === "lz4"
+    ? `${command} --rootfs-compression=lz4`
+    : command;
+}
+
 function renderFallbackCard(op = currentOp, reasonText = "") {
   const card = $("fallbackcard");
   if (!card) return;
   const activeOp = op || rebuildCurrentOperation("idle");
   const reqJson = JSON.stringify(activeOp.request, null, 2);
-  const cmd = "tacklebox purebuild --request build-request.json";
+  const cmd = fallbackCommand(activeOp.request);
   if ($("fallbackcmd")) $("fallbackcmd").textContent = cmd;
   if ($("fallbackjson")) $("fallbackjson").textContent = reqJson;
   if ($("fallbackreason") && reasonText) {
@@ -1347,6 +1400,7 @@ async function inspect() {
     }
 
     await window.loadWasm();
+    assertRootfsCompressionSupported(op.request);
     stopWatch = watchEngineMemory();
     const { registry, image } = parseImage(raw);
     log(`inspecting ${image} via ${registry}`);
@@ -1383,7 +1437,7 @@ async function inspect() {
     op.error = String(e);
     log("error: " + e);
     if (/digest mismatch/.test(String(e))) log("a downloaded layer does not match its digest — clear it under Advanced → Clear downloaded layers, then try again");
-    $("stage").textContent = "Inspect failed.";
+    $("stage").textContent = e.name === "RootfsCompressionError" ? e.message : "Inspect failed.";
     renderFallbackCard(op, `Inspect failed in browser (${String(e)}). You can still run the local fallback:`);
     notify("Inspect failed", String(e).slice(0, 120));
   } finally {
@@ -1511,6 +1565,9 @@ async function buildDdi(ch) {
   let stopWatch = () => {};
   let s = null;
   try {
+    if (selectedRootfsCompression() !== "none") {
+      throw rootfsCompressionError("DDI channels do not support LZ4 live filesystem compression. No source download or ISO output was started. Select None explicitly or choose an OCI image; your compression choice is preserved.");
+    }
     if (typeof tboxBuildDdiIso !== "function") {
       throw new Error("this engine build has no DDI support (tboxBuildDdiIso missing) — hard-refresh to load the current tbox.wasm");
     }
@@ -1543,7 +1600,9 @@ async function buildDdi(ch) {
     }
     $("postcard").classList.add("hidden");
     log("error: " + e);
-    if (/QuotaExceededError|quota exceeded/i.test(String(e))) {
+    if (e.name === "RootfsCompressionError") {
+      $("stage").textContent = e.message;
+    } else if (/QuotaExceededError|quota exceeded/i.test(String(e))) {
       $("stage").textContent = "Build failed — storage quota exceeded.";
     } else if (e.name === "AbortError") {
       $("stage").textContent = "Save cancelled — no completed save confirmed. Your setup is preserved; retry when ready.";
@@ -1595,6 +1654,10 @@ async function build() {
   let stopWatch = () => {};
   let s = null;
   try {
+    const compression = requestRootfsCompression(req);
+    // LZ4 was loaded in the review dialog. Recheck synchronously so the final
+    // confirmation's transient activation reaches the native save picker.
+    assertRootfsCompressionSupported(req);
     stopWatch = watchEngineMemory();
     if (iurl) {
       log("fetching tbox initramfs…");
@@ -1613,14 +1676,13 @@ async function build() {
       $("stage").textContent = "Build cancelled.";
       return;
     }
-
     const hasBuildStub =
       (typeof window.tboxBuildIso === "function" && window.tboxBuildIso !== wasmNativeBuildIso) ||
       (typeof window.tboxBuildIsoWithResult === "function" && window.tboxBuildIsoWithResult !== wasmNativeBuildIsoWithResult);
-    if (!hasBuildStub) {
-      await window.loadWasm();
-    }
+    // Preserve the default mode's picker-before-cold-load ordering.
+    if (compression === "none" && !hasBuildStub) await window.loadWasm();
     observeEngineResets();
+
     if (op.inspectedVia === "catalog") {
       globalThis.tboxLayerCache?.setPrefetchEnabled?.(true);
       if (typeof window.tboxIntrospect === "function") {
@@ -1683,7 +1745,9 @@ async function build() {
     $("postcard").classList.add("hidden");
     log("error: " + e);
     if (/digest mismatch/.test(String(e))) log("a downloaded layer does not match its digest — clear it under Advanced → Clear downloaded layers, then try again");
-    if (/QuotaExceededError|quota exceeded/i.test(String(e))) {
+    if (e.name === "RootfsCompressionError") {
+      $("stage").textContent = e.message;
+    } else if (/QuotaExceededError|quota exceeded/i.test(String(e))) {
       $("stage").textContent = "Build failed — storage quota exceeded.";
     } else if (e.name === "AbortError") {
       $("stage").textContent = "Save cancelled — no completed save confirmed. Your setup is preserved; retry when ready.";
@@ -1750,15 +1814,53 @@ $("apps-options")?.addEventListener("toggle", () => {
     fpHydrateSelected();
   }
 });
-$("build").onclick = () => {
+let buildReviewSequence = 0;
+$("build").onclick = async () => {
+  const sequence = ++buildReviewSequence;
   const review = $("build-review");
+  const create = $("review-create");
+  const status = $("review-compression");
+  const op = currentOp;
+  create.disabled = true;
+  status.textContent = "";
   $("review-target").textContent = `${$("image").value || selectedDdi?.name || "Selected image"} · ${currentPlatform()}`;
   $("review-apps").textContent = `${fpCollect().length} app requests. These are not applied to the ISO or installed system.`;
   review.showModal();
   $("review-back").focus();
+  try {
+    if (selectedRootfsCompression() === "none") {
+      status.textContent = "Uncompressed filesystem selected.";
+      create.disabled = false;
+      return;
+    }
+    if (selectedDdi) throw rootfsCompressionError("DDI channels do not support LZ4 live filesystem compression. Choose None or an OCI image. No ISO output was opened.");
+    const request = globalThis.tboxGetBuildRequest();
+    const snapshot = JSON.stringify(request);
+    status.textContent = "Checking LZ4 engine support before file selection… You can go back while this loads.";
+    await window.loadWasm();
+    if (sequence !== buildReviewSequence || !review.open) return;
+    if (currentOp !== op || !operationMatchesForm(op) || JSON.stringify(globalThis.tboxGetBuildRequest()) !== snapshot) {
+      throw rootfsCompressionError("The setup changed during the LZ4 check. Go back and review it again. No ISO output was opened.");
+    }
+    assertRootfsCompressionSupported(request);
+    status.textContent = "LZ4 engine support checked. The selected image's exact kernel configuration is still checked during the build.";
+    create.disabled = false;
+  } catch (e) {
+    if (sequence !== buildReviewSequence || !review.open) return;
+    status.textContent = e.message || String(e);
+    $("stage").textContent = status.textContent;
+    clearBuildResult();
+    if (currentOp === op && op) {
+      op.state = "failed";
+      op.error = String(e);
+      if (!selectedDdi) renderFallbackCard(op, status.textContent);
+    }
+    log(String(e));
+  }
 };
-$("review-back").onclick = () => $("build-review").close();
-$("review-create").onclick = () => { $("build-review").close(); build(); };
+$("review-back").onclick = () => { ++buildReviewSequence; $("build-review").close(); };
+$("build-review").addEventListener("cancel", () => { ++buildReviewSequence; });
+$("review-create").onclick = () => { ++buildReviewSequence; $("build-review").close(); build(); };
 $("curated").onclick = loadCuratedSet;
 renderCuratedSets(null);
 $("addrepo").onclick = addRepo;
@@ -1789,10 +1891,11 @@ if ($("downloadrequest")) {
 }
 if ($("copyfallback")) {
   $("copyfallback").onclick = async () => {
-    try { globalThis.tboxExportBuildRequestJSON(); }
+    let json;
+    try { json = globalThis.tboxExportBuildRequestJSON(); }
     catch(error) { $("export-error").textContent=error.message; return; }
     $("export-error").textContent="";
-    const payload = `cat <<'EOF' > build-request.json\n${globalThis.tboxExportBuildRequestJSON()}\nEOF\ntacklebox purebuild --request build-request.json`;
+    const payload = `cat <<'EOF' > build-request.json\n${json}\nEOF\n${fallbackCommand(JSON.parse(json))}`;
     await navigator.clipboard.writeText(payload);
     $("copyfallback").textContent = "Copied!";
     setTimeout(() => ($("copyfallback").textContent = "Copy command & request"), 1500);
@@ -1805,6 +1908,10 @@ for (const id of ["label", "initrdurl"]) {
     updateShare();
   });
 }
+$("rootfs-compression")?.addEventListener("change", () => {
+  syncOperationOptions();
+  updateShare();
+});
 $("shimurl")?.addEventListener("input", () => {
   invalidateOperation("shim-changed");
   updateShare();
@@ -2198,7 +2305,7 @@ if (document.querySelector) {
     return {model:guidedModel,experience:globalThis.TboxExperiences.id,catalog:globalThis.TboxGuidedCatalog,validFlatpakId};
   };
   const noOverrides = () => {
-    if (manualImageMode || selectedDdi || repoCmds.length || $("initrdurl").value.trim() || ($("shimurl").value.trim() && $("shimurl").value.trim() !== "https://relay.tunaos.org")) {
+    if (manualImageMode || selectedDdi || selectedRootfsCompression() !== "none" || repoCmds.length || $("initrdurl").value.trim() || ($("shimurl").value.trim() && $("shimurl").value.trim() !== "https://relay.tunaos.org")) {
       throw new Error("This setup has advanced values that cannot be saved or replaced by a planning draft. Keep your original configuration; clear those overrides explicitly before using recovery.");
     }
   };
