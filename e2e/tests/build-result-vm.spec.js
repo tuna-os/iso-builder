@@ -27,7 +27,7 @@ function app() {
   };
   const request = { image: "synthetic:base", options: { label: "TEST", outputFilename: "test.iso", flatpaks: [], packages: [], extraRun: [] } };
   const op = { state: "ready", ready: true, request, inspectedVia: "wasm", id: 1, buildResult: null };
-  const trace = { closes: 0, writes: 0, aborts: 0, legacy: 0, calls: 0, downloads: 0 };
+  const trace = { closes: 0, writes: 0, aborts: 0, legacy: 0, calls: 0, downloads: 0, options: [] };
   const sink = { kind: "picker", w: {
     write: async bytes => { trace.writes += bytes.length; },
     close: async () => { trace.closes++; }, abort: async () => { trace.aborts++; },
@@ -40,15 +40,15 @@ function app() {
     document: { createElement: () => ({ click: () => { trace.downloads++; } }) },
     navigator: {}, $: element, currentOp: op, buildResultRevision: 0,
     observedResetFunctions: new WeakSet(), pendingEngineResets: new Set(), activeBusyPhase: null,
-    selectedDdi: null, operationSeq: 0, facts: null, tboxCurrentOperation: op, nextRequest: request, wasmNativeBuildIso: null, wasmNativeBuildIsoWithResult: null,
+    selectedDdi: null, operationSeq: 0, facts: null, tboxCurrentOperation: op, nextRequest: request, wasmNativeBuildIso: null, wasmNativeBuildIsoWithResult: null, wasmEngineDigest: null,
     updateShim() {}, askNotify() {},
     buildRequestFromForm() { return { request: structuredClone(context.nextRequest) }; },
     isOperationBusy() { return false; }, operationMatchesForm: () => true,
     setOperationBusy() {}, watchEngineMemory: () => () => {},
     log() {}, notify() {}, renderFallbackCard() {}, showCacheSize() {}, updatePostcardFilename() {},
     isoSink: async () => sink, loadWasm: async () => {}, tboxValidateBuildResult: validateBuildResult,
-    tboxBuildIso: async (_opts, write) => { trace.legacy++; await write(new Uint8Array([1, 2, 3, 4])); return 4; },
-    tboxBuildIsoWithResult: async (_opts, write) => { trace.calls++; await write(new Uint8Array([1, 2, 3, 4])); return observedBuildFixture(); },
+    tboxBuildIso: async (opts, write) => { trace.legacy++; trace.options.push(opts); await write(new Uint8Array([1, 2, 3, 4])); return 4; },
+    tboxBuildIsoWithResult: async (opts, write) => { trace.calls++; trace.options.push(opts); await write(new Uint8Array([1, 2, 3, 4])); return observedBuildFixture(); },
     tboxReset: () => null, tboxResetAsync: async () => null,
   };
   context.window = context;
@@ -64,11 +64,11 @@ function app() {
   ].join("\n"), context);
   return { c: context, op, sink, trace, element };
 }
-function expectFailed({ op, element }) {
+function expectFailed({ op, element }, cancelled = false) {
   expect(op.state).toBe("failed");
   expect(op.buildResult).toBeNull();
   expect(op.outputDelivery).toBeNull();
-  expect(element("stage").textContent).toContain("Build failed");
+  expect(element("stage").textContent).toContain(cancelled ? "Save cancelled" : "Build failed");
   expect(element("postcard").classList.hidden).toBe(true);
 }
 
@@ -92,6 +92,32 @@ test.describe("app result lifecycle VM", () => {
     expect(a.op.outputDelivery).toEqual({ kind: "picker", status: "stream-closed" });
     expect(Object.isFrozen(a.op.buildResult.observedInputs.source.config.descriptor)).toBe(true);
     expect(a.trace.legacy).toBe(0);
+  });
+  test("passes the exact loaded WASM digest only to the captured native engine", async () => {
+    const a = app();
+    const digest = `sha256:${"a".repeat(64)}`;
+    a.c.wasmEngineDigest = digest;
+    a.c.wasmNativeBuildIsoWithResult = a.c.tboxBuildIsoWithResult;
+    await a.c.build();
+    expect(a.op.state).toBe("completed");
+    expect(a.trace.options).toHaveLength(1);
+    expect(a.trace.options[0].engineDigest).toBe(digest);
+  });
+  test("refuses a captured native engine when its loaded WASM digest is missing", async () => {
+    const a = app();
+    a.c.wasmNativeBuildIsoWithResult = a.c.tboxBuildIsoWithResult;
+    await a.c.build();
+    expectFailed(a);
+    expect(a.trace.calls).toBe(0);
+    expect(a.trace.aborts).toBe(1);
+  });
+  test("never attributes the loaded WASM digest to a replaced build function", async () => {
+    const a = app();
+    a.c.wasmEngineDigest = `sha256:${"b".repeat(64)}`;
+    await a.c.build();
+    expect(a.op.state).toBe("completed");
+    expect(a.trace.options).toHaveLength(1);
+    expect(a.trace.options[0]).not.toHaveProperty("engineDigest");
   });
   test("missing result API retains the numeric path without observations", async () => {
     const a = app(); delete a.c.tboxBuildIsoWithResult;
@@ -227,7 +253,7 @@ test.describe("app result lifecycle VM", () => {
           close() { throw new Error("export close failed"); },
         }) };
       };
-      await a.c.build(); expectFailed(a); expect(a.trace.downloads).toBe(0);
+      await a.c.build(); expectFailed(a, failure === "cancel"); expect(a.trace.downloads).toBe(0);
     });
   }
   test("unavailable picker retains a successful download-initiation fallback", async () => {
@@ -236,6 +262,9 @@ test.describe("app result lifecycle VM", () => {
     a.c.showSaveFilePicker = async () => { const e = new Error("picker unavailable"); e.name = "SecurityError"; throw e; };
     await a.c.build(); expect(a.op.state).toBe("completed");
     expect(a.op.outputDelivery).toEqual({ kind: "download", status: "initiated" });
+    expect(a.element("stage").textContent).toContain("download started");
+    expect(a.element("stage").textContent).not.toContain("ISO saved");
+    expect(a.element("delivery-status").textContent).toContain("cannot confirm");
     expect(a.trace.downloads).toBe(1); expect(a.op.buildResult).toEqual(observedBuildFixture());
   });
 });

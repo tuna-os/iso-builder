@@ -101,7 +101,7 @@ globalThis.TBOX_BUILDER_CONFIG = {
   ],
   "default_selection": {
     "kind": "leaf",
-    "leaf_id": "yellowfin:gnome:linux/amd64/v2"
+    "leaf_id": "yellowfin:gnome:linux/amd64"
   },
   "desktops": [
     {
@@ -334,7 +334,7 @@ globalThis.TBOX_BUILDER_CONFIG = {
     "recommendations": [
       {
         "label": "Recommended starting point",
-        "leaf_id": "yellowfin:gnome:linux/amd64/v2",
+        "leaf_id": "yellowfin:gnome:linux/amd64",
         "reason": "The flagship base with the GNOME desktop. Check your target computer architecture before continuing."
       }
     ]

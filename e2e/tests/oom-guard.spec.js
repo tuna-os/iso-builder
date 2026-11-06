@@ -45,7 +45,7 @@ test.describe("engine OOM guard", () => {
     await expect(page.locator("#postcard")).toBeHidden();
     await expect(page.locator("#fallbackcard")).toBeVisible();
     await expect(page.locator("#fallbackcmd")).toContainText(
-      "tacklebox purebuild --request build-request.json",
+      "go run github.com/tuna-os/tacklebox/cmd/purebuild@latest --request build-request.json",
     );
 
     const fallbackReq = await page.evaluate(() =>
@@ -54,7 +54,7 @@ test.describe("engine OOM guard", () => {
     expect(fallbackReq).toEqual(selectedRequest);
     expect(fallbackReq.schemaVersion).toBe(1);
     expect(fallbackReq.kind).toBe("build-request");
-    expect(fallbackReq.image).toBe("tuna-os/bonito:kde");
+    expect(fallbackReq.image).toBe("ghcr.io/tuna-os/bonito:kde");
     expect(fallbackReq.target).toEqual({
       variant: "bonito",
       flavor: "kde",
@@ -97,12 +97,12 @@ test.describe("engine OOM guard", () => {
     expect(opState.fallbackReq).toEqual(selectedRequest);
     expect(opState.fallbackReq.schemaVersion).toBe(1);
     expect(opState.fallbackReq.kind).toBe("build-request");
-    expect(opState.fallbackReq.image).toBe("tuna-os/yellowfin:gnome");
+    expect(opState.fallbackReq.image).toBe("ghcr.io/tuna-os/yellowfin:gnome");
     expect(opState.fallbackReq.target).toEqual({
       variant: "yellowfin",
       flavor: "gnome",
-      platform: "linux/amd64/v2",
-      cpuBaseline: "x86-64-v2",
+      platform: "linux/amd64",
+      cpuBaseline: "x86-64",
       hardwareScope: "generic",
     });
     expect(opState.fallbackReq.resolvedInputs.platformManifestDigest).toMatch(

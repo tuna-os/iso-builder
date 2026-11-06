@@ -1,10 +1,1 @@
-[
-  {
-    "targetKey": "marlin:roost:linux/amd64",
-    "reason": "Flavor absent from pinned primary metadata; snapshot record unavailable"
-  },
-  {
-    "targetKey": "marlin:roost:linux/arm64",
-    "reason": "Flavor absent from pinned primary metadata; snapshot record unavailable"
-  }
-]
+[]

@@ -111,7 +111,7 @@
   .variant-select { margin-top: .4rem; padding: .55rem .65rem; border-radius: 6px; border: none;
     background: var(--bg); color: var(--fg); font: inherit; font-size: .9rem; width: 100%; max-width: 340px; }
 
-  .tabs { display: flex; gap: .3rem; border-bottom: 1px solid var(--border); padding-bottom: .4rem; margin-top: .9rem; }
+  .tabs { display: flex; flex-wrap: wrap; gap: .3rem; border-bottom: 1px solid var(--border); padding-bottom: .4rem; margin-top: .9rem; }
   .tab-btn { background: transparent; color: var(--dim); border: none; font-size: .84rem; font-weight: 600;
     padding: .35rem .7rem; cursor: pointer; border-radius: 6px; }
   .tab-btn:hover { color: var(--fg); background: var(--bg); }
@@ -121,6 +121,10 @@
 
   pre { background: var(--bg); border-radius: 6px; }
 
+  dialog { background:var(--panel); color:var(--fg); border:1px solid var(--accent); border-radius:14px; max-width: min(650px, calc(100% - 2rem)); overflow-wrap:anywhere; }
+  dialog::backdrop { background:#000a; }
+  .mobile-planning { display:none; }
+  @media(max-width:600px) { .mobile-planning { display:block; } }
   :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 
   @media (prefers-reduced-motion: reduce) {
@@ -200,6 +204,13 @@
   .guided-next,.guided-use {background:var(--accent);color:var(--accent-ink);font-weight:600;}
   .guided-leaf {border:1px solid var(--border);border-radius:10px;padding:1rem;margin:.8rem 0;overflow-wrap:anywhere;}
   .guided-leaf h3 {margin-top:0;}
+  .desktop-preview {margin:.75rem 0;}
+  .desktop-preview img {display:block;width:100%;height:auto;max-width:640px;border-radius:8px;}
+  .desktop-preview img[hidden],.guided-art-card img[hidden] {display:none;}
+  .preview-unavailable {position:relative;z-index:2;color:var(--fg);background:var(--panel);padding:.6rem;border-radius:6px;font-size:.85rem;}
+  .guided-art-card.artwork-unavailable {min-height:200px;flex-wrap:wrap;}
+  .guided-art-card.artwork-unavailable::after {display:none;}
+  .guided-art-card.artwork-unavailable .guided-choice-copy,.guided-art-card.artwork-unavailable .guided-choice-copy small {color:var(--fg);}
   .guided-leaf code {white-space:normal;overflow-wrap:anywhere;}
   .guided-conflict {padding:1rem;border:1px solid var(--warn);border-radius:10px;}
   .guided-resolved {padding-left:1.2rem;color:var(--dim);font-size:.85rem;}
@@ -210,8 +221,8 @@
   [data-choice-style="thumbnail"] .guided-art-card input {position:absolute;left:12px;top:12px;}
   [data-choice-style="thumbnail"] .guided-choice-copy {text-align:center;align-items:center;padding:0 12px;color:var(--fg);}
   [data-choice-style="thumbnail"] .guided-choice-copy small {color:var(--dim);}
-  .guided-ack {display:flex;align-items:flex-start;gap:.6rem;margin:1rem 0;font-weight:400;}
-  .guided-ack input {width:1.2rem;height:1.2rem;flex:none;margin-top:.2rem;}
+  .guided-ack, .repo-trust-row {display:flex;align-items:flex-start;gap:.6rem;margin:1rem 0;font-weight:400;}
+  .guided-ack input, .repo-trust-row input {width:1.2rem;height:1.2rem;flex:none;margin-top:.2rem;}
   .experience-switcher {margin-bottom:1.5rem;}
   .experience-switcher select {max-width:100%;min-height:44px;font:inherit;color:var(--fg);background:var(--panel);border:1px solid var(--border);border-radius:6px;padding:.5rem;}
   .experience-switcher .helper {font-size:.8rem;margin:.3rem 0;}
@@ -234,8 +245,13 @@
   <h1>Make your own image</h1>
   <p id="builder-intro" class="sub"></p>
   <p id="builder-disclaimer" class="note" hidden></p>
-  <ol class="journey" aria-label="Build steps"><li>1. Choose an image</li><li>2. Add apps <span>(optional)</span></li><li>3. Check &amp; build</li></ol>
+  <details><summary>Installation and USB writer guidance</summary>
+    <p id="writer-policy" class="helper">Follow the selected system’s writer and hardware guidance. A tool working for one system does not establish support for another.</p>
+    <a id="installation-guide" href="#">Installation documentation</a>
+  </details>
+  <ol class="journey" aria-label="Build steps"><li>1. Choose your system</li><li>2. Check the target computer</li><li>3. Personalize <span>(optional)</span></li><li>4. Review &amp; create</li><li>5. Save &amp; install</li></ol>
 
+  <p class="helper mobile-planning">Planning on a phone? Choose a setup here, then use the setup link below to continue on a desktop. The link carries supported choices; it does not upload files or create a cloud account.</p>
   <section class="card" aria-labelledby="choose-heading">
     <h2 id="choose-heading">Choose your desktop</h2>
     <p id="desktop-help" class="helper">The desktop is how your computer looks and feels. Choose the layout you prefer. Your selection does not guarantee that a browser build is available.</p>
@@ -271,8 +287,22 @@
     </details>
     <div class="facts hidden" id="facts"></div>
   </section>
+  <section class="card" aria-labelledby="hardware-heading">
+    <h2 id="hardware-heading">Check your target computer</h2>
+    <p class="helper">Use the specifications of the computer you will install on, even if you are planning on a phone or another computer. We do not infer compatibility from this browser.</p>
+    <details><summary>Find the architecture and hardware requirements</summary>
+      <ul>
+        <li>On Windows, open Settings → System → About and find System type and processor. On macOS, use About This Mac. On Linux, open system information or run <code>uname -m</code> for the architecture.</li>
+        <li>Intel/AMD x86-64 and ARM64 are different targets. An x86-64 result alone does not establish the v2 or v3 CPU baseline. Check the processor specifications against the selected image requirements.</li>
+        <li>Apple Silicon and Apple T2 Macs need explicitly supported hardware paths. Generic ARM64 or Intel/AMD media does not establish Mac support.</li>
+        <li>Check graphics, firmware and boot requirements in the selected system’s installation documentation. An available catalog image is not a hardware compatibility test.</li>
+      </ul>
+      <button type="button" id="choose-architecture" class="secondary">Choose computer architecture</button>
+      <p id="hardware-help-status" role="status"></p>
+    </details>
+  </section>
   <section class="card" aria-labelledby="apps-heading">
-    <h2 id="apps-heading">Add your apps <span class="optional">Optional</span></h2>
+    <h2 id="apps-heading">Plan your apps <span class="optional">Optional</span></h2>
     <p class="helper">Choose optional apps from Flathub. Your choices are saved as an app request list. These requests are not yet applied to the live image or installed system.</p>
     <details id="apps-options"><summary>Choose apps <span id="fpcount">0 selected</span></summary>
       <p id="fpempty" class="helper">No extra apps selected. Check the image to load its suggested defaults.</p>
@@ -296,6 +326,10 @@
     <h2 id="review-heading">Check your image</h2>
     <p class="helper">We’ll check whether this image can be built in your browser before starting a download.</p>
     <details id="advanced-options"><summary>Advanced settings</summary>
+      <details><summary>Configuration source (TOML)</summary>
+        <p class="helper">Branding, catalog choices and defaults come from the primary <code>tunaos.toml</code> configuration and its validated export. This form edits a build request; it is not a complete TOML editor.</p>
+        <p class="helper">TOML import and lossless editing are not available here yet. Keep your original TOML, including advanced fields. Fork maintainers should use the <a href="https://github.com/tuna-os/iso-builder/blob/main/docs/BUILDER-CONFIG.md">configuration export workflow</a>. BuildRequest JSON is engine transport, not a replacement configuration.</p>
+      </details>
       <p class="helper">The defaults work for most people. Only change these if you need a specific system setup.</p>
       <label for="label">USB image name</label>
       <input type="text" id="label" value="" spellcheck="false">
@@ -308,6 +342,9 @@
 
       </details>
       <details><summary>Add a repository or setup command</summary>
+      <p class="helper">These are advanced setup commands, not verified app sources. Review their effects and trust the publisher. Never enter private keys or tokens.</p>
+      <label class="repo-trust-row"><input type="checkbox" id="repo-trust">I trust this source and have reviewed this command.</label>
+      <p id="repo-error" role="alert"></p>
       <div class="repohelp">
         <select id="repokind" aria-label="Repository type">
           <option value="copr">Fedora COPR</option>
@@ -341,6 +378,15 @@
     <div class="next-action"><button id="introspect">Check image &amp; continue</button><p id="preview-note" class="helper">No ISO download starts yet.</p></div>
   </section>
 
+  <dialog id="build-review" aria-labelledby="build-review-heading">
+    <h2 id="build-review-heading">Before you create your ISO</h2>
+    <p id="review-target" class="helper"></p>
+    <p>This creates a multi-GB ISO file on this computer. Keep this tab open and allow time for downloads and temporary browser storage. The final size and space required depend on the image; available space is not guaranteed.</p>
+    <p>Check the selected architecture against your target computer’s specifications. This browser cannot establish its hardware compatibility. Browser build eligibility does not mean this exact output has passed an installation test.</p>
+    <p id="review-apps" class="note"></p>
+    <p>The browser does not flash a USB drive. After saving, use a separate writer and follow the system’s installation guide.</p>
+    <div class="row"><button id="review-back" class="secondary">Back to setup</button><button id="review-create">Create ISO file</button></div>
+  </dialog>
   <div class="card hidden" id="buildcard">
     <div class="row">
       <div>
@@ -356,13 +402,14 @@
     <details><summary>Technical details</summary><div id="log"></div></details>
   </div>
   <div class="card hidden" id="fallbackcard">
-    <h3 style="margin-top:0">Build locally with tacklebox</h3>
-    <p class="sub" id="fallbackreason" style="margin-top:-.4rem;margin-bottom:.75rem">Export the pinned BuildRequest v1 contract to build this exact target locally without browser memory or storage limits.</p>
-    <pre style="padding:.6rem;overflow-x:auto;margin:.4rem 0;font:12px var(--mono)"><code id="fallbackcmd">tacklebox purebuild --request build-request.json</code></pre>
+    <h3 style="margin-top:0">Build on your own machine</h3>
+    <p class="sub" id="fallbackreason" style="margin-top:-.4rem;margin-bottom:.75rem">Build this exact target locally, without browser memory or storage limits. Save build-request.json, then run the command below in the same folder. It needs Go 1.26 or newer and access to the image registry, and writes the ISO to ./tunaos-pure.iso.</p>
+    <pre style="padding:.6rem;overflow-x:auto;margin:.4rem 0;font:12px var(--mono)"><code id="fallbackcmd">go run github.com/tuna-os/tacklebox/cmd/purebuild@latest --request build-request.json</code></pre>
     <div style="display:flex;gap:.5rem;margin-top:.6rem;flex-wrap:wrap">
       <button type="button" id="downloadrequest" class="secondary">Download build-request.json</button>
       <button type="button" id="copyfallback" class="secondary">Copy command &amp; request</button>
     </div>
+    <p id="export-error" role="alert"></p>
     <details style="margin-top:.6rem">
       <summary>Inspect BuildRequest v1 JSON</summary>
       <pre style="padding:.6rem;overflow-x:auto;margin:.4rem 0;font:12px var(--mono)"><code id="fallbackjson">{}</code></pre>
@@ -371,9 +418,11 @@
 
 
   <div class="card hidden" id="postcard">
-    <h3 style="margin-top:0">ISO build complete</h3>
-    <p class="sub" style="margin-top:-.4rem;margin-bottom:1rem">Your custom ISO is ready. Now you need to write it to a USB drive to make it bootable.</p>
+    <h3 style="margin-top:0">Save, verify, and install</h3>
+    <p class="sub" style="margin-top:-.4rem;margin-bottom:1rem">Creating an ISO does not write a USB drive or test an installation. Confirm the file has saved before continuing.</p>
     
+    <p id="delivery-status" role="status"></p>
+    <p class="helper">Saving does not independently verify the saved file. Input digest checks establish byte integrity, not publisher authentication. A successful build does not establish that this ISO boots or installs on your computer.</p>
     <div class="tabs">
       <button class="tab-btn active" onclick="switchTab(event, 'etcher')">BalenaEtcher</button>
       <button class="tab-btn" onclick="switchTab(event, 'ventoy')">Ventoy</button>
@@ -384,17 +433,19 @@
     <div id="tab-etcher" class="tab-content" style="margin-top:1rem">
       <ol style="padding-left:1.2rem;margin:0">
         <li>Download and install <a href="https://etcher.balena.io/" target="_blank" rel="noopener">BalenaEtcher</a> (supports Windows, macOS, and Linux).</li>
-        <li>Plug in your USB flash drive (minimum 4GB).</li>
+        <li>Use a USB drive with capacity larger than the downloaded ISO file. Back up its files and verify the selected drive before flashing; flashing erases its contents.</li>
         <li>Open Etcher, click <b>Flash from file</b> and select your downloaded ISO.</li>
         <li>Select your USB target and click <b>Flash!</b>.</li>
       </ol>
     </div>
     
     <div id="tab-ventoy" class="tab-content hidden" style="margin-top:1rem">
+      <p style="margin:0 0 .5rem;font-size:.85rem;color:var(--warn)"><strong>Warning:</strong> Normal Ventoy installation reformats the selected USB drive and erases all its data. Back up its files and verify the target drive before you install.</p>
+      <p class="sub">Check your edition's USB-writing instructions first. <a href="https://docs.projectbluefin.io/installation/" target="_blank" rel="noopener">Bluefin recommends Fedora Media Writer and does not support Ventoy.</a></p>
       <ol style="padding-left:1.2rem;margin:0">
-        <li>Install <a href="https://www.ventoy.net/" target="_blank" rel="noopener">Ventoy</a> onto your USB flash drive (non-destructive; you only do this once).</li>
-        <li>Once Ventoy is installed, your USB drive will show up as a normal partition named <code>Ventoy</code>.</li>
-        <li>Simply <b>drag and drop</b> your downloaded ISO file directly onto the USB partition.</li>
+        <li>If Ventoy is already installed, do not reinstall it to add this ISO. Otherwise, follow the <a href="https://www.ventoy.net/en/doc_start.html" target="_blank" rel="noopener">Ventoy installation instructions</a> after the backup and target check above.</li>
+        <li>Open the USB drive's Ventoy data partition, normally named <code>Ventoy</code>, and check that its free space exceeds the ISO file size.</li>
+        <li>Copy your downloaded ISO file onto that data partition.</li>
         <li>Reboot your PC, boot from the USB drive, and choose the ISO from the Ventoy menu.</li>
       </ol>
     </div>
@@ -421,7 +472,12 @@
     </div>
   </div>
 
-  <details class="share-options"><summary>Share this setup</summary><p class="sub" style="margin-top:1rem">Share a preset:
+  <details id="planning-recovery"><summary>Save planning choices for a refresh</summary>
+    <p class="helper">Save supported catalog choices, app requests, packages and the image label in this tab’s session storage. Nothing is uploaded. Restoring never starts a build or restores trust acknowledgements. Custom images, commands, connection overrides, TOML and secrets are not supported. Use the setup link to move supported choices to a different computer.</p>
+    <div class="row"><button type="button" id="save-plan" class="secondary">Save plan in this tab</button><button type="button" id="restore-plan" class="secondary">Restore saved plan</button><button type="button" id="forget-plan" class="secondary">Forget saved plan</button></div>
+    <p id="plan-status" role="status" aria-live="polite"></p>
+  </details>
+  <details class="share-options"><summary>Share this setup</summary><p class="helper">The link includes the supported image, platform, app requests, packages and label. It excludes setup commands, boot-file and relay overrides, branding and TOML fields. Keep the original configuration for a complete setup. Do not put secrets in shared values.</p><p class="sub" style="margin-top:1rem">Share a preset:
     <a id="sharelink" href="#" style="word-break:break-all"><code id="share">?image=…</code></a>
     <button id="copyshare" class="secondary" style="padding:.2rem .6rem;font-size:.8rem;margin-left:.4rem">Copy</button>
   </p></details>
@@ -437,6 +493,8 @@
 <script src="experience-data.js"></script>
 <script src="experiences.js"></script>
 <script src="flatpak-defaults.js"></script>
+<script src="setup-safety.js"></script>
+<script src="setup-draft.js"></script>
 <script src="app.js"></script>
 </body>
 </html>

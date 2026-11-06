@@ -68,32 +68,68 @@ OFFERED_VARIANTS = {
 DESKTOP_IDS = {"gnome", "kde", "cosmic", "niri", "xfce"}
 
 
+RECEIPT_SCHEMA = "BrowserIsoQualificationReceipt/v1"
+RECEIPT_PRODUCER = {"repository": "tuna-os/iso-builder", "workflow": ".github/workflows/ci.yml",
+                    "ref": "refs/heads/main"}
+RECEIPT_PLATFORM = "linux/amd64"
+
+
+def _digest(value) -> bool:
+    return isinstance(value, str) and DIGEST_RE.fullmatch(value) is not None
+
+
+def _run_number(value) -> bool:
+    return type(value) is int and 0 < value <= 2**53 - 1
+
+
 def qualification_provenance_complete(entry: dict) -> bool:
-    """Minimum consumer admission, not a substitute for receipt verification."""
+    """Minimum consumer admission, not a substitute for receipt verification.
+
+    Two shapes pass, as in app.js catalogQualification: a browser-profile claim,
+    or the projection of a committed BrowserIsoQualificationReceipt/v1 that the
+    tunaOS generator writes. The receipt has no browser profile; its producer
+    run binds it to the browser route. A linux/arm64 entry may cite the
+    linux/amd64 receipt of its flavor (validate_snapshot checks that digest).
+    """
     from datetime import datetime
+    import math
 
     q = entry.get("qualification") or {}
     ri = entry.get("resolvedInputs") or {}
-    if not isinstance(q, dict) or not isinstance(ri, dict):
+    availability = entry.get("availability")
+    if not isinstance(q, dict) or not isinstance(ri, dict) or not isinstance(availability, dict):
         return False
-    browser = q.get("browser") or {}
-    if not isinstance(browser, dict):
+    if availability.get("available") is not True or q.get("buildOrigin") != "browser":
         return False
-    digests = [ri.get(key) for key in ("platformManifestDigest", "liveOverlayDigest",
-               "liveOverlayBaseDigest", "installerRevision", "engineRevision")]
-    digests.extend(q.get(key) for key in ("receiptDigest", "browserBuildReceiptDigest", "isoDigest"))
-    if q.get("buildOrigin") != "browser":
+    if not all(_digest(value) for value in (ri.get("platformManifestDigest"), q.get("receiptDigest"), q.get("isoDigest"))):
         return False
-    if not all(isinstance(value, str) and DIGEST_RE.fullmatch(value) for value in digests):
-        return False
-    if ri["liveOverlayBaseDigest"] != ri["platformManifestDigest"]:
+    stamp = q.get("qualifiedAt")
+    if not isinstance(stamp, str) or not re.fullmatch(r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z", stamp):
         return False
     try:
-        stamp = q["qualifiedAt"]
-        if not isinstance(stamp, str) or not re.fullmatch(r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z", stamp):
-            return False
         datetime.fromisoformat(stamp.replace("Z", "+00:00"))
-    except (KeyError, TypeError, ValueError, AttributeError):
+    except ValueError:
+        return False
+    pinned = (all(_digest(ri.get(key)) for key in ("liveOverlayDigest", "liveOverlayBaseDigest",
+                                                   "installerRevision", "engineRevision"))
+              and ri["liveOverlayBaseDigest"] == ri["platformManifestDigest"])
+    if q.get("receiptSchema") == RECEIPT_SCHEMA:
+        producer = q.get("producer")
+        target = entry.get("target")
+        if not isinstance(producer, dict) or not isinstance(target, dict):
+            return False
+        if any(producer.get(key) != value for key, value in RECEIPT_PRODUCER.items()):
+            return False
+        if not (isinstance(producer.get("sha"), str) and re.fullmatch(r"[0-9a-f]{40}", producer["sha"])
+                and _run_number(producer.get("runId")) and _run_number(producer.get("runAttempt"))):
+            return False
+        if not _digest(q.get("receiptImageDigest")) or q.get("receiptPlatform") != RECEIPT_PLATFORM:
+            return False
+        if target.get("platform") == RECEIPT_PLATFORM:
+            return pinned and q["receiptImageDigest"] == ri["platformManifestDigest"]
+        return target.get("platform") == "linux/arm64"
+    browser = q.get("browser") or {}
+    if not pinned or not _digest(q.get("browserBuildReceiptDigest")) or not isinstance(browser, dict):
         return False
     if not all(isinstance(browser.get(key), str) and browser[key].strip() for key in ("name", "version")):
         return False
@@ -101,12 +137,8 @@ def qualification_provenance_complete(entry: dict) -> bool:
         return False
     if not re.fullmatch(r"[1-9][0-9]*(?:\.[0-9]+)*", browser["version"].strip()):
         return False
-    import math
-    if not all(type(browser.get(key)) in (int, float) and math.isfinite(browser[key])
-               and browser[key] > 0 for key in ("memory_gib", "free_disk_gib")):
-        return False
-    availability = entry.get("availability")
-    return isinstance(availability, dict) and availability.get("available") is True
+    return all(type(browser.get(key)) in (int, float) and math.isfinite(browser[key])
+               and browser[key] > 0 for key in ("memory_gib", "free_disk_gib"))
 
 
 def validate_snapshot(snapshot_path: Path | None = None) -> dict:
@@ -130,12 +162,19 @@ def validate_snapshot(snapshot_path: Path | None = None) -> dict:
     expected_digest = "sha256:" + hashlib.sha256(canonical).hexdigest()
     if snap_digest != expected_digest:
         sys.exit(f"snapshotDigest mismatch in {path}: got {snap_digest}, expected {expected_digest}")
+    by_key = {entry.get("targetKey"): entry for entry in targets if isinstance(entry, dict)}
     for entry in targets:
         qual = entry.get("qualification") or {}
         if qual.get("status") not in VALID_STATUSES:
             sys.exit(f"invalid qualification.status in {path}: {qual.get('status')!r}")
         if qual.get("status") == "qualified" and not qualification_provenance_complete(entry):
             sys.exit(f"qualified entry {entry.get('targetKey')} has incomplete qualification provenance in {path}")
+        if qual.get("status") == "qualified" and qual.get("receiptSchema") == RECEIPT_SCHEMA:
+            target = entry["target"]
+            basis = by_key.get(f"{target.get('variant')}:{target.get('flavor')}:{RECEIPT_PLATFORM}") or {}
+            if (basis.get("resolvedInputs") or {}).get("platformManifestDigest") != qual["receiptImageDigest"]:
+                sys.exit(f"qualified entry {entry.get('targetKey')} cites a receipt for an image its "
+                         f"{RECEIPT_PLATFORM} target does not publish in {path}")
         avail = entry.get("availability") or {}
         pm_digest = (entry.get("resolvedInputs") or {}).get("platformManifestDigest")
         if avail.get("available") and not DIGEST_RE.match(str(pm_digest or "")):

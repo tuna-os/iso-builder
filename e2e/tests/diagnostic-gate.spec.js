@@ -8,8 +8,9 @@ const fs = require("fs");
 const { spawnSync } = require("child_process");
 const { diagnosticRecord } = require("./build-measurements");
 const {
-  diagnosticGrantFromEnv, installDiagnosticGrant, resolveLiveDigests, catalogEntryFor, refreshDiagnosticSnapshot, parseGateRefusal, gateRefusalMessage, gateRefusalSummary,
+  diagnosticGrantFromEnv, installDiagnosticGrant, strictObservedGrantFromEnv, installStrictObservedGrant, resolveLiveDigests, catalogEntryFor, refreshDiagnosticSnapshot, parseGateRefusal, gateRefusalMessage, gateRefusalSummary,
 } = require("./diagnostic-gate");
+const { unqualifiedSkipjackCatalog } = require("./unqualified-catalog-fixture");
 
 const ROOT = path.resolve(__dirname, "../..");
 const IMAGE = "tuna-os/skipjack:gnome";
@@ -25,6 +26,8 @@ const grant = (over = {}) => ({ kind: "diagnostic-unqualified", image: IMAGE, pl
 async function withGrant(page, g) { await page.addInitScript(installDiagnosticGrant, g); }
 
 test.describe("catalog gate with the diagnostic grant", () => {
+  test.beforeEach(async ({ page }) => { await unqualifiedSkipjackCatalog(page); });
+
   test("without a grant the gate still refuses an unqualified target", async ({ page }) => {
     await page.goto(PRESET);
     await inspectPreset(page);
@@ -44,7 +47,7 @@ test.describe("catalog gate with the diagnostic grant", () => {
     await expect(page.locator("#build")).toBeEnabled();
     const badge = page.locator(".badge.status");
     await expect(badge).toContainText("diagnostic-unqualified");
-    await expect(badge).toContainText("incomplete-qualification-provenance");
+    await expect(badge).toContainText("no-qualification-receipt");
     await expect(page.locator("#stage")).toContainText("diagnostic, unqualified build");
     await expect(page.locator("#log")).toContainText("DIAGNOSTIC, UNQUALIFIED BUILD");
     // Never reported as the qualified state.
@@ -98,9 +101,9 @@ test.describe("catalog gate with the diagnostic grant", () => {
     await expect(page.locator("#stage")).toContainText("Browser build unavailable");
     const stage = await page.locator("#stage").textContent();
     const reason = parseGateRefusal(stage);
-    expect(reason).toBe("unqualified (incomplete-qualification-provenance)");
+    expect(reason).toBe("unqualified (no-qualification-receipt)");
     const info = { image: IMAGE, platform: PLATFORM, reason, diagnosticRequested: false };
-    expect(gateRefusalSummary(info)).toContain("incomplete-qualification-provenance");
+    expect(gateRefusalSummary(info)).toContain("no-qualification-receipt");
     expect(gateRefusalMessage(info)).toContain("diagnostic override was NOT requested");
     expect(gateRefusalMessage({ ...info, diagnosticRequested: true })).toContain("requested but the app still refused");
     expect(parseGateRefusal("Image inspected — ready to build.")).toBeNull();
@@ -134,6 +137,151 @@ test.describe("spec-side grant resolution", () => {
   }
 });
 
+test.describe("bounded strict-observed admission", () => {
+  test.beforeEach(async ({ page }) => { await unqualifiedSkipjackCatalog(page); });
+
+  const env = {
+    TBOX_E2E_STRICT_OBSERVED: "1", TBOX_E2E_FULL: "1",
+    STRICT_ROUNDTRIP_TEST: "true", STRICT_INSTALL_MODE: "plain",
+    DIAGNOSTIC_UNQUALIFIED: "false", RETAIN_ISO_ARTIFACT: "true",
+    ONLY: "skipjack-gnome", BENCHMARK: "false", KEEP_ISO: "false",
+    RETAIN_CANDIDATE: "false", PAIR: "false",
+  };
+  const want = { image: IMAGE, platform: PLATFORM };
+  const observedGrant = () => strictObservedGrantFromEnv(env, want);
+
+  test("requires every bounded producer input and an exact target", () => {
+    expect(strictObservedGrantFromEnv({}, want)).toBeNull();
+    expect(observedGrant()).toEqual({ kind: "strict-observed", ...want,
+      installMode: "plain", route: "retained-iso-roundtrip" });
+    for (const key of Object.keys(env)) {
+      expect(() => strictObservedGrantFromEnv({ ...env, [key]: "wrong" }, want), key).toThrow(/TBOX_E2E_STRICT_OBSERVED/);
+    }
+    for (const other of [{ image: "tuna-os/yellowfin:gnome", platform: PLATFORM }, { image: IMAGE, platform: "linux/amd64/v2" }]) {
+      expect(() => strictObservedGrantFromEnv(env, other)).toThrow(/retained Skipjack GNOME/);
+    }
+    expect(() => strictObservedGrantFromEnv({ ...env, DIAGNOSTIC_ALLOW_UNQUALIFIED: "1" }, want)).toThrow(/no diagnostic/);
+  });
+
+  test("both mode admits only the one named TunaOS linux/amd64 cell", () => {
+    const both = { ...env, STRICT_INSTALL_MODE: "both" };
+    expect(strictObservedGrantFromEnv(both, want)).toEqual({ kind: "strict-observed", ...want,
+      installMode: "both", route: "retained-iso-roundtrip" });
+    const bonito = { image: "tuna-os/bonito:kde", platform: PLATFORM };
+    expect(strictObservedGrantFromEnv({ ...both, ONLY: "bonito-kde" }, bonito)).toEqual({
+      kind: "strict-observed", ...bonito, installMode: "both", route: "retained-iso-roundtrip" });
+    for (const [over, target] of [
+      [{ ONLY: "skipjack-gnome" }, bonito],
+      [{ ONLY: "bonito-kde,skipjack-gnome" }, bonito],
+      [{ ONLY: "yellowfin-gnome" }, { image: "tuna-os/yellowfin:gnome", platform: "linux/amd64/v2" }],
+      [{ ONLY: "bluefin-dakota" }, { image: "projectbluefin/dakota:stable", platform: PLATFORM }],
+      [{ DIAGNOSTIC_UNQUALIFIED: "true" }, want],
+      [{ DIAGNOSTIC_ALLOW_UNQUALIFIED: "1" }, want],
+      [{ STRICT_INSTALL_MODE: "luks" }, want],
+    ]) {
+      expect(() => strictObservedGrantFromEnv({ ...both, ...over }, target), JSON.stringify(over)).toThrow(/TBOX_E2E_STRICT_OBSERVED/);
+    }
+  });
+
+  test("real app admits a both-mode observation as not-assessed", async ({ page }) => {
+    await page.addInitScript(installStrictObservedGrant, { ...observedGrant(), installMode: "both" });
+    await page.goto(PRESET);
+    await inspectPreset(page);
+    await expect(page.locator("#build")).toBeEnabled();
+    await expect(page.locator(".badge.status")).toContainText("not-assessed");
+    expect(await page.evaluate(() => globalThis.tboxGetBuildRequest().qualificationId)).toBeUndefined();
+  });
+
+  test("real app admits the retained plain observation without qualification or diagnostic labels", async ({ page }) => {
+    await page.addInitScript(installStrictObservedGrant, observedGrant());
+    await page.goto(PRESET);
+    await inspectPreset(page);
+    await expect(page.locator("#build")).toBeEnabled();
+    await expect(page.locator(".badge.status")).toContainText("not-assessed");
+    await expect(page.locator("#stage")).toContainText("observed, not assessed");
+    const result = await page.evaluate(() => ({
+      request: globalThis.tboxGetBuildRequest(),
+      grant: Object.getOwnPropertyDescriptor(globalThis, "__TBOX_STRICT_OBSERVED__"),
+      catalogQualification: globalThis.tboxCurrentOperation.catalogEntry.qualification.status,
+    }));
+    expect(result.request.qualificationId).toBeUndefined();
+    expect(result.catalogQualification).toBe("unqualified");
+    expect(result.grant.writable).toBe(false);
+    expect(result.grant.configurable).toBe(false);
+  });
+
+  test("observing an already-qualified fixture still omits qualificationId after request synchronization", async ({ page }) => {
+    await require("./qualified-catalog-fixture").qualifiedCatalogFixture(page);
+    await page.addInitScript(installStrictObservedGrant, observedGrant());
+    await page.goto(PRESET);
+    await inspectPreset(page);
+    await expect(page.locator("#build")).toBeEnabled();
+    await expect(page.locator(".badge.status")).toContainText("not-assessed");
+    expect(await page.evaluate(() => globalThis.tboxGetBuildRequest().qualificationId)).toBeUndefined();
+    expect(await page.evaluate(() => globalThis.tboxCurrentOperation.catalogEntry.qualification.status)).toBe("qualified");
+  });
+
+  for (const [name, change] of [
+    ["another image", { image: "tuna-os/yellowfin:gnome" }],
+    ["another platform", { platform: "linux/amd64/v2" }],
+    ["another mode", { installMode: "luks" }],
+    ["both mode on another platform", { installMode: "both", platform: "linux/amd64/v2" }],
+    ["both mode for a non-TunaOS image", { installMode: "both", image: "projectbluefin/dakota:stable" }],
+    ["another route", { route: "normal" }],
+    ["another kind", { kind: "qualified" }],
+  ]) {
+    test(`real app refuses strict grant for ${name}`, async ({ page }) => {
+      await page.addInitScript(installStrictObservedGrant, { ...observedGrant(), ...change });
+      await page.goto(PRESET);
+      await inspectPreset(page);
+      await expect(page.locator("#build")).toBeDisabled();
+      await expect(page.locator("#stage")).toContainText("Browser build unavailable");
+    });
+  }
+
+  test("conflicting grants fail closed instead of choosing a label", async ({ page }) => {
+    await page.addInitScript(installStrictObservedGrant, observedGrant());
+    await withGrant(page, grant());
+    await page.goto(PRESET);
+    await inspectPreset(page);
+    await expect(page.locator("#build")).toBeDisabled();
+    await expect(page.locator(".badge.status")).toContainText("unqualified");
+  });
+
+  test("strict observation cannot bypass the browser storage guard", async ({ page }) => {
+    await page.addInitScript(installStrictObservedGrant, observedGrant());
+    await page.addInitScript(() => {
+      Object.defineProperty(navigator.storage, "estimate", { value: async () => ({ quota: 1024, usage: 0 }) });
+    });
+    await page.goto(PRESET);
+    await inspectPreset(page);
+    await expect(page.locator("#build")).toBeDisabled();
+    await expect(page.locator("#stage")).toContainText("insufficient browser storage");
+  });
+
+  test("strict observation cannot make an unavailable target executable", async ({ page }) => {
+    const catalog = structuredClone(require("../../app/public/catalog-snapshot.json"));
+    catalog.targets.find((entry) => entry.targetKey === "skipjack:gnome:linux/amd64").availability.available = false;
+    await page.route("**/catalog-snapshot.json", (route) => route.fulfill({ json: catalog }));
+    await page.addInitScript(installStrictObservedGrant, observedGrant());
+    await page.goto(PRESET);
+    await inspectPreset(page);
+    await expect(page.locator("#build")).toBeDisabled();
+    await expect(page.locator("#stage")).toContainText("Browser build unavailable");
+  });
+
+  test("URL and storage cannot install an observed grant", async ({ page }) => {
+    await page.addInitScript(() => {
+      localStorage.setItem("__TBOX_STRICT_OBSERVED__", JSON.stringify({ kind: "strict-observed" }));
+      globalThis.TBOX_E2E_STRICT_OBSERVED = "1";
+    });
+    await page.goto(`${PRESET}&TBOX_E2E_STRICT_OBSERVED=1&strictObserved=true`);
+    await inspectPreset(page);
+    await expect(page.locator("#build")).toBeDisabled();
+    await expect(page.locator("#stage")).toContainText("Browser build unavailable");
+  });
+});
+
 test.describe("diagnostic pin refresh", () => {
   const CATALOG = require("../../app/public/catalog-snapshot.json");
   const h = (c) => `sha256:${c.repeat(64)}`;
@@ -141,7 +289,7 @@ test.describe("diagnostic pin refresh", () => {
   function fakeRegistry({ perPlatform = 1, bad = null } = {}) {
     const index = { manifests: [
       { digest: h("a"), platform: { os: "linux", architecture: "amd64" } },
-      { digest: h("b"), platform: { os: "linux", architecture: "amd64/v2" } },
+      { digest: h("b"), platform: { os: "linux", architecture: "amd64", variant: "v2" } },
       ...Array.from({ length: perPlatform - 1 }, () => ({ digest: h("e"), platform: { os: "linux", architecture: "amd64" } })),
     ] };
     const calls = [];
@@ -173,6 +321,16 @@ test.describe("diagnostic pin refresh", () => {
     await expect(resolveLiveDigests({ ...base, fetchImpl: fakeRegistry({ perPlatform: 2 }).fetchImpl })).rejects.toThrow(/exactly one/);
     await expect(resolveLiveDigests({ ...base, platform: "linux/arm64", fetchImpl: fakeRegistry().fetchImpl })).rejects.toThrow(/exactly one/);
     await expect(resolveLiveDigests({ ...base, fetchImpl: fakeRegistry({ bad: "nope" }).fetchImpl })).rejects.toThrow(/malformed digest/);
+    await expect(resolveLiveDigests({ ...base, platform: "linux/amd64/v3", fetchImpl: fakeRegistry().fetchImpl })).rejects.toThrow(/exactly one/);
+    const duplicateVariant = fakeRegistry().fetchImpl;
+    const ambiguousVariant = async (url, init) => {
+      const response = await duplicateVariant(url, init);
+      if (!url.endsWith("/manifests/gnome")) return response;
+      const body = await response.json();
+      body.manifests.push({ ...body.manifests[1] });
+      return { ...response, json: async () => body };
+    };
+    await expect(resolveLiveDigests({ ...base, platform: "linux/amd64/v2", fetchImpl: ambiguousVariant })).rejects.toThrow(/exactly one.*found 2/);
     await expect(resolveLiveDigests({ ...base, repository: "docker.io/x/y", fetchImpl: fakeRegistry().fetchImpl })).rejects.toThrow(/cannot resolve/);
   });
 
@@ -276,9 +434,17 @@ test.describe("production code and CI wiring", () => {
 
   test("a refused full-build cell fails within seconds with the gate reason, not after the 5 min stall watchdog", async () => {
     test.setTimeout(180_000);
-    const env = { ...process.env, TBOX_E2E_FULL: "1", TBOX_E2E_IMAGE: IMAGE, TBOX_E2E_PLATFORM: PLATFORM };
+    // A cell the catalog still refuses; skipjack:gnome itself is qualified now.
+    const refused = "tuna-os/yellowfin:gnome";
+    const env = { ...process.env, TBOX_E2E_FULL: "1", TBOX_E2E_IMAGE: refused, TBOX_E2E_PLATFORM: PLATFORM };
     for (const k of ["DIAGNOSTIC_ALLOW_UNQUALIFIED", "DIAGNOSTIC_TARGET"]) delete env[k];
     const summary = path.join(require("os").tmpdir(), `gate-summary-${process.pid}.md`);
+    const failureRoot = fs.mkdtempSync(path.join(require("os").tmpdir(), "pair-early-failure-"));
+    env.TBOX_E2E_PAIR = "1";
+    env.TBOX_E2E_SAMPLE = "1";
+    env.TBOX_E2E_CACHE_MODE = "cold";
+    env.TBOX_E2E_PAIR_STATE = path.join(failureRoot, "pair-inputs.json");
+    env.TBOX_E2E_EVIDENCE = path.join(failureRoot, "qual-evidence-yellowfin-gnome-s1.json");
     fs.rmSync(summary, { force: true });
     env.GITHUB_STEP_SUMMARY = summary;
     const started = Date.now();
@@ -288,13 +454,26 @@ test.describe("production code and CI wiring", () => {
     const elapsed = (Date.now() - started) / 1000;
     const out = `${r.stdout}\n${r.stderr}`;
     expect(r.status, out).not.toBe(0);
-    expect(out).toContain("browser build gated for tuna-os/skipjack:gnome");
-    expect(out).toContain("incomplete-qualification-provenance");
+    expect(out).toContain(`browser build gated for ${refused}`);
+    expect(out).toContain("no-qualification-receipt");
     expect(out).toContain("diagnostic override was NOT requested");
     expect(out).not.toContain("wedged");
     expect(elapsed).toBeLessThan(100);
     const md = fs.readFileSync(summary, "utf8");
-    expect(md).toContain("incomplete-qualification-provenance");
+    expect(md).toContain("no-qualification-receipt");
+    const failed = JSON.parse(fs.readFileSync(path.join(failureRoot, "failed-build-qual-evidence-yellowfin-gnome-s1.json"), "utf8"));
+    expect(failed.kind).toBe("failed-browser-build-measurements");
+    expect(failed.run.outcome).toBe("failed");
+    expect(failed.phase).toBe("inspect");
+    expect(failed.error.message).toContain("no-qualification-receipt");
+    expect(failed.elapsedMs).toBeGreaterThan(0);
+    expect(failed.phaseElapsedMs).toBeGreaterThan(0);
+    expect(failed.registryTransfers.observer.networkRequestsSeen).toBeGreaterThan(0);
+    expect(failed.fixedIdentity.environment.frontendRevision).toMatch(/^[0-9a-f]{40}$/);
+    expect(failed.outputIntegrity).toBe("not-established");
+    expect(failed.iso).toBeUndefined();
+    expect(fs.existsSync(env.TBOX_E2E_EVIDENCE)).toBe(false);
+    fs.rmSync(failureRoot, { recursive: true, force: true });
     fs.rmSync(summary, { force: true });
   });
 });

@@ -16,7 +16,7 @@ const copy = value => JSON.parse(JSON.stringify(value));
 function fixture(t) {
   const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'guided-generator-'));
   t.after(() => fs.rmSync(directory, { recursive: true, force: true }));
-  const targets = ['yellowfin:gnome-hwe:linux/amd64/v2', 'yellowfin:kde-nvidia:linux/amd64/v2', 'yellowfin:gnome:linux/amd64/v2'].map(key => {
+  const targets = ['yellowfin:gnome-hwe:linux/amd64/v2', 'yellowfin:kde-nvidia:linux/amd64', 'yellowfin:gnome:linux/amd64/v2'].map(key => {
     const entry = realSnapshot.targets.find(target => target.targetKey === key);
     assert.ok(entry, `snapshot fixture exists: ${key}`);
     return copy(entry);
@@ -222,9 +222,14 @@ test('generator refuses duplicate targets or malformed derived platform evidence
 
 test('generator reports only explicitly unavailable unmapped targets in deterministic targetKey order', t => {
   const f = fixture(t);
-  const unmapped = realSnapshot.targets.filter(entry => entry.target.flavor === 'roost').map(copy).reverse();
-  assert.equal(unmapped.length, 2);
-  assert.ok(unmapped.every(entry => entry.availability.available === false));
+  // Unavailable records of a flavor the pinned metadata does not know.
+  const unmapped = ['linux/arm64', 'linux/amd64'].map(platform => {
+    const entry = copy(realSnapshot.targets.find(target => target.targetKey === 'marlin:gnome:linux/amd64'));
+    entry.target = { ...entry.target, flavor: 'roost', platform };
+    entry.targetKey = `marlin:roost:${platform}`;
+    entry.availability.available = false;
+    return entry;
+  });
   f.snapshot.targets.push(...unmapped);
   f.save();
   const before = fs.readFileSync(f.snapshotPath, 'utf8');
@@ -254,15 +259,15 @@ test('generator fails rather than omit unmapped available or unknown-availabilit
   }
 });
 
-test('current stock snapshot generates 267 exact target leaves and two obsolete unavailable omissions', t => {
+test('current stock snapshot generates one exact leaf per target and no omissions', t => {
   const f = fixture(t);
   const snapshotPath = path.resolve(__dirname, '../app/public/catalog-snapshot.json');
   const metadataPath = path.resolve(__dirname, '../app/public/builder-flavors.json');
   const before = fs.readFileSync(snapshotPath, 'utf8');
   const result = spawnSync(process.execPath, [generator, '--snapshot', snapshotPath, '--metadata', metadataPath, '--output-dir', f.output], { encoding: 'utf8', timeout: 15000 });
   success(result);
-  assert.equal(JSON.parse(f.read('guided-catalog.json')).leaves.length, 267);
-  assert.deepEqual(JSON.parse(f.read('guided-catalog-omissions.json')).map(item => item.targetKey), ['marlin:roost:linux/amd64', 'marlin:roost:linux/arm64']);
+  assert.equal(JSON.parse(f.read('guided-catalog.json')).leaves.length, realSnapshot.targets.length);
+  assert.deepEqual(JSON.parse(f.read('guided-catalog-omissions.json')), []);
   assert.equal(fs.readFileSync(snapshotPath, 'utf8'), before);
 });
 

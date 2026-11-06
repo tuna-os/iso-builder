@@ -129,19 +129,19 @@ test('catalog updates remove unoffered configured choices and clear the selected
 
  test('explicit unqualified platform retains its catalog identity after refresh',async({page})=>{
  test.setTimeout(30_000);
- await page.goto('/?variant=yellowfin&flavor=gnome&platform=linux%2Farm64');
+ await page.goto('/?variant=yellowfin&flavor=kde&platform=linux%2Farm64');
  await page.evaluate(()=>loadCatalogSnapshot());
- await expect(page.locator('#image')).toHaveValue('yellowfin:gnome');
+ await expect(page.locator('#image')).toHaveValue('yellowfin:kde');
  await expect(page.locator('#introspect')).toBeEnabled();
  const request=await page.evaluate(()=>window.tboxGetBuildRequest());
  expect(request.customImage).toBe(false);
- expect(request.target).toMatchObject({variant:'yellowfin',flavor:'gnome',platform:'linux/arm64'});
+ expect(request.target).toMatchObject({variant:'yellowfin',flavor:'kde',platform:'linux/arm64'});
  expect(request.qualificationId).toBeUndefined();
  });
 
  test('automatic default still clears when its fetched catalog record is no longer admitted',async({page})=>{
  const reduced=copy(snapshot);
- for(const e of reduced.targets)if(e.target?.variant==='yellowfin'&&e.target?.flavor==='gnome'&&e.target?.platform==='linux/amd64/v2'){e.scheduled=false;e.availability={available:false};}
+ for(const e of reduced.targets)if(e.target?.variant==='yellowfin'&&e.target?.flavor==='gnome'&&e.target?.platform==='linux/amd64'){e.scheduled=false;e.availability={available:false};}
  await page.route('**/catalog-snapshot.json',r=>r.fulfill({json:reduced}));await page.goto('/');
  await expect(page.locator('#image')).toHaveValue('');await expect(page.locator('#introspect')).toBeDisabled();
  });

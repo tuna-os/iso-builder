@@ -1,5 +1,6 @@
 """Incomplete catalog assertions must not enable browser builds (#270)."""
 import copy
+import hashlib
 import importlib.util
 import json
 from pathlib import Path
@@ -119,3 +120,104 @@ def test_build_origin_and_artifact_binding_are_required(field, value):
     e['qualification'][field] = value
     assert not vc.qualification_provenance_complete(e)
     assert browser_status(e) == 'unqualified'
+
+
+# --- receipt-backed entries (tunaOS generate-catalog-snapshot.py) -------------
+
+SNAPSHOT = json.loads((ROOT / 'app/public/catalog-snapshot.json').read_text())
+
+
+def receipt_entry(platform='linux/amd64'):
+    """The projection tunaOS writes for a committed BrowserIsoQualificationReceipt/v1."""
+    entry = next(copy.deepcopy(e) for e in SNAPSHOT['targets']
+                 if e['availability']['available'] and e['target']['platform'] == platform)
+    digest = 'sha256:' + '4' * 64
+    ri = entry['resolvedInputs']
+    basis = ri['platformManifestDigest'] if platform == 'linux/amd64' else 'sha256:' + '5' * 64
+    if platform == 'linux/amd64':
+        ri.update(liveOverlayDigest=digest, liveOverlayBaseDigest=ri['platformManifestDigest'],
+                  installerRevision=digest, engineRevision=digest)
+    entry['qualification'] = {
+        'browser': None, 'browserBuildReceiptDigest': None, 'buildOrigin': 'browser',
+        'isoDigest': 'sha256:' + '2' * 64,
+        'producer': {'repository': 'tuna-os/iso-builder', 'workflow': '.github/workflows/ci.yml',
+                     'ref': 'refs/heads/main', 'sha': '3' * 40, 'runId': 19000000001, 'runAttempt': 1},
+        'qualifiedAt': '2026-11-04T09:30:00Z', 'reason': None, 'receiptDigest': 'sha256:' + '6' * 64,
+        'receiptImageDigest': basis, 'receiptPlatform': 'linux/amd64',
+        'receiptSchema': 'BrowserIsoQualificationReceipt/v1', 'resources': None, 'status': 'qualified',
+    }
+    return entry
+
+
+@pytest.mark.parametrize('platform', ['linux/amd64', 'linux/arm64'])
+def test_receipt_backed_entry_passes_without_browser_profile(platform):
+    e = receipt_entry(platform)
+    assert vc.qualification_provenance_complete(e)
+    assert browser_status(e) == 'qualified'
+
+
+@pytest.mark.parametrize('path,value', [
+    (('receiptSchema',), 'BrowserIsoQualificationReceipt/v2'),
+    (('receiptPlatform',), 'linux/arm64'), (('receiptImageDigest',), 'sha256:' + '7' * 64),
+    (('receiptImageDigest',), None), (('isoDigest',), None), (('receiptDigest',), 'tacklebox-1.0'),
+    (('buildOrigin',), 'native'), (('qualifiedAt',), '2026-11-04'),
+    (('producer', 'repository'), 'someone/iso-builder'), (('producer', 'workflow'), '.github/workflows/other.yml'),
+    (('producer', 'ref'), 'refs/heads/feature'), (('producer', 'sha'), 'abc'),
+    (('producer', 'runId'), 0), (('producer', 'runId'), True), (('producer', 'runAttempt'), '1'),
+    (('producer',), None),
+])
+def test_receipt_backed_entry_needs_every_receipt_binding(path, value):
+    e = receipt_entry()
+    holder = e['qualification']
+    for key in path[:-1]:
+        holder = holder[key]
+    holder[path[-1]] = value
+    assert not vc.qualification_provenance_complete(e)
+    assert browser_status(e) == 'unqualified'
+
+
+@pytest.mark.parametrize('field', ['liveOverlayDigest', 'liveOverlayBaseDigest', 'installerRevision', 'engineRevision'])
+def test_receipt_backed_amd64_entry_needs_its_receipt_inputs(field):
+    e = receipt_entry()
+    e['resolvedInputs'][field] = None
+    assert not vc.qualification_provenance_complete(e)
+    assert browser_status(e) == 'unqualified'
+
+
+def test_receipt_basis_cannot_qualify_other_platforms():
+    e = receipt_entry('linux/arm64')
+    e['target']['platform'] = 'linux/amd64/v2'
+    assert not vc.qualification_provenance_complete(e)
+    assert browser_status(e) == 'unqualified'
+
+
+def _write_snapshot(tmp_path, targets):
+    doc = copy.deepcopy(SNAPSHOT)
+    doc['targets'] = targets
+    canonical = json.dumps(targets, sort_keys=True, separators=(',', ':'), ensure_ascii=True).encode()
+    doc['snapshotDigest'] = 'sha256:' + hashlib.sha256(canonical).hexdigest()
+    path = tmp_path / 'catalog-snapshot.json'
+    path.write_text(json.dumps(doc))
+    return path
+
+
+def test_arm64_entry_must_cite_the_receipt_of_its_published_amd64_target(tmp_path):
+    by_key = {e['targetKey']: e for e in SNAPSHOT['targets']}
+    variant, flavor = next((t['variant'], t['flavor']) for t in (e['target'] for e in SNAPSHOT['targets'])
+                           if t['platform'] == 'linux/arm64'
+                           and f"{t['variant']}:{t['flavor']}:linux/amd64" in by_key
+                           and by_key[f"{t['variant']}:{t['flavor']}:linux/amd64"]['availability']['available'])
+    amd64 = copy.deepcopy(by_key[f'{variant}:{flavor}:linux/amd64'])
+    arm64 = copy.deepcopy(by_key[f'{variant}:{flavor}:linux/arm64'])
+    arm64['qualification'] = receipt_entry('linux/arm64')['qualification']
+    arm64['qualification']['receiptImageDigest'] = amd64['resolvedInputs']['platformManifestDigest']
+    assert vc.validate_snapshot(_write_snapshot(tmp_path, [amd64, arm64]))
+    arm64['qualification']['receiptImageDigest'] = 'sha256:' + '8' * 64
+    with pytest.raises(SystemExit, match='cites a receipt'):
+        vc.validate_snapshot(_write_snapshot(tmp_path, [amd64, arm64]))
+
+
+def test_imported_snapshot_copies_and_guided_catalog_agree():
+    result = subprocess.run([sys.executable, str(ROOT / 'scripts/sync-catalog-snapshot.py'), '--check'],
+                            capture_output=True, text=True, check=False)
+    assert result.returncode == 0, result.stderr

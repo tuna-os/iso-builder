@@ -6,8 +6,8 @@ touch is derived from the run identity and the job's SLUG, never from a glob
 over shared state:
 
   $RUNNER_TEMP    <slug>.iso, <slug>-roundtrip.iso, <slug>-s<N>.iso (the multi-GB
-                  ISOs), iso-artifact/, iso-roundtrip/, the retention scratch
-                  files, the candidate-retention venv, and the run-scoped
+                  ISOs), iso-artifact/, iso-roundtrip/, qualification-receipt/,
+                  the retention scratch files, the candidate-retention venv, and the run-scoped
                   Playwright profile root pw-profile-<run>-<attempt>/.
   $GITHUB_WORKSPACE
                   luks-verify-<slug>/ and the same-byte variant (harness
@@ -43,7 +43,7 @@ from pathlib import Path
 SLUG_RE = re.compile(r'^[A-Za-z0-9][A-Za-z0-9._-]*$')
 TEMP_SCRATCH = ('iso-artifact', 'iso-roundtrip', 'iso-artifact-manifest.json',
                 'iso-roundtrip-result.json', 'same-byte-inputs.env',
-                'candidate-retention-venv')
+                'candidate-retention-venv', 'qualification-receipt')
 E2E_OUTPUT = ('test-results', 'playwright-report', 'screenshots', 'iso-builder-e2e-output.iso')
 
 
