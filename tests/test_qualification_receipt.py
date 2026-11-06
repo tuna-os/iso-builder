@@ -73,7 +73,7 @@ def environ(**over):
 
 
 def harness_dir(tmp_path, plain=None, luks=None, skip=()):
-    out = tmp_path / f"luks-verify-{SLUG}-obs"
+    out = tmp_path / f"luks-verify-{SLUG}"
     out.mkdir(exist_ok=True)
     for mode, frag in (("plain", plain or fragment("plain")), ("luks", luks or fragment("luks"))):
         if mode not in skip:
@@ -283,7 +283,7 @@ def run_cli(tmp_path, env, mode="both", diagnostic="false"):
     bind = tmp_path / "binding.json"
     bind.write_text(json.dumps(binding()))
     harness_dir(tmp_path)
-    r = subprocess.run([sys.executable, str(SCRIPT), "--harness-output", str(tmp_path / f"luks-verify-{SLUG}-obs"),
+    r = subprocess.run([sys.executable, str(SCRIPT), "--harness-output", str(tmp_path / f"luks-verify-{SLUG}"),
                         "--binding", str(bind), "--workflow", str(CI_YML), "--slug", SLUG,
                         "--install-mode", mode, "--diagnostic-unqualified", diagnostic, "--out", str(out)],
                        env={**{k: v for k, v in os.environ.items() if not k.startswith("GITHUB_")}, **env},
