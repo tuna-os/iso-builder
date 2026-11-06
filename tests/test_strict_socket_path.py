@@ -106,7 +106,7 @@ def test_install_mode_selects_the_harness_legs(tmp_path, mode, expected):
     assert r.returncode == 0, r.stdout + r.stderr
     args = ran.read_text().splitlines()
     assert f'--strict-offline-gui={expected}' in args
-    assert args[args.index('--output') + 1] == 'luks-verify-skipjack-gnome-obs'
+    assert args[args.index('--output') + 1] == 'luks-verify-skipjack-gnome'
 
 
 @needs_just

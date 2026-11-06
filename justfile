@@ -353,7 +353,10 @@ full-guest-verify-strict:
     esac
     # The harness binds monitor/vnc/swtpm/serial sockets under OUTPUT; the
     # longest is strict-plain-warm-serial.sock, and sun_path holds 107 bytes.
-    OUT="luks-verify-${SLUG}-obs"
+    # No suffix on the observed dir: yellowfin-gnome-nvidia with "-obs" reached
+    # 110 bytes on the runner workspace. The non-strict guest step never runs
+    # in the same job, and ci-cleanup already owns luks-verify-<slug>.
+    OUT="luks-verify-${SLUG}"
     if [ "$DIAGNOSTIC_UNQUALIFIED" = "true" ]; then OUT="luks-verify-${SLUG}-diag"; fi
     SOCK="$PWD/$OUT/strict-plain-warm-serial.sock"
     if [ "${#SOCK}" -ge 108 ]; then
@@ -422,7 +425,7 @@ full-qualification-receipt:
     set -euo pipefail
     mkdir -p "$RUNNER_TEMP/qualification-receipt"
     python3 scripts/build-qualification-receipt.py \
-      --harness-output "luks-verify-${SLUG}-obs" \
+      --harness-output "luks-verify-${SLUG}" \
       --binding "e2e/test-results/same-byte-guest-test-binding-${SLUG}.json" \
       --workflow .github/workflows/ci.yml \
       --harness-checkout "$GITHUB_WORKSPACE/tunaos-e2e-current" \
