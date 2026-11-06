@@ -682,7 +682,7 @@ jobs:
         timeout-minutes: 5
         with:
           repository: tuna-os/tunaOS
-          ref: d2bb1df4724ba0fe7e629bfa36d3d668f40be301
+          ref: c480d2f4498a7303145be2c855211ab404c78c28
           path: tunaos-e2e
       - name: checkout current tunaOS strict harness (pinned)
         if: github.event.inputs.strict_roundtrip_test == 'true'
@@ -690,7 +690,7 @@ jobs:
         timeout-minutes: 5
         with:
           repository: tuna-os/tunaOS
-          ref: d2bb1df4724ba0fe7e629bfa36d3d668f40be301
+          ref: c480d2f4498a7303145be2c855211ab404c78c28
           path: tunaos-e2e-current
 
       - name: verify guest under QEMU (${{ matrix.edition.slug }})
@@ -814,7 +814,7 @@ jobs:
       - name: prepare strict inputs from round-tripped media receipts
         id: same-byte-inputs
         if: ${{ always() && !cancelled() && github.event.inputs.strict_roundtrip_test == 'true' && steps.iso-roundtrip.outcome == 'success' }}
-        timeout-minutes: 10
+        timeout-minutes: 25
         env:
           SLUG: ${{ matrix.edition.slug }}
           EDITION_REF: ${{ matrix.edition.ref }}
