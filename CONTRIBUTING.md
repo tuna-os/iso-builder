@@ -26,6 +26,26 @@ Run the offline Python and JavaScript checks from the repository root with
 the test filenames to Node: `node --test tests/ worker/` fails with
 `MODULE_NOT_FOUND` on Node 24.19 before it runs the tests.
 
+### JavaScript unit tests (`tests/*.test.cjs`)
+
+If you change a JavaScript helper (configuration checks, catalog selection or
+Flatpak defaults), start with the offline unit suites. Use the Node.js version
+that `actions/setup-node` selects in [CI](.github/workflows/ci.yml). Run one
+suite while you work, from the repository root:
+
+```sh
+node --test tests/builder-config-flatpak-ids.test.cjs
+```
+
+These suites use the Node test runner with local CommonJS helpers and fixtures.
+They need no `npm install`, WASM build, browser, native GUI toolkit, registry
+access or credentials.
+
+If you change the browser UI or the WASM engine, also run the
+[Playwright end-to-end checks](#2-end-to-end-tests-e2e). If you change the
+native Go application, run the [native checks](#3-native-application-native).
+The offline suites do not replace those checks.
+
 ### 1. Web Application (`app/public`)
 - Put `tbox.wasm` and `wasm_exec.js` in place, as [README.md](README.md#develop) describes.
 - Serve locally:
