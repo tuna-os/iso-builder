@@ -27,7 +27,7 @@ function app() {
   };
   const request = { image: "synthetic:base", options: { label: "TEST", outputFilename: "test.iso", flatpaks: [], packages: [], extraRun: [] } };
   const op = { state: "ready", ready: true, request, inspectedVia: "wasm", id: 1, buildResult: null };
-  const trace = { closes: 0, writes: 0, aborts: 0, legacy: 0, calls: 0, downloads: 0 };
+  const trace = { closes: 0, writes: 0, aborts: 0, legacy: 0, calls: 0, downloads: 0, options: [] };
   const sink = { kind: "picker", w: {
     write: async bytes => { trace.writes += bytes.length; },
     close: async () => { trace.closes++; }, abort: async () => { trace.aborts++; },
@@ -47,8 +47,8 @@ function app() {
     setOperationBusy() {}, watchEngineMemory: () => () => {},
     log() {}, notify() {}, renderFallbackCard() {}, showCacheSize() {}, updatePostcardFilename() {},
     isoSink: async () => sink, loadWasm: async () => {}, tboxValidateBuildResult: validateBuildResult,
-    tboxBuildIso: async (_opts, write) => { trace.legacy++; await write(new Uint8Array([1, 2, 3, 4])); return 4; },
-    tboxBuildIsoWithResult: async (_opts, write) => { trace.calls++; await write(new Uint8Array([1, 2, 3, 4])); return observedBuildFixture(); },
+    tboxBuildIso: async (opts, write) => { trace.legacy++; trace.options.push(opts); await write(new Uint8Array([1, 2, 3, 4])); return 4; },
+    tboxBuildIsoWithResult: async (opts, write) => { trace.calls++; trace.options.push(opts); await write(new Uint8Array([1, 2, 3, 4])); return observedBuildFixture(); },
     tboxReset: () => null, tboxResetAsync: async () => null,
   };
   context.window = context;
@@ -92,6 +92,32 @@ test.describe("app result lifecycle VM", () => {
     expect(a.op.outputDelivery).toEqual({ kind: "picker", status: "stream-closed" });
     expect(Object.isFrozen(a.op.buildResult.observedInputs.source.config.descriptor)).toBe(true);
     expect(a.trace.legacy).toBe(0);
+  });
+  test("passes the exact loaded WASM digest only to the captured native engine", async () => {
+    const a = app();
+    const digest = `sha256:${"a".repeat(64)}`;
+    a.c.wasmEngineDigest = digest;
+    a.c.wasmNativeBuildIsoWithResult = a.c.tboxBuildIsoWithResult;
+    await a.c.build();
+    expect(a.op.state).toBe("completed");
+    expect(a.trace.options).toHaveLength(1);
+    expect(a.trace.options[0].engineDigest).toBe(digest);
+  });
+  test("refuses a captured native engine when its loaded WASM digest is missing", async () => {
+    const a = app();
+    a.c.wasmNativeBuildIsoWithResult = a.c.tboxBuildIsoWithResult;
+    await a.c.build();
+    expectFailed(a);
+    expect(a.trace.calls).toBe(0);
+    expect(a.trace.aborts).toBe(1);
+  });
+  test("never attributes the loaded WASM digest to a replaced build function", async () => {
+    const a = app();
+    a.c.wasmEngineDigest = `sha256:${"b".repeat(64)}`;
+    await a.c.build();
+    expect(a.op.state).toBe("completed");
+    expect(a.trace.options).toHaveLength(1);
+    expect(a.trace.options[0]).not.toHaveProperty("engineDigest");
   });
   test("missing result API retains the numeric path without observations", async () => {
     const a = app(); delete a.c.tboxBuildIsoWithResult;

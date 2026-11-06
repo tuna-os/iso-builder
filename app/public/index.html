@@ -402,9 +402,9 @@
     <details><summary>Technical details</summary><div id="log"></div></details>
   </div>
   <div class="card hidden" id="fallbackcard">
-    <h3 style="margin-top:0">Build locally with tacklebox</h3>
-    <p class="sub" id="fallbackreason" style="margin-top:-.4rem;margin-bottom:.75rem">Export the pinned BuildRequest v1 contract to build this exact target locally without browser memory or storage limits.</p>
-    <pre style="padding:.6rem;overflow-x:auto;margin:.4rem 0;font:12px var(--mono)"><code id="fallbackcmd">tacklebox purebuild --request build-request.json</code></pre>
+    <h3 style="margin-top:0">Build on your own machine</h3>
+    <p class="sub" id="fallbackreason" style="margin-top:-.4rem;margin-bottom:.75rem">Build this exact target locally, without browser memory or storage limits. Save build-request.json, then run the command below in the same folder. It needs Go 1.26 or newer and access to the image registry, and writes the ISO to ./tunaos-pure.iso.</p>
+    <pre style="padding:.6rem;overflow-x:auto;margin:.4rem 0;font:12px var(--mono)"><code id="fallbackcmd">go run github.com/tuna-os/tacklebox/cmd/purebuild@latest --request build-request.json</code></pre>
     <div style="display:flex;gap:.5rem;margin-top:.6rem;flex-wrap:wrap">
       <button type="button" id="downloadrequest" class="secondary">Download build-request.json</button>
       <button type="button" id="copyfallback" class="secondary">Copy command &amp; request</button>

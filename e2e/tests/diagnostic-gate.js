@@ -99,12 +99,14 @@ function gateRefusalSummary({ image, platform, reason, diagnosticRequested }) {
 }
 
 // The committed catalog snapshot pins registry digests as of its generation
-// date; the engine enforces those pins ("platformManifestDigest mismatch") and
-// the first diagnostic dispatch died on exactly that (snapshot 2026-10-17 vs
-// the republished tag). Dropping the pins would change the media shape (the
-// offline layout ships only when pins exist), so a diagnostic build refreshes
-// the three pins of the one named target to what the registry serves now and
-// records old and new values in the evidence.
+// date, and the engine builds exactly those pinned manifests, fetched by digest
+// (tacklebox#452). Before that it resolved the tag and refused a moved one
+// ("platformManifestDigest mismatch"): the first diagnostic dispatch died on
+// exactly that (snapshot 2026-10-17 vs the republished tag). A diagnostic build
+// exercises what the registry serves now, and dropping the pins would change
+// the media shape (the offline layout ships only when pins exist), so it
+// refreshes the three pins of the one named target to what the registry serves
+// now and records old and new values in the evidence.
 const ACCEPT = [
   "application/vnd.oci.image.index.v1+json", "application/vnd.oci.image.manifest.v1+json",
   "application/vnd.docker.distribution.manifest.list.v2+json", "application/vnd.docker.distribution.manifest.v2+json",

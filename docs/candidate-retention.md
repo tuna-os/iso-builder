@@ -254,7 +254,7 @@ stops before guest execution.
 
 The sidecar preserves `not-assessed` for the observed plain context and
 `diagnostic-unqualified` for the diagnostic LUKS context. The guest output directory is
-`luks-verify-<slug>-obs` for plain and `luks-verify-<slug>-diag` for LUKS. The harness creates Unix sockets inside this short
+`luks-verify-<slug>` for observed and both-mode runs and `luks-verify-<slug>-diag` for diagnostic LUKS. The harness creates Unix sockets inside this short
 directory; `sun_path` holds 107 bytes. The recipe stops before guest execution if
 `strict-plain-warm-serial.sock` there would exceed that limit.
 

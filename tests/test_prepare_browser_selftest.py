@@ -172,6 +172,17 @@ def test_rejects_receipt_engine_that_is_not_the_loaded_wasm(tmp_path):
         helper.validate_inputs(**args)
 
 
+@pytest.mark.parametrize("field", [
+    "base_image", "base_digest", "overlay_digest", "engine_digest", "platform",
+])
+def test_rejects_incomplete_media_receipt(tmp_path, field):
+    args, *_ = fixture(tmp_path)
+    del args["source_receipt"][field]
+
+    with pytest.raises(helper.InputError, match="missing or invalid identity fields"):
+        helper.validate_inputs(**args)
+
+
 def test_observed_plain_is_not_assessed_and_keeps_identity_limits(tmp_path):
     args, source, overlay, engine, wasm, installer = fixture(tmp_path, diagnostic=False)
     env, binding = helper.validate_inputs(**args)

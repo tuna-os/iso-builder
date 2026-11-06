@@ -10,6 +10,7 @@ const { diagnosticRecord } = require("./build-measurements");
 const {
   diagnosticGrantFromEnv, installDiagnosticGrant, strictObservedGrantFromEnv, installStrictObservedGrant, resolveLiveDigests, catalogEntryFor, refreshDiagnosticSnapshot, parseGateRefusal, gateRefusalMessage, gateRefusalSummary,
 } = require("./diagnostic-gate");
+const { unqualifiedSkipjackCatalog } = require("./unqualified-catalog-fixture");
 
 const ROOT = path.resolve(__dirname, "../..");
 const IMAGE = "tuna-os/skipjack:gnome";
@@ -25,6 +26,8 @@ const grant = (over = {}) => ({ kind: "diagnostic-unqualified", image: IMAGE, pl
 async function withGrant(page, g) { await page.addInitScript(installDiagnosticGrant, g); }
 
 test.describe("catalog gate with the diagnostic grant", () => {
+  test.beforeEach(async ({ page }) => { await unqualifiedSkipjackCatalog(page); });
+
   test("without a grant the gate still refuses an unqualified target", async ({ page }) => {
     await page.goto(PRESET);
     await inspectPreset(page);
@@ -135,6 +138,8 @@ test.describe("spec-side grant resolution", () => {
 });
 
 test.describe("bounded strict-observed admission", () => {
+  test.beforeEach(async ({ page }) => { await unqualifiedSkipjackCatalog(page); });
+
   const env = {
     TBOX_E2E_STRICT_OBSERVED: "1", TBOX_E2E_FULL: "1",
     STRICT_ROUNDTRIP_TEST: "true", STRICT_INSTALL_MODE: "plain",
@@ -429,7 +434,9 @@ test.describe("production code and CI wiring", () => {
 
   test("a refused full-build cell fails within seconds with the gate reason, not after the 5 min stall watchdog", async () => {
     test.setTimeout(180_000);
-    const env = { ...process.env, TBOX_E2E_FULL: "1", TBOX_E2E_IMAGE: IMAGE, TBOX_E2E_PLATFORM: PLATFORM };
+    // A cell the catalog still refuses; skipjack:gnome itself is qualified now.
+    const refused = "tuna-os/yellowfin:gnome";
+    const env = { ...process.env, TBOX_E2E_FULL: "1", TBOX_E2E_IMAGE: refused, TBOX_E2E_PLATFORM: PLATFORM };
     for (const k of ["DIAGNOSTIC_ALLOW_UNQUALIFIED", "DIAGNOSTIC_TARGET"]) delete env[k];
     const summary = path.join(require("os").tmpdir(), `gate-summary-${process.pid}.md`);
     const failureRoot = fs.mkdtempSync(path.join(require("os").tmpdir(), "pair-early-failure-"));
@@ -437,7 +444,7 @@ test.describe("production code and CI wiring", () => {
     env.TBOX_E2E_SAMPLE = "1";
     env.TBOX_E2E_CACHE_MODE = "cold";
     env.TBOX_E2E_PAIR_STATE = path.join(failureRoot, "pair-inputs.json");
-    env.TBOX_E2E_EVIDENCE = path.join(failureRoot, "qual-evidence-skipjack-gnome-s1.json");
+    env.TBOX_E2E_EVIDENCE = path.join(failureRoot, "qual-evidence-yellowfin-gnome-s1.json");
     fs.rmSync(summary, { force: true });
     env.GITHUB_STEP_SUMMARY = summary;
     const started = Date.now();
@@ -447,14 +454,14 @@ test.describe("production code and CI wiring", () => {
     const elapsed = (Date.now() - started) / 1000;
     const out = `${r.stdout}\n${r.stderr}`;
     expect(r.status, out).not.toBe(0);
-    expect(out).toContain("browser build gated for tuna-os/skipjack:gnome");
+    expect(out).toContain(`browser build gated for ${refused}`);
     expect(out).toContain("no-qualification-receipt");
     expect(out).toContain("diagnostic override was NOT requested");
     expect(out).not.toContain("wedged");
     expect(elapsed).toBeLessThan(100);
     const md = fs.readFileSync(summary, "utf8");
     expect(md).toContain("no-qualification-receipt");
-    const failed = JSON.parse(fs.readFileSync(path.join(failureRoot, "failed-build-qual-evidence-skipjack-gnome-s1.json"), "utf8"));
+    const failed = JSON.parse(fs.readFileSync(path.join(failureRoot, "failed-build-qual-evidence-yellowfin-gnome-s1.json"), "utf8"));
     expect(failed.kind).toBe("failed-browser-build-measurements");
     expect(failed.run.outcome).toBe("failed");
     expect(failed.phase).toBe("inspect");
