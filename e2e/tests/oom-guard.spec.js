@@ -45,7 +45,7 @@ test.describe("engine OOM guard", () => {
     await expect(page.locator("#postcard")).toBeHidden();
     await expect(page.locator("#fallbackcard")).toBeVisible();
     await expect(page.locator("#fallbackcmd")).toContainText(
-      "tacklebox purebuild --request build-request.json",
+      "go run github.com/tuna-os/tacklebox/cmd/purebuild@latest --request build-request.json",
     );
 
     const fallbackReq = await page.evaluate(() =>

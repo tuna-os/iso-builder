@@ -671,6 +671,10 @@ globalThis.tboxOnProgress = (stage, i, n) => {
   lastProgressAt = Date.now();
 };
 
+// `purebuild` is its own Go program in the tacklebox module, not a `tacklebox`
+// subcommand: `tacklebox purebuild` does not exist. `go run` fetches and runs it.
+const PUREBUILD_COMMAND = "go run github.com/tuna-os/tacklebox/cmd/purebuild@latest --request build-request.json";
+const PUREBUILD_STEPS = "Save build-request.json, then run the command in the same folder (needs Go 1.26 or newer and access to the image registry). The ISO is written to ./tunaos-pure.iso.";
 const WASM32_LIMIT_MB = 4096;
 const WASM_WARN_MB = 3400;
 const WASM_WEDGED_MB = 3900;
@@ -711,7 +715,7 @@ function watchEngineMemory() {
         op.error = msg;
         if ($("build")) $("build").disabled = true;
         if ($("postcard")) $("postcard").classList.add("hidden");
-        renderFallbackCard(op, `${msg} Build this exact target locally using tacklebox purebuild:`);
+        renderFallbackCard(op, `${msg} Build this exact target on your own machine instead. ${PUREBUILD_STEPS}`);
         notify("ISO build failed", "Image too large for the browser engine");
         return;
       }
@@ -1117,7 +1121,7 @@ function renderFallbackCard(op = currentOp, reasonText = "") {
   if (!card) return;
   const activeOp = op || rebuildCurrentOperation("idle");
   const reqJson = JSON.stringify(activeOp.request, null, 2);
-  const cmd = "tacklebox purebuild --request build-request.json";
+  const cmd = PUREBUILD_COMMAND;
   if ($("fallbackcmd")) $("fallbackcmd").textContent = cmd;
   if ($("fallbackjson")) $("fallbackjson").textContent = reqJson;
   if ($("fallbackreason") && reasonText) {
@@ -1365,7 +1369,7 @@ async function inspect() {
       op.storageBlocked = true;
       $("stage").textContent = `Browser build unavailable: insufficient storage (${quotaStatus.freeGB.toFixed(1)} GB free) — use local fallback below.`;
       $("build").disabled = true;
-      renderFallbackCard(op, `Insufficient browser storage (${quotaStatus.freeGB.toFixed(1)} GB free). Build locally with tacklebox purebuild:`);
+      renderFallbackCard(op, `Insufficient browser storage (${quotaStatus.freeGB.toFixed(1)} GB free). Build this exact target on your own machine instead. ${PUREBUILD_STEPS}`);
     } else {
       op.state = "ready";
       op.ready = true;
@@ -1694,7 +1698,7 @@ async function build() {
     } else {
       $("stage").textContent = "Build failed.";
     }
-    renderFallbackCard(op, `Browser build failed (${String(e)}). Build this exact target locally with tacklebox purebuild:`);
+    renderFallbackCard(op, `Browser build failed (${String(e)}). Build this exact target on your own machine instead. ${PUREBUILD_STEPS}`);
     notify(e.name === "AbortError" ? "Save cancelled" : "ISO build failed", String(e).slice(0, 120));
   } finally {
     stopWatch();
@@ -1792,7 +1796,7 @@ if ($("copyfallback")) {
     try { globalThis.tboxExportBuildRequestJSON(); }
     catch(error) { $("export-error").textContent=error.message; return; }
     $("export-error").textContent="";
-    const payload = `cat <<'EOF' > build-request.json\n${globalThis.tboxExportBuildRequestJSON()}\nEOF\ntacklebox purebuild --request build-request.json`;
+    const payload = `cat <<'EOF' > build-request.json\n${globalThis.tboxExportBuildRequestJSON()}\nEOF\n${PUREBUILD_COMMAND}`;
     await navigator.clipboard.writeText(payload);
     $("copyfallback").textContent = "Copied!";
     setTimeout(() => ($("copyfallback").textContent = "Copy command & request"), 1500);
