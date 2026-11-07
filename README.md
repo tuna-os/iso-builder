@@ -150,7 +150,9 @@ The builder writes a receipt only when these conditions are true:
 - Each leg created the account in GNOME Initial Setup and logged in through GDM.
 - The plain leg shows no passphrase prompt and the LUKS leg shows one.
 - The booted digest equals the source digest and the image digest.
-- The imgref is `ghcr.io/tuna-os/<variant>:<flavor>`.
+- The imgref is the target's published image, its catalog `publication.ref`.
+  That is `ghcr.io/tuna-os/<variant>:<flavor>` unless the variant sets a
+  publish name or tag suffix (`flounder-sid:gnome` is `flounder:gnome-sid`).
 - The run is not diagnostic, ran both modes, and ran on `main`.
 
 A branch dispatch still runs both legs but writes no receipt.

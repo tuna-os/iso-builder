@@ -144,6 +144,18 @@ function catalogEntryFor(catalog, image, platform) {
   return catalog.targets.find((t) => (platform ? t.targetKey === `${short}:${platform}` : t.targetKey && t.targetKey.startsWith(`${short}:`))) || null;
 }
 
+// The image the page is driven with: the catalog entry's publication.ref, which
+// is what the guided picker hands a user and what the installed system tracks.
+// A variant with publish_name/tag_suffix publishes under another name than its
+// target key (flounder-sid:gnome is flounder:gnome-sid); driving the page with
+// the target key would build and install the variant-ID repository instead.
+// Same short form as the edition ref for every other target. The target
+// identity (slug, ONLY, evidence target) stays the edition ref.
+function pageImageFor(catalog, image, platform) {
+  const entry = catalogEntryFor(catalog, image, platform);
+  return entry ? entry.publication.ref.replace(/^ghcr\.io\//, "") : image;
+}
+
 // Pure: returns a copy of the snapshot with only the named target's three pins
 // replaced, plus a record of before/after. Qualification is never touched.
 function refreshDiagnosticSnapshot(catalog, targetKey, live) {
@@ -162,7 +174,7 @@ function refreshDiagnosticSnapshot(catalog, targetKey, live) {
 }
 
 module.exports = {
-  resolveLiveDigests, catalogEntryFor, refreshDiagnosticSnapshot,
+  resolveLiveDigests, catalogEntryFor, pageImageFor, refreshDiagnosticSnapshot,
   LABEL, QUALIFICATION, diagnosticGrantFromEnv, installDiagnosticGrant,
   strictObservedGrantFromEnv, installStrictObservedGrant,
   parseGateRefusal, gateRefusalMessage, gateRefusalSummary,

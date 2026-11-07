@@ -8,7 +8,7 @@ const fs = require("fs");
 const { spawnSync } = require("child_process");
 const { diagnosticRecord } = require("./build-measurements");
 const {
-  diagnosticGrantFromEnv, installDiagnosticGrant, strictObservedGrantFromEnv, installStrictObservedGrant, resolveLiveDigests, catalogEntryFor, refreshDiagnosticSnapshot, parseGateRefusal, gateRefusalMessage, gateRefusalSummary,
+  diagnosticGrantFromEnv, installDiagnosticGrant, strictObservedGrantFromEnv, installStrictObservedGrant, resolveLiveDigests, catalogEntryFor, pageImageFor, refreshDiagnosticSnapshot, parseGateRefusal, gateRefusalMessage, gateRefusalSummary,
 } = require("./diagnostic-gate");
 const { unqualifiedSkipjackCatalog } = require("./unqualified-catalog-fixture");
 
@@ -364,6 +364,27 @@ test.describe("diagnostic pin refresh", () => {
     await expect(page.locator("#fallbackcard")).toBeVisible();
     const request = JSON.parse(await page.locator("#fallbackjson").textContent());
     expect(request.resolvedInputs).toMatchObject(live);
+    expect(request.qualificationId).toBeUndefined();
+  });
+
+  test("the page builds the published image of the edition's target", () => {
+    expect(pageImageFor(CATALOG, "tuna-os/skipjack:gnome", "linux/amd64")).toBe("tuna-os/skipjack:gnome");
+    expect(pageImageFor(CATALOG, "tuna-os/skipjack:gnome")).toBe("tuna-os/skipjack:gnome");
+    // flounder-sid publishes as flounder:<flavor>-sid (publish_name + tag_suffix).
+    expect(pageImageFor(CATALOG, "tuna-os/flounder-sid:gnome", "linux/amd64")).toBe("tuna-os/flounder:gnome-sid");
+    expect(pageImageFor(CATALOG, "tuna-os/nope:gnome", "linux/amd64")).toBe("tuna-os/nope:gnome");
+  });
+
+  test("a renamed target's published image reaches the request with the target's identity", async ({ page }) => {
+    const image = pageImageFor(CATALOG, "tuna-os/flounder-sid:gnome", PLATFORM);
+    await page.addInitScript(installStrictObservedGrant, {
+      kind: "strict-observed", image, platform: PLATFORM, installMode: "both", route: "retained-iso-roundtrip" });
+    await page.goto(`/?image=${encodeURIComponent(image)}`);
+    await page.locator("#introspect").click();
+    await expect(page.locator(".badge.status")).toContainText("not-assessed");
+    const request = await page.evaluate(() => globalThis.tboxGetBuildRequest());
+    expect(request.image).toBe("ghcr.io/tuna-os/flounder:gnome-sid");
+    expect(request.target).toMatchObject({ variant: "flounder-sid", flavor: "gnome", platform: PLATFORM });
     expect(request.qualificationId).toBeUndefined();
   });
 });
