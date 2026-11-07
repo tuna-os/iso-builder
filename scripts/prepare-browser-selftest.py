@@ -29,7 +29,11 @@ MAX_DIAGNOSTIC_CHARS = 512
 MAX_DIAGNOSTIC_PAYLOADS = 32
 MAX_SQUASHFS_PROBE_OUTPUT_BYTES = 64 * 1024
 MAX_EXTRACTOR_OUTPUT_BYTES = 256 * 1024
-ISO_EXTRACTOR_TIMEOUT_SECONDS = 60
+# The extractor copies every live payload out of the ISO, including the
+# multi-GB root: 60 s was enough for 7-8 GB ISOs but not for grouper:gnome's
+# 9.8 GB (run 42344548015: "ISO payload extractor did not complete"). The
+# calling CI step has its own 25-minute bound.
+ISO_EXTRACTOR_TIMEOUT_SECONDS = 600
 SQUASHFS_PROBE_TIMEOUT_SECONDS = 30
 
 
