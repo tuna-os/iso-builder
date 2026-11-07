@@ -17,6 +17,15 @@
   { "ref": "albacore:gnome-nvidia", "slug": "albacore-gnome-nvidia", "base": "AlmaLinux 10", "platform": "linux/amd64", "qualify": true },
   { "ref": "bonito:gnome-nvidia", "slug": "bonito-gnome-nvidia", "base": "Fedora 44", "platform": "linux/amd64", "qualify": true },
   { "ref": "marlin:gnome-nvidia", "slug": "marlin-gnome-nvidia", "base": "Arch Linux", "platform": "linux/amd64", "qualify": true },
+  { "ref": "bonito:cosmic", "slug": "bonito-cosmic", "base": "Fedora 44", "platform": "linux/amd64", "qualify": true },
+  { "ref": "marlin:cosmic", "slug": "marlin-cosmic", "base": "Arch Linux", "platform": "linux/amd64", "qualify": true },
+  { "ref": "yellowfin:cosmic", "slug": "yellowfin-cosmic", "base": "AlmaLinux Kitten 10", "platform": "linux/amd64", "qualify": true },
+  { "ref": "albacore:cosmic", "slug": "albacore-cosmic", "base": "AlmaLinux 10", "platform": "linux/amd64", "qualify": true },
+  { "ref": "skipjack:cosmic", "slug": "skipjack-cosmic", "base": "CentOS Stream 10", "platform": "linux/amd64", "qualify": true },
+  { "ref": "grouper:cosmic", "slug": "grouper-cosmic", "base": "Ubuntu 26.04", "platform": "linux/amd64", "qualify": true },
+  { "ref": "sailfin:cosmic", "slug": "sailfin-cosmic", "base": "openSUSE Tumbleweed", "platform": "linux/amd64", "qualify": true },
+  { "ref": "bonito-rawhide:cosmic", "slug": "bonito-rawhide-cosmic", "base": "Fedora Rawhide", "platform": "linux/amd64", "qualify": true },
+  { "ref": "wahoo:cosmic", "slug": "wahoo-cosmic", "base": "Fedora ELN", "platform": "linux/amd64", "qualify": true },
   { "ref": "projectbluefin/dakota:stable", "slug": "bluefin-dakota", "base": "Bluefin GNOME (known-good reference)", "platform": "linux/amd64", "reference": true, "qualify": false },
   { "ref": "ublue-os/aurora:stable", "slug": "aurora-stable", "base": "Aurora KDE, Fedora 44 (known-good reference)", "platform": "linux/amd64", "reference": true, "qualify": false }
 ]
