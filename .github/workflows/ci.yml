@@ -121,6 +121,44 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  # Decide, from the changed paths, which job families this push/PR can affect.
+  # Skipped jobs report "skipped", which satisfies a required check of the same
+  # name, so no check name changes. Anything that is not a plain PR/push (the
+  # weekly schedule, dispatch) or whose diff cannot be computed runs everything.
+  #   native: native/** or this workflow (the Go module the three OS jobs test)
+  #   code:   anything except docs/examples/licence-type files
+  changes:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      native: ${{ steps.sel.outputs.native }}
+      code: ${{ steps.sel.outputs.code }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - id: sel
+        env:
+          EVENT: ${{ github.event_name }}
+          BASE: ${{ github.event.pull_request.base.sha || github.event.before }}
+          HEAD: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          all() { echo native=true >> "$GITHUB_OUTPUT"; echo code=true >> "$GITHUB_OUTPUT"; exit 0; }
+          if [[ "$EVENT" != pull_request && "$EVENT" != push ]] || [[ -z "$BASE" || "$BASE" =~ ^0+$ ]]; then all; fi
+          if [[ "$EVENT" == pull_request ]]; then range="$BASE...$HEAD"; else range="$BASE $HEAD"; fi
+          # shellcheck disable=SC2086
+          git diff --no-renames --name-only -z $range > changed-paths 2>/dev/null || all
+          native=false code=false
+          while IFS= read -r -d '' path; do
+            case "$path" in
+              native/*|.github/workflows/ci.yml) native=true; code=true ;;
+              *.md|docs/*|LICENSE|examples/*|.editorconfig|.github/CODEOWNERS) ;;
+              *) code=true ;;
+            esac
+          done < changed-paths
+          echo "native=$native" >> "$GITHUB_OUTPUT"
+          echo "code=$code" >> "$GITHUB_OUTPUT"
+
   # Three OS-native jobs, not one cross-compiled one: exec_windows.go,
   # exec_darwin.go, blockdev_windows.go, blockdev_darwin.go,
   # managed_windows.go, managed_darwin.go, and vm_darwin.go all carry
@@ -132,6 +170,11 @@ jobs:
   # the old single-job setup. Real native runners close that gap outright
   # instead of fighting cross-compiled cgo/vet limitations.
   qualification-contract:
+    # A strict sweep is dispatched from a ref whose tests already ran on its pull
+    # request; running the suite once per dispatched cell proved nothing the PR
+    # run had not (54 of 55 dispatch runs/week).
+    needs: changes
+    if: github.event_name != 'workflow_dispatch' && needs.changes.outputs.code == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
@@ -150,6 +193,9 @@ jobs:
       - run: python -m pytest -q tests
 
   native-linux:
+    # See native-windows: same rationale for dispatch (55 runs/week x 5.7 min).
+    needs: changes
+    if: github.event_name != 'workflow_dispatch' && needs.changes.outputs.native == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
@@ -191,7 +237,8 @@ jobs:
     # the cells need. main is not branch-protected, and required checks
     # are evaluated from pull_request runs regardless, so skipping here
     # cannot weaken a merge gate.
-    if: github.event_name != 'workflow_dispatch'
+    needs: changes
+    if: github.event_name != 'workflow_dispatch' && needs.changes.outputs.native == 'true'
     runs-on: windows-latest
     # 15 was too tight — a real run hit exactly that ceiling and got
     # cancelled outright (mid-build, not a hang) while every other job
@@ -214,7 +261,12 @@ jobs:
       # failing (or quietly stop testing anything real) if a future image
       # revision drops or relocates it.
       - name: ensure mingw-w64 gcc is available
-        run: choco install mingw -y --no-progress
+        # windows-latest normally ships mingw-w64; the choco install cost ~0.9 min
+        # per run (162 runs/week). Install only when gcc is actually missing.
+        run: |
+          if (-not (Get-Command gcc -ErrorAction SilentlyContinue)) {
+            choco install mingw -y --no-progress
+          }
 
       - name: go vet
         working-directory: native
@@ -237,7 +289,8 @@ jobs:
 
   native-macos:
     # See native-windows.
-    if: github.event_name != 'workflow_dispatch'
+    needs: changes
+    if: github.event_name != 'workflow_dispatch' && needs.changes.outputs.native == 'true'
     runs-on: macos-latest
     timeout-minutes: 15
     steps:
@@ -276,6 +329,10 @@ jobs:
   # Renovate's digest bumps now move the CLI, the native app and the web
   # engine together instead of letting the wasm drift on its own.
   wasm:
+    # full-matrix needs the engine on dispatch; on PR/push it is only for e2e and
+    # deploy, which a docs-only change does not need.
+    needs: changes
+    if: github.event_name == 'workflow_dispatch' || needs.changes.outputs.code == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
@@ -286,8 +343,8 @@ jobs:
           go-version-file: native/go.mod
           cache-dependency-path: native/go.sum
 
-      - name: install just
-        run: sudo apt-get update -qq && sudo apt-get install -y -qq --no-install-recommends just
+      - name: install just without apt
+        uses: extractions/setup-just@53165ef7e734c5c07cb06b3c8e7b647c5aa16db3 # v4
 
       # Building from native/'s module doesn't work: cmd/tbwasm pulls in
       # packages native/ never imports, so its go.sum has no entries for them.
@@ -325,7 +382,7 @@ jobs:
     # skipping this does not gate a sweep; deploy needs it but only fires
     # on push to main, never on dispatch.
     if: github.event_name != 'workflow_dispatch'
-    needs: wasm
+    needs: [changes, wasm]
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
@@ -451,8 +508,8 @@ jobs:
       count: ${{ steps.pick.outputs.count }}
     steps:
       - uses: actions/checkout@v7
-      - name: install just
-        run: sudo apt-get update -qq && sudo apt-get install -y -qq --no-install-recommends just
+      - name: install just without apt
+        uses: extractions/setup-just@53165ef7e734c5c07cb06b3c8e7b647c5aa16db3 # v4
       - id: pick
         env:
           ONLY: ${{ github.event.inputs.only }}
