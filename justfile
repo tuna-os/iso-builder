@@ -470,6 +470,16 @@ full-qualification-receipt-verify:
     print(f"receipt attestation verified for {run}")
     PY
 
+# Validate a harness-only change against the frames a failed strict run already
+# captured, in seconds instead of a ~3 h dispatch. Download the diag artifact
+# (`gh run download <run> -n full-<slug>-diag`), check out the harness at the
+# pin ci.yml names, then: just strict-replay <dir> [--text-only] [--expect progress]
+# Needs tesseract-ocr and imagemagick unless --text-only. Env: HARNESS_ROOT
+# (default tunaos-e2e-current).
+# Replay recorded strict walkthrough frames through the current harness driver.
+strict-replay DIR *ARGS:
+    python3 scripts/replay-strict-frames.py "{{DIR}}" --harness-root "${HARNESS_ROOT:-tunaos-e2e-current}" {{ARGS}}
+
 # The guest harness runs under sudo, so its output starts root-owned. Label
 # the strict receipt first, then hand the tree back to the runner user so
 # upload-artifact can read it. Env: SLUG, STRICT_ROUNDTRIP_TEST, DIAGNOSTIC_UNQUALIFIED.
