@@ -154,6 +154,7 @@ The frozen `__TBOX_STRICT_OBSERVED__` grant binds `linux/amd64`, route
 `tuna-os/skipjack:gnome`, or install mode `both` with the one named
 `tuna-os/<variant>:<flavor>` cell. It is not a URL, UI, or browser-storage
 override and cannot coexist with the diagnostic grant.
+
 The spec checks the grant against the named cell. It then installs the grant
 for the cell's published image, the catalog `publication.ref`, and opens the
 page with that image. For most cells this is the same name. For a variant with
