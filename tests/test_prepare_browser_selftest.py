@@ -731,3 +731,28 @@ def test_real_valid_payload_cannot_hide_unreadable_payload(tmp_path, monkeypatch
         assert second["filesystem"]["status"] == "error"
     else:
         assert second["members"]["etc/tunaos/live-source.json"]["status"] == "error"
+
+
+@pytest.mark.parametrize("head,kind", [
+    (bytes(54) + b"FAT16   " + bytes(448) + b"\x55\xaa", "fat"),
+    (b"070701" + bytes(100), "cpio"),
+    (b"\x28\xb5\x2f\xfd" + bytes(100), "zstd"),
+    (b"\x1f\x8b\x08" + bytes(100), "gzip"),
+])
+def test_boot_images_beside_a_live_root_are_recorded_not_fatal(tmp_path, real_receipt_payloads, head, kind):
+    # Run 42310707345 (sailfin:gnome): the ISO inventory also lists an ESP image
+    # and an initramfs under *.img; neither is a live root.
+    args, _good, extra, extractor = real_receipt_payloads
+    extra.write_bytes(head.ljust(4096, b"\0"))
+    diagnostics = {}
+    source, installer = helper.extract_media_receipts(args["iso"], extractor, tmp_path / "out", diagnostics)
+    assert source == args["source_receipt"] and installer == args["installer_digest"]
+    assert diagnostics["payloads"][1]["filesystem"] == {"status": "boot-image", "kind": kind}
+
+
+def test_a_boot_image_is_never_the_only_payload(tmp_path, real_receipt_payloads):
+    args, good, extra, extractor = real_receipt_payloads
+    good.write_bytes(b"070701".ljust(4096, b"\0"))
+    extra.write_bytes(b"070701".ljust(4096, b"\0"))
+    with pytest.raises(helper.InputError, match="no embedded etc/tunaos/live-source.json"):
+        helper.extract_media_receipts(args["iso"], extractor, tmp_path / "out", {})
