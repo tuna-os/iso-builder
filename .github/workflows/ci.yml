@@ -682,7 +682,7 @@ jobs:
         timeout-minutes: 5
         with:
           repository: tuna-os/tunaOS
-          ref: f56e3db1361a84b5901f56543a935d3cf1bbe744
+          ref: 82c01e9394da709615aa45cf814651e6c69ff0b6
           path: tunaos-e2e
       - name: checkout current tunaOS strict harness (pinned)
         if: github.event.inputs.strict_roundtrip_test == 'true'
@@ -690,7 +690,7 @@ jobs:
         timeout-minutes: 5
         with:
           repository: tuna-os/tunaOS
-          ref: f56e3db1361a84b5901f56543a935d3cf1bbe744
+          ref: 82c01e9394da709615aa45cf814651e6c69ff0b6
           path: tunaos-e2e-current
 
       - name: verify guest under QEMU (${{ matrix.edition.slug }})
