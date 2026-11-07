@@ -16,7 +16,7 @@ const fs = require("fs");
 const { qualifiedCatalogFixture } = require("./qualified-catalog-fixture");
 const { observeLoadedWasm, loadedWasmMeasurement, hashSavedIso, buildOperationIdentity, completedBuildResult, diagnosticRecord, observeRegistryTransfers, observeConsumedBuildInputs, completedInputMeasurements, observeFrontendResponses, browserObservedInputRecord, captureExecutingSource, finalizeExecutingSource } = require("./build-measurements");
 const { removeSavePicker, buildFailedSignature } = require("./full-harness");
-const { diagnosticGrantFromEnv, installDiagnosticGrant, strictObservedGrantFromEnv, installStrictObservedGrant, resolveLiveDigests, catalogEntryFor, refreshDiagnosticSnapshot, parseGateRefusal, gateRefusalMessage, gateRefusalSummary } = require("./diagnostic-gate");
+const { diagnosticGrantFromEnv, installDiagnosticGrant, strictObservedGrantFromEnv, installStrictObservedGrant, resolveLiveDigests, catalogEntryFor, pageImageFor, refreshDiagnosticSnapshot, parseGateRefusal, gateRefusalMessage, gateRefusalSummary } = require("./diagnostic-gate");
 const { campaignValue, pairEnvironment, digest: pairDigest } = require("./pair-protocol");
 const CATALOG = require("../../app/public/catalog-snapshot.json");
 
@@ -401,13 +401,17 @@ test.describe("iso builder", () => {
     pairProtocol = process.env.TBOX_E2E_PAIR ? { environment: pairEnvironment() } : null;
     const diagnosticGrant = diagnosticGrantFromEnv(process.env, { image: IMAGE, platform: process.env.TBOX_E2E_PLATFORM || undefined });
     const strictObserved = strictObservedGrantFromEnv(process.env, { image: IMAGE, platform: process.env.TBOX_E2E_PLATFORM || undefined });
+    // Grants are validated against the target identity (IMAGE, ONLY) and
+    // installed for the image the page builds: the published one.
+    const pageImage = pageImageFor(CATALOG, IMAGE, process.env.TBOX_E2E_PLATFORM || undefined);
+    if (pageImage !== IMAGE) console.log(`${IMAGE} publishes as ${pageImage}; the page builds that image`);
     if (diagnosticGrant) {
       console.log(`DIAGNOSTIC, UNQUALIFIED BUILD requested for ${IMAGE}: result is not a qualification`);
-      await page.addInitScript(installDiagnosticGrant, diagnosticGrant);
+      await page.addInitScript(installDiagnosticGrant, { ...diagnosticGrant, image: pageImage });
     }
     if (strictObserved) {
       console.log(`STRICT OBSERVED BUILD requested for ${IMAGE}: qualification is not assessed`);
-      await page.addInitScript(installStrictObservedGrant, strictObserved);
+      await page.addInitScript(installStrictObservedGrant, { ...strictObserved, image: pageImage });
     }
     if (diagnosticGrant || strictObserved) {
       const entry = catalogEntryFor(CATALOG, IMAGE, process.env.TBOX_E2E_PLATFORM || undefined);
@@ -475,7 +479,7 @@ test.describe("iso builder", () => {
     frontend = observeFrontendResponses(page);
     wallStartedAt = performance.now();
     activePhase = "navigation"; phaseStartedAt = wallStartedAt;
-    await page.goto(`/?image=${encodeURIComponent(IMAGE)}&autodl=1&autorun=1${initrd ? `&initrd=${encodeURIComponent(initrd)}` : ""}`);
+    await page.goto(`/?image=${encodeURIComponent(pageImage)}&autodl=1&autorun=1${initrd ? `&initrd=${encodeURIComponent(initrd)}` : ""}`);
     activePhase = "inspect"; phaseStartedAt = performance.now();
 
     const stageText = () => page.locator("#stage").textContent().catch(() => "<unreadable>");

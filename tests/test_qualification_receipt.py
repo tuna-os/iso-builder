@@ -278,6 +278,56 @@ def test_validate_receipt_rejects_extra_mode(tmp_path):
         receipt_mod.validate_receipt(receipt)
 
 
+# A variant with publish_name/tag_suffix (tunaOS tunaos.toml) publishes under
+# another name than its target key: users install, and the harness verifies,
+# the catalog's publication.ref, never the variant-ID repository.
+RENAMED_SLUG = "fish-sid-kde"
+RENAMED_IMAGE = "ghcr.io/tuna-os/fish:kde-sid"
+RENAMED_CATALOG = {"targets": [{"targetKey": "fish-sid:kde:linux/amd64",
+                                "publication": {"ref": RENAMED_IMAGE}}]}
+
+
+def renamed_build(tmp_path, imgref=RENAMED_IMAGE, catalog=RENAMED_CATALOG):
+    bind = binding()
+    bind["producer"]["artifactName"] = f"iso-{RENAMED_SLUG}-run{RUN_ID}-a{ATTEMPT}"
+    bind["target"].update(image="tuna-os/fish-sid:kde", slug=RENAMED_SLUG)
+    plain, luks = ({**fragment(m), "target_imgref": imgref} for m in ("plain", "luks"))
+    return receipt_mod.build_receipt(
+        harness_output=harness_dir(tmp_path, plain, luks), binding=bind, workflow_text=CI_YML.read_text(),
+        slug=RENAMED_SLUG, install_mode="both", diagnostic_unqualified="false", environ=environ(),
+        qualified_at=NOW, catalog=catalog)
+
+
+def test_a_renamed_variant_receipt_names_the_published_image(tmp_path):
+    receipt = renamed_build(tmp_path)
+    assert receipt["target"] == {"variant": "fish-sid", "flavor": "kde", "platform": "linux/amd64",
+                                 "image": RENAMED_IMAGE, "imageDigest": SOURCE}
+    assert receipt["producer"]["isoArtifactName"] == f"iso-{RENAMED_SLUG}-run4242-a2"
+    receipt_mod.validate_receipt(receipt, RENAMED_CATALOG)
+
+
+def test_a_renamed_variant_that_installed_the_variant_id_repository_is_refused(tmp_path):
+    with pytest.raises(receipt_mod.ReceiptError, match="target_imgref"):
+        renamed_build(tmp_path, imgref="ghcr.io/tuna-os/fish-sid:kde")
+
+
+def test_a_target_missing_from_the_catalog_is_refused(tmp_path):
+    with pytest.raises(receipt_mod.ReceiptError, match="no single target fish-sid:kde:linux/amd64"):
+        renamed_build(tmp_path, catalog={"targets": []})
+
+
+def test_validate_receipt_refuses_a_target_image_other_than_the_published_one(tmp_path):
+    receipt = renamed_build(tmp_path)
+    receipt["target"]["image"] = "ghcr.io/tuna-os/fish-sid:kde"
+    with pytest.raises(receipt_mod.ReceiptError, match="published image"):
+        receipt_mod.validate_receipt(receipt, RENAMED_CATALOG)
+
+
+def test_the_committed_catalog_names_each_published_image():
+    assert receipt_mod.published_image("bonito", "kde") == IMAGE
+    assert receipt_mod.published_image("flounder-sid", "gnome") == "ghcr.io/tuna-os/flounder:gnome-sid"
+
+
 def run_cli(tmp_path, env, mode="both", diagnostic="false"):
     out = tmp_path / "receipt" / "receipt.json"
     bind = tmp_path / "binding.json"

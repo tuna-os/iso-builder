@@ -49,6 +49,8 @@ UUID = re.compile(r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12
 TIMESTAMP = re.compile(r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$")
 NAME = re.compile(r"^[a-z0-9]+(?:-[a-z0-9]+)*$")
 TUNAOS_IMAGE = re.compile(r"^tuna-os/([a-z0-9]+(?:-[a-z0-9]+)*):([a-z0-9]+(?:[.-][a-z0-9]+)*)$")
+PUBLISHED_IMAGE = re.compile(r"^ghcr\.io/tuna-os/[a-z0-9]+(?:-[a-z0-9]+)*:[a-z0-9]+(?:[.-][a-z0-9]+)*$")
+CATALOG_PATH = Path(__file__).resolve().parents[1] / "app/public/catalog-snapshot.json"
 
 
 class ReceiptError(ValueError):
@@ -88,6 +90,23 @@ def json_object(path: Path, label: str) -> dict:
         raise ReceiptError(f"cannot read {label} {path}: {exc}") from exc
     require(isinstance(value, dict), f"{label} {path} must be a JSON object")
     return value
+
+
+def published_image(variant: str, flavor: str, catalog: dict | None = None) -> str:
+    """The ref <variant>:<flavor> publishes as: its linux/amd64 catalog target's
+    publication.ref. That is the image the guided picker builds and the
+    installed system tracks, so it is what a receipt must have installed. It is
+    ghcr.io/tuna-os/<variant>:<flavor> unless the variant sets publish_name /
+    tag_suffix in tunaos.toml (flounder-sid:gnome publishes as flounder:gnome-sid)."""
+    if catalog is None:
+        catalog = json_object(CATALOG_PATH, "catalog snapshot")
+    key = f"{variant}:{flavor}:{PLATFORM}"
+    entries = [t for t in catalog.get("targets") or [] if isinstance(t, dict) and t.get("targetKey") == key]
+    require(len(entries) == 1, f"the catalog snapshot has no single target {key}")
+    ref = (entries[0].get("publication") or {}).get("ref")
+    require(isinstance(ref, str) and PUBLISHED_IMAGE.fullmatch(ref) is not None,
+            f"catalog target {key} publication.ref {ref!r} is not a ghcr.io/tuna-os image")
+    return ref
 
 
 def pinned_harness_revision(workflow_text: str) -> str:
@@ -140,8 +159,10 @@ def validate_mode(mode: str, frag, image: str, image_digest: str) -> None:
                 f"modes.{mode}.{key} must be a non-negative integer")
 
 
-def validate_receipt(receipt: dict) -> None:
-    """Every validity rule of BrowserIsoQualificationReceipt/v1 (the consumer enforces the same)."""
+def validate_receipt(receipt: dict, catalog: dict | None = None) -> None:
+    """Every validity rule of BrowserIsoQualificationReceipt/v1 (the consumer enforces the same).
+
+    catalog: the snapshot naming each target's publication (default: the committed one)."""
     require(set(receipt) == {"schema", "qualification", "qualifiedAt", "target", "iso", "producer",
                              "harness", "inputs", "modes"}, "receipt has missing or extra top-level fields")
     require(receipt["schema"] == SCHEMA and receipt["qualification"] == QUALIFICATION,
@@ -153,8 +174,8 @@ def validate_receipt(receipt: dict) -> None:
     require(NAME.fullmatch(target["variant"]) is not None and
             re.fullmatch(r"[a-z0-9]+(?:[.-][a-z0-9]+)*", target["flavor"]) is not None,
             "target variant/flavor are not registry name components")
-    require(target["image"] == f"ghcr.io/tuna-os/{target['variant']}:{target['flavor']}",
-            "target.image must be ghcr.io/tuna-os/<variant>:<flavor>")
+    image = published_image(target["variant"], target["flavor"], catalog)
+    require(target["image"] == image, f"target.image must be the published image {image}")
     image_digest = digest(target["imageDigest"], "target.imageDigest")
     iso = receipt["iso"]
     digest(iso["sha256"], "iso.sha256")
@@ -186,7 +207,8 @@ def validate_receipt(receipt: dict) -> None:
 
 def build_receipt(*, harness_output: Path, binding: dict, workflow_text: str, slug: str,
                   install_mode: str, diagnostic_unqualified: str, environ: dict,
-                  qualified_at: str, harness_checkout_revision: str | None = None) -> dict:
+                  qualified_at: str, harness_checkout_revision: str | None = None,
+                  catalog: dict | None = None) -> dict:
     require(diagnostic_unqualified == "false",
             "diagnostic_unqualified=true is never a qualification; no receipt for a diagnostic run")
     require(install_mode == "both",
@@ -237,7 +259,7 @@ def build_receipt(*, harness_output: Path, binding: dict, workflow_text: str, sl
         "qualification": QUALIFICATION,
         "qualifiedAt": qualified_at,
         "target": {"variant": variant, "flavor": flavor, "platform": PLATFORM,
-                   "image": f"ghcr.io/tuna-os/{variant}:{flavor}",
+                   "image": published_image(variant, flavor, catalog),
                    "imageDigest": identities.get("source")},
         "iso": {"sha256": iso.get("sha256"), "sizeBytes": iso.get("sizeBytes")},
         "producer": {"repository": PRODUCER_REPOSITORY, "workflow": WORKFLOW_PATH, "ref": MAIN_REF,
@@ -247,7 +269,7 @@ def build_receipt(*, harness_output: Path, binding: dict, workflow_text: str, sl
         "inputs": {key: identities.get(key) for key in ("source", "overlay", "installer", "engine")},
         "modes": modes,
     }
-    validate_receipt(receipt)
+    validate_receipt(receipt, catalog)
     return receipt
 
 
@@ -257,6 +279,8 @@ def main(argv=None) -> int:
     parser.add_argument("--binding", required=True, help="same-byte-guest-test-binding-<slug>.json")
     parser.add_argument("--workflow", default=WORKFLOW_PATH, help="ci.yml carrying the pinned harness ref")
     parser.add_argument("--harness-checkout", help="checked-out harness; its HEAD must equal the pin")
+    parser.add_argument("--catalog", default=str(CATALOG_PATH),
+                        help="catalog snapshot naming each target's published image")
     parser.add_argument("--slug", required=True)
     parser.add_argument("--install-mode", required=True)
     parser.add_argument("--diagnostic-unqualified", required=True)
@@ -275,6 +299,7 @@ def main(argv=None) -> int:
             qualified_at=datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
             harness_checkout_revision=(checkout_revision(Path(args.harness_checkout))
                                        if args.harness_checkout else None),
+            catalog=json_object(Path(args.catalog), "catalog snapshot"),
         )
     except (ReceiptError, KeyError, TypeError) as exc:
         print(f"qualification receipt refused: {exc}", file=sys.stderr)
