@@ -218,6 +218,30 @@ def is_erofs(payload: str | Path) -> bool:
     return len(head) == 4 and struct.unpack("<I", head)[0] == EROFS_MAGIC
 
 
+# ISO inventories also list *.img files that are not live roots: the El Torito
+# ESP image (FAT) and the initramfs (cpio, usually compressed). They cannot hold
+# a mountable live filesystem, so a recognised one is recorded and skipped.
+# Anything else that is neither SquashFS nor EROFS stays unreadable and fatal,
+# so a junk payload still cannot sit beside a valid one.
+INITRAMFS_MAGICS = {
+    b"070701": "cpio", b"070702": "cpio", b"\x1f\x8b": "gzip", b"\x28\xb5\x2f\xfd": "zstd",
+    b"\xfd7zXZ\x00": "xz", b"\x04\x22\x4d\x18": "lz4", b"BZh": "bzip2",
+}
+
+
+def boot_image_kind(payload: str | Path) -> str | None:
+    """'fat' for an ESP image, a compression/cpio name for an initramfs, else None."""
+    with open(payload, "rb") as stream:
+        head = stream.read(512)
+    if len(head) == 512 and head[510:512] == b"\x55\xaa" and (
+            head[54:57] == b"FAT" or head[82:85] == b"FAT"):
+        return "fat"
+    for magic, kind in INITRAMFS_MAGICS.items():
+        if head.startswith(magic):
+            return kind
+    return None
+
+
 def erofs_cat(payload: str | Path, member: str) -> bytes | None:
     """Return one regular file from an uncompressed EROFS image, or None if absent.
 
@@ -420,6 +444,11 @@ def extract_media_receipts(
             record["error"] = "payload is not a regular file in the private extraction directory"
             raise InputError("ISO extractor returned a non-regular payload")
         record["sizeBytes"] = path.stat().st_size
+        with open(path, "rb") as stream:
+            record["headHex"] = stream.read(16).hex()
+        if not is_erofs(path) and (kind := boot_image_kind(path)):
+            record["filesystem"] = {"status": "boot-image", "kind": kind}
+            continue
         reader = read_erofs_receipts if is_erofs(path) else read_squashfs_receipts
         if not reader(path, record, found):
             unreadable.append(path.name)
