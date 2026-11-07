@@ -1,0 +1,236 @@
+# Harness-iteration path for the strict qualification pipeline: test an ISO that
+# an earlier ci.yml dispatch ALREADY built, round-tripped and retained, under the
+# harness pin written below. Nothing is rebuilt.
+#
+# Why it exists: of 53 full-matrix cells last week, 44 were a retry of the same
+# edition within 48 h of a previous cell, and 35 of 41 strict guest steps failed.
+# Every retry repeated the ~35 min browser build, the ISO split and the 10 GB
+# upload (~38 min) although only the harness (a pin bump, an OCR threshold, a
+# click target) had changed. A retry here costs download (~7) + prepare (~2.5) +
+# the guest step, and the guest step can first be pre-checked in seconds with
+# `just strict-replay` against the failed run's diag artifact.
+#
+# This can never yield a qualification: it is a separate workflow from ci.yml, and
+# scripts/build-qualification-receipt.py (run only by ci.yml) requires the
+# producer run to be the run that tested the ISO. No receipt step exists here.
+#
+# Pre-requisite: the producing dispatch used retain_iso_artifact (3-day default
+# retention) and its browser-evidence artifact (90 days) still exists.
+name: Strict reuse
+
+permissions:
+  contents: read
+  actions: read
+
+on:
+  workflow_dispatch:
+    inputs:
+      reuse_iso_run_id:
+        description: "ci.yml dispatch run that built and retained the ISO (iso-<slug>-run<id>-a<attempt>)"
+        type: string
+        required: true
+      reuse_iso_attempt:
+        description: "Run attempt of that run that produced the artifact"
+        type: string
+        default: "1"
+      only:
+        description: "The ONE edition slug that run built (e.g. skipjack-gnome)"
+        type: string
+        required: true
+      strict_install_mode:
+        description: "plain, luks (needs diagnostic_unqualified=true) or both"
+        type: choice
+        options:
+          - plain
+          - luks
+          - both
+        default: plain
+      diagnostic_unqualified:
+        description: "Must match the producing run's setting"
+        type: boolean
+        default: false
+
+concurrency:
+  group: strict-reuse-${{ github.run_id }}
+  cancel-in-progress: false
+
+jobs:
+  plan:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      editions: ${{ steps.pick.outputs.editions }}
+    steps:
+      - uses: actions/checkout@v7
+      - name: install just without apt
+        uses: extractions/setup-just@53165ef7e734c5c07cb06b3c8e7b647c5aa16db3 # v4
+      - id: pick
+        env:
+          ONLY: ${{ github.event.inputs.only }}
+          RUN_FULL: "true"
+          BENCHMARK: "false"
+          PAIR: "false"
+          KEEP_ISO: "false"
+          RETAIN_CANDIDATE: "false"
+          RETAIN_ISO_ARTIFACT: "true"
+          RETAIN_ISO_ARTIFACT_DAYS: "3"
+          STRICT_ROUNDTRIP_TEST: "true"
+          STRICT_INSTALL_MODE: ${{ github.event.inputs.strict_install_mode }}
+          DIAGNOSTIC_UNQUALIFIED: ${{ github.event.inputs.diagnostic_unqualified }}
+        run: just full-plan >> "$GITHUB_OUTPUT"
+
+  strict-reuse:
+    needs: plan
+    runs-on: ubuntu-24.04
+    # 30 download, 30 verify, 25 prepare, 120 guest (both) plus setup and uploads.
+    timeout-minutes: 240
+    strategy:
+      fail-fast: false
+      matrix:
+        edition: ${{ fromJSON(needs.plan.outputs.editions) }}
+    env:
+      SLUG: ${{ matrix.edition.slug }}
+      PRODUCER_RUN: ${{ github.event.inputs.reuse_iso_run_id }}
+      PRODUCER_ATTEMPT: ${{ github.event.inputs.reuse_iso_attempt }}
+    steps:
+      - uses: actions/checkout@v7
+        timeout-minutes: 5
+
+      - name: install pinned just without apt
+        uses: extractions/setup-just@53165ef7e734c5c07cb06b3c8e7b647c5aa16db3 # v4
+        timeout-minutes: 5
+
+      - name: resolve the producing run and its ISO artifact
+        id: producer
+        timeout-minutes: 5
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          [[ "$PRODUCER_RUN" =~ ^[0-9]+$ && "$PRODUCER_ATTEMPT" =~ ^[0-9]+$ ]] || { echo "::error::reuse_iso_run_id and reuse_iso_attempt must be numbers"; exit 1; }
+          run_json="$(gh api "repos/${GITHUB_REPOSITORY}/actions/runs/${PRODUCER_RUN}")"
+          [ "$(jq -r .path <<<"$run_json")" = ".github/workflows/ci.yml" ] || { echo "::error::run ${PRODUCER_RUN} is not a ci.yml run of this repository"; exit 1; }
+          name="iso-${SLUG}-run${PRODUCER_RUN}-a${PRODUCER_ATTEMPT}"
+          ids="$(gh api --paginate "repos/${GITHUB_REPOSITORY}/actions/runs/${PRODUCER_RUN}/artifacts" \
+            --jq ".artifacts[] | select(.name == \"${name}\" and (.expired | not)) | .id")"
+          id="$(head -n1 <<<"$ids")"
+          [ -n "$id" ] || { echo "::error::artifact ${name} not found or expired on run ${PRODUCER_RUN}"; exit 1; }
+          {
+            echo "name=${name}"
+            echo "id=${id}"
+            echo "sha=$(jq -r .head_sha <<<"$run_json")"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: download the producer's ISO chunks
+        timeout-minutes: 30
+        uses: actions/download-artifact@v8
+        with:
+          name: ${{ steps.producer.outputs.name }}
+          path: ${{ runner.temp }}/iso-roundtrip
+          repository: ${{ github.repository }}
+          run-id: ${{ github.event.inputs.reuse_iso_run_id }}
+          github-token: ${{ github.token }}
+
+      - name: download the producer's browser evidence (ISO hash, measurements)
+        timeout-minutes: 5
+        uses: actions/download-artifact@v8
+        with:
+          name: browser-evidence-${{ matrix.edition.slug }}-run${{ github.event.inputs.reuse_iso_run_id }}-a${{ github.event.inputs.reuse_iso_attempt }}
+          path: e2e/test-results
+          repository: ${{ github.repository }}
+          run-id: ${{ github.event.inputs.reuse_iso_run_id }}
+          github-token: ${{ github.token }}
+
+      # The harness revision is read from ci.yml's own pinned checkout, so a pin
+      # bump there moves this workflow with it (nothing to keep in step by hand).
+      - name: read the strict harness pin from ci.yml
+        id: pin
+        timeout-minutes: 2
+        run: |
+          set -euo pipefail
+          commit="$(python3 - <<'PY'
+          import importlib.util
+          spec = importlib.util.spec_from_file_location('bqr', 'scripts/build-qualification-receipt.py')
+          module = importlib.util.module_from_spec(spec)
+          spec.loader.exec_module(module)
+          print(module.pinned_harness_revision(open('.github/workflows/ci.yml').read()))
+          PY
+          )"
+          echo "commit=${commit}" >> "$GITHUB_OUTPUT"
+
+      - name: checkout current tunaOS strict harness (pinned)
+        uses: actions/checkout@v7
+        timeout-minutes: 5
+        with:
+          repository: tuna-os/tunaOS
+          ref: ${{ steps.pin.outputs.commit }}
+          path: tunaos-e2e-current
+
+      - name: verify ISO artifact round trip
+        id: iso-roundtrip
+        timeout-minutes: 30
+        env:
+          ARTIFACT: ${{ steps.producer.outputs.name }}
+          ARTIFACT_ID: ${{ steps.producer.outputs.id }}
+          STRICT_ROUNDTRIP_TEST: "true"
+          DIAGNOSTIC_UNQUALIFIED: ${{ github.event.inputs.diagnostic_unqualified }}
+          RETAIN_ISO_ARTIFACT_DAYS: "3"
+        run: |
+          ISO_SHA256="$(jq -r .iso.sha256 "e2e/test-results/build-measurements-qual-evidence-${SLUG}-s1.json")" \
+            just iso-artifact-verify
+
+      - name: prepare strict inputs from round-tripped media receipts
+        id: same-byte-inputs
+        timeout-minutes: 25
+        env:
+          EDITION_REF: ${{ matrix.edition.ref }}
+          PLATFORM: ${{ matrix.edition.platform }}
+          ARTIFACT_NAME: ${{ steps.producer.outputs.name }}
+          ARTIFACT_ID: ${{ steps.producer.outputs.id }}
+          REPOSITORY: ${{ github.repository }}
+          RUN_ID: ${{ github.event.inputs.reuse_iso_run_id }}
+          RUN_ATTEMPT: ${{ github.event.inputs.reuse_iso_attempt }}
+          SOURCE_SHA: ${{ steps.producer.outputs.sha }}
+          STRICT_INSTALL_MODE: ${{ github.event.inputs.strict_install_mode }}
+          DIAGNOSTIC_UNQUALIFIED: ${{ github.event.inputs.diagnostic_unqualified }}
+        run: just full-strict-inputs
+
+      - name: verify the retained ISO under the current strict harness (no rebuild)
+        id: strict-guest
+        timeout-minutes: ${{ github.event.inputs.strict_install_mode == 'both' && 120 || 60 }}
+        env:
+          STRICT_INSTALL_MODE: ${{ github.event.inputs.strict_install_mode }}
+          DIAGNOSTIC_UNQUALIFIED: ${{ github.event.inputs.diagnostic_unqualified }}
+        run: just full-guest-verify-strict
+
+      - name: label diagnostic output and make guest harness output readable
+        if: always()
+        timeout-minutes: 10
+        env:
+          STRICT_ROUNDTRIP_TEST: "true"
+          DIAGNOSTIC_UNQUALIFIED: ${{ github.event.inputs.diagnostic_unqualified }}
+        run: just full-label-output
+
+      - name: upload diagnostics
+        if: always()
+        timeout-minutes: 10
+        uses: actions/upload-artifact@v7
+        with:
+          name: reuse-${{ matrix.edition.slug }}-run${{ github.run_id }}-a${{ github.run_attempt }}-diag
+          path: |
+            e2e/test-results/
+            luks-verify-*/
+            !luks-verify-*/*.qcow2
+            !luks-verify-*/swtpm/
+            !luks-verify-*/vsock-ssh-key*
+          if-no-files-found: ignore
+
+      - name: cleanup (this cell's ISOs and harness output)
+        if: always()
+        timeout-minutes: 3
+        run: |
+          if command -v just >/dev/null; then
+            just ci-cleanup
+          else
+            echo "just was never installed in this job; nothing was created"
+          fi
