@@ -12,6 +12,7 @@
   { "ref": "marlin:gnome", "slug": "marlin-gnome", "base": "Arch Linux", "platform": "linux/amd64", "qualify": true },
   { "ref": "bonito:gnome", "slug": "bonito-gnome", "base": "Fedora 44", "platform": "linux/amd64", "qualify": true },
   { "ref": "bonito-rawhide:gnome", "slug": "bonito-rawhide-gnome", "base": "Fedora Rawhide", "platform": "linux/amd64", "qualify": true },
+  { "ref": "gurnard:pantheon", "slug": "gurnard-pantheon", "base": "Ubuntu 24.04 (Pantheon)", "platform": "linux/amd64", "qualify": true },
   { "ref": "skipjack:gnome-nvidia", "slug": "skipjack-gnome-nvidia", "base": "CentOS Stream 10", "platform": "linux/amd64", "qualify": true },
   { "ref": "yellowfin:gnome-nvidia", "slug": "yellowfin-gnome-nvidia", "base": "AlmaLinux Kitten 10", "platform": "linux/amd64", "qualify": true },
   { "ref": "albacore:gnome-nvidia", "slug": "albacore-gnome-nvidia", "base": "AlmaLinux 10", "platform": "linux/amd64", "qualify": true },
