@@ -1987,7 +1987,11 @@ function refreshConfiguredChoices() {
     const entry = findCatalogEntry(parsed.variant, parsed.flavor, currentPlatform());
     // Explicit platform choices may be unqualified/unscheduled but still have a
     // catalog record and exact local fallback. Automatic defaults still need admission.
-    if (!entry || (!selectionWasExplicit && !(entry.scheduled || entry.availability?.available)) || !VARIANTS.some(v => v.id === parsed.variant && v.des.includes(parsed.flavor))) {
+    // An explicit ref also keeps a catalog flavor that is not a configured
+    // desktop (gnome-hwe, gnome-nvidia): v1 desktops list only base DEs, and
+    // clearing the field mid-inspect reads as "the selected image has changed".
+    const offered = VARIANTS.some(v => v.id === parsed.variant && v.des.includes(parsed.flavor));
+    if (!entry || (!selectionWasExplicit && !(entry.scheduled || entry.availability?.available)) || (!selectionWasExplicit && !offered)) {
       $("image").value = "";
     }
   }
