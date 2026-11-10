@@ -327,6 +327,15 @@ gh workflow run ci.yml -f run_full=true -f only=skipjack-gnome -f diagnostic_unq
   route. The committed snapshot does not change. The evidence records the old
   and new values in `diagnosticUnqualified.catalogPins`. If the build had no
   digests, the media would have no embedded offline layout.
+- Some targets also pin a live overlay: skipjack:gnome has done so since the
+  2026-11-07 snapshot. An overlay is bound to one base. Run 42894083700
+  refreshed only the image (`80f53cbc` to `5edcb582`), and the engine refused
+  the pair: `liveOverlayBaseDigest ... does not match platformManifestDigest`.
+  For such a target, the refresh now also reads
+  `live-overlay:<variant>-<flavor>`. It takes the platform manifest and the
+  `org.tunaos.live-overlay.base-digest` annotation. If that base is not the
+  live image, the cell fails before the build starts and names the stale
+  overlay.
 - If the gate refuses a target, the `@full` cell now fails in seconds. It prints
   the gate reason and writes it to the job summary. Before, the cell waited for
   the inspect watchdog of five minutes.
