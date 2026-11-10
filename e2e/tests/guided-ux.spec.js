@@ -15,7 +15,7 @@ async function setup(page) {
   await page.route('**/wasm_exec.js', r => r.fulfill({ body: '' }));
   await page.route('**/tbox.wasm', r => r.abort());
   await page.route('**/flathub/search', r => r.fulfill({ json: { hits: [firefox] } }));
-  await page.goto('/');
+  await page.goto('/?customize=1');
 }
 async function screenshot(page, name) {
   const dir = path.join(__dirname, '..', 'screenshots');

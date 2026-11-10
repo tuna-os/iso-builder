@@ -51,7 +51,7 @@ function applyBuilderBranding() {
     if (!url) continue;
     const a=document.createElement("a"); a.textContent=name; a.href=url; nav.appendChild(a);
   }
-  document.querySelector("h1").textContent = config.presentation.headline;
+  document.querySelector("#builder-headline").textContent = config.presentation.headline;
   document.querySelector("#builder-intro").textContent = config.presentation.intro;
   const guide=document.querySelector("#installation-guide");
   guide.href=brand.documentation_url || brand.homepage_url;
@@ -1565,7 +1565,9 @@ async function buildDdi(ch) {
   }
 }
 
-async function build() {
+// presetSink: a sink the caller opened earlier (quick-start.js asks for the
+// save location while the click still counts as a user gesture).
+async function build(presetSink = null) {
   if (BUILDER_CONFIG.preview_only) return;
   if (GUIDED && !manualImageMode && !validGuidedSelection()) { log("Choose and check an available catalog image before building."); return; }
   if (selectedDdi) return buildDdi(selectedDdi);
@@ -1610,7 +1612,7 @@ async function build() {
       log("initramfs: auto (tbox overlay appended to the image's own initramfs)");
     }
     const name = req.options.outputFilename || `${BUILDER_CONFIG.output.filename_prefix}-${($("image").value.split("/").pop() || "image").replace(/[:]/g, "-")}.iso`;
-    s = await isoSink(name);
+    s = presetSink || await isoSink(name);
     if (!s) {
       op.state = "ready";
       log("Build cancelled by user.");
@@ -1891,6 +1893,7 @@ function refreshGuidedPicker() {
       if(changed || previous!==$("image").value) invalidateOperation("guided-selection-changed");
       syncInspectAction(); updateShare();
     },qualification:entry=>({text:catalogQualification(entry).status==="qualified"?"Browser build verified":"Browser build not yet verified"})});
+    globalThis.tboxQuickRefresh?.();
   } catch(error) {
     guidedError=error; guidedModel=null; guidedSelectionIdentity=null; $("image").value="";
     invalidateOperation("guided-catalog-unavailable");

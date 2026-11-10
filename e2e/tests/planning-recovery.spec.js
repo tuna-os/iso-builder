@@ -1,7 +1,7 @@
 const {test,expect}=require('@playwright/test');
 test.beforeEach(async({page})=>{
  await page.route('**/wasm_exec.js',r=>r.fulfill({body:''}));await page.route('**/tbox.wasm',r=>r.abort());await page.route('https://**/*',r=>r.abort());
- await page.goto('/');await page.locator('#planning-recovery > summary').click();
+ await page.goto('/?customize=1');await page.locator('#planning-recovery > summary').click();
 });
 test('refresh recovery restores supported choices only after explicit action',async({page})=>{
  await page.getByRole('button',{name:'Help me choose / browse all setups'}).click();await page.getByRole('radio',{name:/KDE/}).check();

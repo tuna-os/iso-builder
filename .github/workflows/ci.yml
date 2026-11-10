@@ -1137,6 +1137,15 @@ jobs:
           name: engine
           path: app/public/
 
+      # Prebuilt ISO links and TunaOS Media Writer releases for the one-click
+      # download view, read from their published sources now rather than
+      # committed (an unreadable source only removes that route).
+      - name: generate downloads.json
+        timeout-minutes: 3
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: python3 scripts/generate-downloads.py --out app/public/downloads.json
+
       - name: deploy app (iso.tunaos.org)
         uses: cloudflare/wrangler-action@v4
         with:

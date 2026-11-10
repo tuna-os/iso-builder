@@ -1,8 +1,37 @@
 # Browser quickstart
 
-Open [ISO Builder](https://iso.tunaos.org) to choose an image and check whether
-you can build it in your browser. The build runs on your computer and saves an
-ISO file. You must then write that file to a USB drive to make it bootable.
+## One-click download (the default page)
+
+[iso.tunaos.org](https://iso.tunaos.org) opens on one screen: pick a desktop,
+optionally change **Based on**, and press the one button. What the button does
+depends on evidence, not preference (`app/public/quick-start.js`):
+
+1. **Download ISO, built in your browser** — the catalog carries a complete
+   browser qualification receipt for that image *and* this browser can build
+   it (WebAssembly, private browser storage, at least 4 GB device memory when
+   reported, and the free storage the build needs: 9.5 GB, or twice that
+   without the save dialog). The save dialog opens first; the build then runs
+   in the tab with the desktop's default apps.
+2. **Download ISO, ready-made** — otherwise, when download.tunaos.org publishes
+   an ISO for that image.
+3. **Get TunaOS Media Writer for <your OS>** — otherwise, when the native app
+   (`desktop/`) has a release: it builds the image on your computer and writes
+   the USB stick.
+4. **Build on your computer** — the full builder's local instructions.
+
+Prebuilt links and app releases come from `downloads.json`, generated at deploy
+time by `scripts/generate-downloads.py` from the published ISO index and the
+GitHub releases; when a source is unreadable its route disappears instead of
+linking to a missing file. Only standard, generic, x86-64 images appear here.
+**Customize apps and settings** (or any URL parameter, such as `?customize=1`
+or a share link) opens the full builder described below, on the same image.
+
+## The full builder
+
+Open the full builder ([iso.tunaos.org/?customize=1](https://iso.tunaos.org/?customize=1))
+to choose any image and check whether you can build it in your browser. The
+build runs on your computer and saves an ISO file. You must then write that
+file to a USB drive to make it bootable.
 
 ## Choose and check an image
 

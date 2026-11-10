@@ -37,7 +37,7 @@ const { removeSavePicker, buildFailedSignature } = require("./full-harness");
 
 fixtureTest.describe("full-build save path", () => {
   fixtureTest("headless Chromium rejects the save picker at once; the harness removes it", async ({ page }) => {
-    await page.goto("/");
+    await page.goto("/?customize=1");
     const before = await page.evaluate(async () => {
       if (typeof window.showSaveFilePicker !== "function") return { defined: false };
       try { await window.showSaveFilePicker(); return { defined: true, outcome: "resolved" }; }

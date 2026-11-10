@@ -17,3 +17,7 @@ native/e2e/screenshots/
 # under app/ so a renamed or relocated build cannot slip in either.
 app/**/*.wasm
 app/public/wasm_exec.js
+
+# Generated at deploy time by scripts/generate-downloads.py (prebuilt ISO and
+# Media Writer links for the one-click download view).
+app/public/downloads.json

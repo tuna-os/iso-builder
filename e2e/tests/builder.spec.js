@@ -94,7 +94,7 @@ async function inspectPreset(page) {
 
 test.describe("iso builder", () => {
   test("page loads with the edition picker @walkthrough", async ({ page }) => {
-    await page.goto("/");
+    await page.goto("/?customize=1");
     await expect(page).toHaveTitle(/TunaOS ISO Builder/);
     // Primary path is the picker: a base-variant dropdown + desktop chips.
     await expect(page.locator("#variant")).toBeHidden();
@@ -103,7 +103,7 @@ test.describe("iso builder", () => {
   });
 
   test("picking an edition fills the image ref (no typing)", async ({ page }) => {
-    await page.goto("/");
+    await page.goto("/?customize=1");
     // Selecting a base re-renders its desktop chips; clicking one sets the
     // image ref as <variant>:<desktop> — the zero-typing default flow.
     await page.locator("#base-options > summary").click();
@@ -365,7 +365,7 @@ test.describe("iso builder", () => {
   });
 
   test("inspect detects the image and fills flatpak defaults @walkthrough", async ({ page }) => {
-    await page.goto("/");
+    await page.goto("/?customize=1");
     // Published catalog inspection is lightweight; full unpack belongs to @full.
     await page.getByText("Use a custom container image").click();
     await page.locator("#image").fill("sailfin:gnome");

@@ -7,7 +7,7 @@ test.beforeEach(async({page})=>{
  await page.route('https://**/*',r=>r.abort());
 });
 test('maintained starting point is honest and browsing preserves a single catalog',async({page})=>{
- await page.goto('/');
+ await page.goto('/?customize=1');
  await expect(page.locator('#experience')).toHaveValue('tunaos');
  await expect(page.locator('#guided-start')).toBeVisible();
  await expect(page.locator('#guided-picker')).toContainText('Browser build not yet verified');
@@ -36,7 +36,7 @@ test('review is reversible and does not start an engine',async({page})=>{
  await expect(page.locator('#image')).toHaveValue(before);
 });
 test('unknown progress stays indeterminate',async({page})=>{
- await page.goto('/');await page.evaluate(()=>window.tboxOnProgress('resolve',0,0));
+ await page.goto('/?customize=1');await page.evaluate(()=>window.tboxOnProgress('resolve',0,0));
  await expect(page.locator('#bar')).not.toHaveAttribute('value');
  await page.evaluate(()=>window.tboxOnProgress('unpack',2,8));
  await expect(page.locator('#bar')).toHaveAttribute('value','2');
@@ -44,7 +44,7 @@ test('unknown progress stays indeterminate',async({page})=>{
 });
 test('desktop and enlarged 320px journey fit without horizontal scroll',async({page})=>{
  fs.mkdirSync('/tmp/iso-ux-screens',{recursive:true});
- await page.goto('/');await page.screenshot({path:'/tmp/iso-ux-screens/p1-desktop.png',fullPage:true});
+ await page.goto('/?customize=1');await page.screenshot({path:'/tmp/iso-ux-screens/p1-desktop.png',fullPage:true});
  await page.setViewportSize({width:320,height:800});
  await page.addStyleTag({content:'html { font-size: 125%; }'});
  await expect(page.locator('.mobile-planning')).toBeVisible();

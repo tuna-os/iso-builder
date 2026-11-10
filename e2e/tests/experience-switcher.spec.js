@@ -13,7 +13,7 @@ test('switching starts a clean preview setup and drops all prior URL overrides',
  await page.goBack();await expect(page).toHaveTitle('Bluefin ISO Builder');await expect(page.locator('#image')).toHaveValue('');await expect(page.locator('#buildcard')).toBeHidden();
 });
 test('busy operation disables switching and handler refuses forged change',async({page})=>{
- await page.goto('/');await page.evaluate(()=>window.setOperationBusy(true,'inspect'));await expect(page.locator('#experience')).toBeDisabled();
+ await page.goto('/?customize=1');await page.evaluate(()=>window.setOperationBusy(true,'inspect'));await expect(page.locator('#experience')).toBeDisabled();
  await page.evaluate(()=>{const e=document.querySelector('#experience');e.value='bluefin';e.dispatchEvent(new Event('change'));});await expect(page.locator('#experience')).toHaveValue('tunaos');await expect(page).toHaveTitle('TunaOS ISO Builder');
  await page.evaluate(()=>window.setOperationBusy(false));await expect(page.locator('#experience')).toBeEnabled();
 });
