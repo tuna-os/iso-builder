@@ -25,7 +25,9 @@ The links to ready-made ISOs and app releases come from `downloads.json`.
 The deploy job makes this file with `scripts/generate-downloads.py`. The
 script reads the published ISO index and the GitHub releases. If the script
 cannot read a source, the page does not show that route. Thus the page never
-links to a missing file. This page shows only standard, generic x86-64 images.
+links to a missing file.
+
+This page shows only standard, generic x86-64 images.
 **Customize apps and settings** (or any URL parameter, such as `?customize=1`
 or a share link) opens the full builder described below, on the same image.
 
