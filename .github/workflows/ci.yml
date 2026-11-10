@@ -95,6 +95,13 @@ on:
         description: "Run three cold/warm @full pairs per cell (warm reuses the cold profile and OPFS layer cache; fails if warm fetches any complete layer blob). Requires run_full; no benchmark, keep_iso, retain_* or strict_roundtrip_test."
         type: boolean
         default: false
+      runner:
+        description: "Where full-matrix cells run. github: GitHub-hosted ubuntu-24.04 (software rendering only, so only GNOME can be qualified). karnataka-gpu: the self-hosted tuna-iso-gpu scale set on karnataka, with KVM and a real DRM render node, for Pantheon, niri, KDE, XFCE and COSMIC. A preflight fails the cell closed if the host lacks either."
+        type: choice
+        options:
+          - github
+          - karnataka-gpu
+        default: github
       diagnostic_unqualified:
         description: "DIAGNOSTIC ONLY: let the named only= cell build a target the catalog gate marks unqualified. Result is labelled diagnostic-unqualified, never a qualification. Requires only=; refused with keep_iso."
         type: boolean
@@ -557,7 +564,13 @@ jobs:
   # ISO, so this is not a per-push gate.
   full-matrix:
     needs: [full-plan, wasm]
-    runs-on: ubuntu-24.04
+    # karnataka-gpu routes the cell to the self-hosted ARC scale set
+    # tuna-iso-gpu (runner group must allow tuna-os/iso-builder). Smithay
+    # compositors and Pantheon paint nothing under software rendering on a
+    # hosted runner; tunaOS iso-e2e.sh switches to virtio-vga-gl +
+    # egl-headless on its own once a render node exists. Pull requests and
+    # pushes never set inputs, so they always stay on GitHub-hosted runners.
+    runs-on: ${{ github.event.inputs.runner == 'karnataka-gpu' && 'tuna-iso-gpu' || 'ubuntu-24.04' }}
     # Widened from the workflow default for one purpose: a both-mode strict
     # run on main attests its qualification receipt with
     # actions/attest-build-provenance, which needs an OIDC token (id-token)
@@ -595,6 +608,11 @@ jobs:
     steps:
       - uses: actions/checkout@v7
         timeout-minutes: 5
+
+      - name: preflight GPU host (karnataka-gpu only)
+        if: github.event.inputs.runner == 'karnataka-gpu'
+        timeout-minutes: 15
+        run: just gpu-host-preflight
 
       - name: preflight opt-in candidate retention
         if: github.event.inputs.retain_candidate == 'true'
@@ -677,7 +695,9 @@ jobs:
         timeout-minutes: 20
         env:
           CACHE_HIT: ${{ steps.playwright-cache.outputs.cache-hit }}
-          PREINSTALLED_BROWSER_DEPS: "true"
+          # The hosted image ships Chromium's system libraries; the karnataka
+          # runner image does not, so it takes the normal --with-deps route.
+          PREINSTALLED_BROWSER_DEPS: ${{ github.event.inputs.runner == 'karnataka-gpu' && '' || 'true' }}
         run: just e2e-install
 
       - name: build ${{ matrix.edition.ref }} (${{ matrix.edition.base }})

@@ -141,14 +141,15 @@ def test_normal_browser_setup_keeps_system_dependency_install(tmp_path, cached):
 def test_full_runner_uses_existing_pinned_just_and_preserves_setup_cap():
     jobs = yaml.safe_load((ROOT / '.github/workflows/ci.yml').read_text())['jobs']
     full = jobs['full-matrix']
-    assert full['runs-on'] == 'ubuntu-24.04'
+    # Hosted by default; only a karnataka-gpu dispatch selects the self-hosted scale set.
+    assert full['runs-on'] == "${{ github.event.inputs.runner == 'karnataka-gpu' && 'tuna-iso-gpu' || 'ubuntu-24.04' }}"
     steps = full['steps']
     tool = next(step for step in steps if step.get('name') == 'install pinned just without apt')
     assert tool['uses'] == 'extractions/setup-just@53165ef7e734c5c07cb06b3c8e7b647c5aa16db3'
     setup = next(step for step in steps if step.get('name') == 'install deps + chromium')
     assert setup['timeout-minutes'] == 20
     assert setup['run'] == 'just e2e-install'
-    assert setup['env']['PREINSTALLED_BROWSER_DEPS'] == 'true'
+    assert setup['env']['PREINSTALLED_BROWSER_DEPS'] == "${{ github.event.inputs.runner == 'karnataka-gpu' && '' || 'true' }}"
     assert steps.index(tool) < steps.index(setup)
     assert all('PREINSTALLED_BROWSER_DEPS' not in step.get('env', {}) for step in jobs['e2e']['steps'])
 
@@ -413,3 +414,22 @@ def test_pair_retains_receipts_across_real_playwright_output_cleanup(tmp_path, f
         assert outcome == {'sample': n, 'exitCode': int(n == fail_at)}
     assert not (work / f'test-results/build-attempt-x-s{count + 1}.json').exists()
     assert not list(tmp_path.glob('*.iso'))
+
+
+def test_gpu_runner_input_defaults_to_hosted_and_preflights_only_on_karnataka():
+    wf = yaml.safe_load((ROOT / '.github/workflows/ci.yml').read_text())
+    on = wf.get('on', wf.get(True))
+    runner = on['workflow_dispatch']['inputs']['runner']
+    assert runner['type'] == 'choice' and runner['default'] == 'github'
+    assert runner['options'] == ['github', 'karnataka-gpu']
+    steps = wf['jobs']['full-matrix']['steps']
+    pre = next(step for step in steps if step.get('name') == 'preflight GPU host (karnataka-gpu only)')
+    assert pre['if'] == "github.event.inputs.runner == 'karnataka-gpu'"
+    assert pre['run'] == 'just gpu-host-preflight'
+    assert steps.index(pre) == 1, 'preflight must fail the cell before any build work'
+
+
+def test_kvm_udev_rule_is_skipped_when_kvm_is_already_accessible():
+    text = (ROOT / 'justfile').read_text()
+    assert text.count('if [ -r /dev/kvm ] && [ -w /dev/kvm ]; then') == 2
+    assert text.count('sudo udevadm control --reload-rules') == 2

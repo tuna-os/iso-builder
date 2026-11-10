@@ -220,10 +220,15 @@ full-guest-verify:
       imagemagick tesseract-ocr sshpass jq
 
     echo "Enabling KVM permissions..."
-    echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | \
-      sudo tee /etc/udev/rules.d/99-kvm4all.rules
-    sudo udevadm control --reload-rules
-    sudo udevadm trigger --name-match=kvm || true
+    # A self-hosted pod gets /dev/kvm from a device plugin and has no udev.
+    if [ -r /dev/kvm ] && [ -w /dev/kvm ]; then
+      echo "/dev/kvm already accessible; skipping udev rule"
+    else
+      echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | \
+        sudo tee /etc/udev/rules.d/99-kvm4all.rules
+      sudo udevadm control --reload-rules
+      sudo udevadm trigger --name-match=kvm || true
+    fi
 
     # Qualification targets run Task 11's strict offline-GUI
     # contract; upstream pipeline references keep the LUKS check.
@@ -369,10 +374,15 @@ full-guest-verify-strict:
       echo "::error::Verified round-trip ISO is missing: $ISO"
       exit 1
     fi
-    echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | \
-      sudo tee /etc/udev/rules.d/99-kvm4all.rules
-    sudo udevadm control --reload-rules
-    sudo udevadm trigger --name-match=kvm || true
+    # A self-hosted pod gets /dev/kvm from a device plugin and has no udev.
+    if [ -r /dev/kvm ] && [ -w /dev/kvm ]; then
+      echo "/dev/kvm already accessible; skipping udev rule"
+    else
+      echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | \
+        sudo tee /etc/udev/rules.d/99-kvm4all.rules
+      sudo udevadm control --reload-rules
+      sudo udevadm trigger --name-match=kvm || true
+    fi
     if [ "$DIAGNOSTIC_UNQUALIFIED" = "true" ]; then
       if [ "$STRICT_INSTALL_MODE" != "luks" ]; then
         echo "::error::Diagnostic strict testing requires LUKS"
@@ -506,3 +516,40 @@ full-validate-evidence:
     set -euo pipefail
     cd e2e
     python3 ../scripts/validate-qualification-evidence.py
+
+# Fail closed unless this host can give the strict guest real GL: KVM, a DRM
+# render node, and a QEMU with virtio-vga-gl and egl-headless. Without all of
+# them iso-e2e.sh silently falls back to software rendering and Pantheon,
+# niri, KDE, XFCE and COSMIC reproduce the black-installer failure of the
+# hosted runners. Env: TBOX_E2E_RENDERNODE (default /dev/dri/renderD128).
+gpu-host-preflight:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    node="${TBOX_E2E_RENDERNODE:-/dev/dri/renderD128}"
+    sudo apt-get update -qq
+    sudo apt-get install -y --no-install-recommends qemu-system-x86 qemu-utils
+    # Ubuntu ships the GL display and device modules separately since QEMU 8.
+    if apt-cache show qemu-system-modules-opengl >/dev/null 2>&1; then
+      sudo apt-get install -y --no-install-recommends qemu-system-modules-opengl
+    fi
+    fail=0
+    for dev in /dev/kvm "$node"; do
+      if sudo test -c "$dev"; then
+        echo "ok - $dev present"
+      else
+        echo "::error::$dev is missing on this runner"; fail=1
+      fi
+    done
+    if qemu-system-x86_64 -device help 2>/dev/null | grep -q virtio-vga-gl; then
+      echo "ok - qemu offers virtio-vga-gl"
+    else
+      echo "::error::qemu-system-x86_64 has no virtio-vga-gl device"; fail=1
+    fi
+    if qemu-system-x86_64 -display help 2>/dev/null | grep -q egl-headless; then
+      echo "ok - qemu offers egl-headless"
+    else
+      echo "::error::qemu-system-x86_64 has no egl-headless display"; fail=1
+    fi
+    df -h / "$RUNNER_TEMP" || true
+    free -g || true
+    exit "$fail"
