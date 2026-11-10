@@ -426,7 +426,9 @@ def test_gpu_runner_input_defaults_to_hosted_and_preflights_only_on_karnataka():
     pre = next(step for step in steps if step.get('name') == 'preflight GPU host (karnataka-gpu only)')
     assert pre['if'] == "github.event.inputs.runner == 'karnataka-gpu'"
     assert pre['run'] == 'just gpu-host-preflight'
-    assert steps.index(pre) == 1, 'preflight must fail the cell before any build work'
+    just = next(step for step in steps if step.get('name') == 'install pinned just without apt')
+    # The preflight is a just recipe, and the karnataka runner image has no just.
+    assert steps.index(just) == 1 and steps.index(pre) == 2, 'install just, then preflight before any build work'
 
 
 def test_kvm_udev_rule_is_skipped_when_kvm_is_already_accessible():
