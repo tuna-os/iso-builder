@@ -560,6 +560,11 @@ def validate_inputs(*, iso: str | Path, measurements: dict, browser_evidence: di
     observed = build.get("observedInputs") or {}
     measured_source = require_digest((observed.get("source") or {}).get("manifestDigest"),
                                      "observed source manifest")
+    # The config the verified source manifest names. bootc's composefs
+    # backend reports this, not the manifest digest, as the installed image.
+    measured_source_config = require_digest(
+        (((observed.get("source") or {}).get("config") or {}).get("descriptor") or {}).get("digest"),
+        "observed source config")
     overlay_result = observed.get("overlay") or {}
     require(overlay_result.get("status") == "applied" and overlay_result.get("layersApplied") is True,
             "browser engine did not observe an applied live overlay")
@@ -624,6 +629,7 @@ def validate_inputs(*, iso: str | Path, measurements: dict, browser_evidence: di
         # Explicitly clear inherited diagnostic context for normal observations.
         "TUNAOS_INSTALLED_BOOT_DIAGNOSTIC": "1" if diagnostic_unqualified else "0",
         "TUNAOS_QUAL_SOURCE_DIGEST": source["source"],
+        "TUNAOS_QUAL_SOURCE_CONFIG_DIGEST": measured_source_config,
         "TUNAOS_QUAL_SOURCE_REF": source["sourceRef"],
         "TUNAOS_QUAL_OVERLAY_DIGEST": source["overlay"],
         "TUNAOS_QUAL_INSTALLER_DIGEST": installer_digest,
