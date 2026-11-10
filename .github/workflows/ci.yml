@@ -898,6 +898,19 @@ jobs:
           DIAGNOSTIC_UNQUALIFIED: ${{ github.event.inputs.diagnostic_unqualified }}
         run: just full-guest-verify-strict
 
+      - name: "diag: print installer lines from guest serial.log"
+        if: ${{ always() && steps.strict-guest.outcome == 'failure' }}
+        timeout-minutes: 5
+        env:
+          SLUG: ${{ matrix.edition.slug }}
+        run: |
+          d="luks-verify-$SLUG"
+          for f in "$d"/serial.log "$d"/boot-diagnostics.txt "$d"/current-phase.txt; do
+            [ -f "$f" ] || continue
+            echo "===== $f ($(wc -c < "$f") bytes)"
+            grep -aniE 'install|bootc|ostree|composefs|traceback|error|fail|panic|segfault|denied|no space|oom' "$f" | grep -avE 'TUNAOS_LIVE_READY' | tail -250 || true
+          done
+
       - name: disk after build
         if: always()
         timeout-minutes: 5
