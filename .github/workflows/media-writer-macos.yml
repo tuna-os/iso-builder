@@ -49,6 +49,12 @@ on:
       AC_API_ISSUER_ID:
         required: false
 
+# Superseded pushes/PR updates cancel the older macOS run (10x minutes);
+# release tags never cancel.
+concurrency:
+  group: media-writer-macos-${{ github.event_name }}-${{ github.ref }}
+  cancel-in-progress: ${{ !startsWith(github.ref, 'refs/tags/') }}
+
 jobs:
   macos:
     runs-on: macos-latest

@@ -100,7 +100,7 @@ final class HelperClientTests: XCTestCase {
         let dir = try Fixture.temporaryDirectory()
         // No cancel file: only the signal can stop it.
         let run = Fixture.client(["FAKE_HELPER_DELAY": "0.3"])
-            .start(["build", "--target", "x", "--out", dir.appendingPathComponent("o.iso").path])
+            .start(["build", "--target", "x", "--out", dir.appendingPathComponent("o.iso").path]) { _ in }
         try await Task.sleep(nanoseconds: 500_000_000)
         run.cancel()
         let result = await run.result()
