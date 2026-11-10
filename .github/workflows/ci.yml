@@ -741,7 +741,7 @@ jobs:
         timeout-minutes: 5
         with:
           repository: tuna-os/tunaOS
-          ref: e45d7ce7ba813901f4ede76c49af1c4b4e4440d2
+          ref: 572e57527065af04e9edc3a7aa6e52621b75dfb4
           path: tunaos-e2e
       - name: checkout current tunaOS strict harness (pinned)
         if: github.event.inputs.strict_roundtrip_test == 'true'
@@ -749,7 +749,7 @@ jobs:
         timeout-minutes: 5
         with:
           repository: tuna-os/tunaOS
-          ref: e45d7ce7ba813901f4ede76c49af1c4b4e4440d2
+          ref: 572e57527065af04e9edc3a7aa6e52621b75dfb4
           path: tunaos-e2e-current
 
       - name: verify guest under QEMU (${{ matrix.edition.slug }})
@@ -909,6 +909,7 @@ jobs:
             sudo test -f "$f" || continue
             echo "===== $f ($(sudo stat -c %s "$f") bytes)"
             sudo grep -aniE 'install|bootc|ostree|composefs|traceback|error|fail|panic|segfault|denied|no space|oom|gdm|gnome-shell|mutter|session|drm|scanout|core.?dump' "$f" | grep -avE 'TUNAOS_LIVE_READY' | tail -400 || true
+            sudo awk '/TUNAOS_DIAG_JOURNAL_BEGIN/{on=1} on{print} /TUNAOS_DIAG_JOURNAL_END/{on=0}' "$f" | cut -c1-400 | tail -1200 || true
           done
 
       - name: disk after build
