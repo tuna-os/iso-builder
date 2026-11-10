@@ -761,7 +761,7 @@ jobs:
         timeout-minutes: 5
         with:
           repository: tuna-os/tunaOS
-          ref: 489efd637f460cf9826e8bfaa5b0a3ab4b55c973
+          ref: a3f473c1f05a3ecefb7d57bf2a5d80cc97c34ebf
           path: tunaos-e2e
       - name: checkout current tunaOS strict harness (pinned)
         if: github.event.inputs.strict_roundtrip_test == 'true'
@@ -769,7 +769,7 @@ jobs:
         timeout-minutes: 5
         with:
           repository: tuna-os/tunaOS
-          ref: 489efd637f460cf9826e8bfaa5b0a3ab4b55c973
+          ref: a3f473c1f05a3ecefb7d57bf2a5d80cc97c34ebf
           path: tunaos-e2e-current
 
       - name: verify guest under QEMU (${{ matrix.edition.slug }})
@@ -917,6 +917,43 @@ jobs:
           STRICT_INSTALL_MODE: ${{ github.event.inputs.strict_install_mode }}
           DIAGNOSTIC_UNQUALIFIED: ${{ github.event.inputs.diagnostic_unqualified }}
         run: just full-guest-verify-strict
+
+      - name: "diag: print installer lines from guest serial.log"
+        if: ${{ always() && steps.strict-guest.outcome == 'failure' }}
+        timeout-minutes: 5
+        env:
+          SLUG: ${{ matrix.edition.slug }}
+        run: |
+          d="luks-verify-$SLUG"
+          for f in "$d"/serial.log "$d"/installed-serial.log "$d"/boot-diagnostics.txt "$d"/current-phase.txt; do
+            sudo test -f "$f" || continue
+            echo "===== $f ($(sudo stat -c %s "$f") bytes)"
+            sudo grep -aniE 'install|bootc|ostree|composefs|traceback|error|fail|panic|segfault|denied|no space|oom|gdm|gnome-shell|mutter|session|drm|scanout|core.?dump' "$f" | grep -avE 'TUNAOS_LIVE_READY' | tail -400 || true
+          done
+
+      # Diagnostic only (never merge): dump the strict harness frames and
+      # evidence into the job log, so they can be read without the artifact.
+      - name: dump strict frames to log (diag)
+        if: ${{ always() && steps.strict-guest.outcome == 'failure' }}
+        timeout-minutes: 15
+        env:
+          SLUG: ${{ matrix.edition.slug }}
+        run: |
+          set +e
+          OUT="luks-verify-${SLUG}"
+          sudo test -d "$OUT" || { echo "no $OUT"; exit 0; }
+          sudo chmod -R a+rX "$OUT"
+          echo "=====TREE"; find "$OUT" -type f -printf '%TT %s %p\n' | sort | head -400
+          for f in $(find "$OUT" -type f \( -name '*.json' -o -name 'evidence*' -o -name '*.txt' \) -size -200k | sort); do
+            echo "=====FILE $f"; head -c 60000 "$f"; echo
+          done
+          n=0
+          for f in $(find "$OUT" -type f -name '*.png' -printf '%T@ %p\n' | sort -n | awk '{print $2}'); do
+            n=$((n+1)); [ "$n" -gt 160 ] && break
+            convert "$f" -quality 82 /tmp/frame.jpg 2>/dev/null || continue
+            echo "=====FRAME $f"; base64 -w0 /tmp/frame.jpg; echo
+          done
+          echo "=====END frames=$n"
 
       - name: disk after build
         if: always()
