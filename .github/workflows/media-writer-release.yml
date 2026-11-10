@@ -20,7 +20,7 @@ on:
         type: boolean
         default: true
       version:
-        description: "Version for a non-dry-run dispatch (X.Y.Z); the tag media-writer-vX.Y.Z must already exist"
+        description: "X.Y.Z. Required without dry_run (the tag media-writer-vX.Y.Z must already exist); optional for a dry run"
         type: string
         default: ""
 
@@ -103,17 +103,21 @@ jobs:
       - name: check assets and write SHA256SUMS
         working-directory: dist
         run: |
-          required="TunaOS-Media-Writer-macOS.dmg TunaOS-Media-Writer-Windows-x64.msi TunaOS-Media-Writer-Linux-x86_64.flatpak"
-          optional="TunaOS-Media-Writer-Linux-aarch64.flatpak"
-          for a in $required; do
+          required=(TunaOS-Media-Writer-macOS.dmg TunaOS-Media-Writer-Windows-x64.msi TunaOS-Media-Writer-Linux-x86_64.flatpak)
+          optional=(TunaOS-Media-Writer-Linux-aarch64.flatpak)
+          assets=()
+          for a in "${required[@]}"; do
             [ -s "$a" ] || { echo "::error::missing release asset $a"; ls -la; exit 1; }
+            assets+=("$a")
           done
-          assets="$required"
-          for a in $optional; do [ -s "$a" ] && assets="$assets $a"; done
-          for f in *; do
-            case " $assets " in *" $f "*) ;; *) echo "::error::unexpected file $f (asset names are a website contract)"; exit 1 ;; esac
+          for a in "${optional[@]}"; do
+            if [ -s "$a" ]; then assets+=("$a"); fi
           done
-          sha256sum $assets > SHA256SUMS
+          for f in ./*; do
+            f="${f#./}"
+            case " ${assets[*]} " in *" $f "*) ;; *) echo "::error::unexpected file $f (asset names are a website contract)"; exit 1 ;; esac
+          done
+          sha256sum "${assets[@]}" > SHA256SUMS
           cat SHA256SUMS
           {
             echo "### TunaOS Media Writer $VERSION ($([ "$DRY_RUN" = true ] && echo 'dry run, no release' || echo "release $TAG"))"
@@ -127,7 +131,7 @@ jobs:
         if: needs.version.outputs.dry_run == 'true'
         uses: actions/upload-artifact@v7
         with:
-          name: media-writer-release-dry-run-${{ needs.version.outputs.version }}
+          name: media-writer-release-dry-run
           path: dist/
           if-no-files-found: error
 
@@ -147,4 +151,4 @@ jobs:
           | Linux x86_64 (Flatpak) | TunaOS-Media-Writer-Linux-x86_64.flatpak |
 
           Verify downloads with SHA256SUMS."
-          gh release create "$TAG" --verify-tag --title "TunaOS Media Writer $VERSION" --notes "$notes" *
+          gh release create "$TAG" --verify-tag --title "TunaOS Media Writer $VERSION" --notes "$notes" ./*

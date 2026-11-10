@@ -138,7 +138,7 @@ jobs:
           out="$RUNNER_TEMP/out"; mkdir -p "$out"
           CGO_ENABLED=0 GOOS="$GOOS_T" GOARCH="$GOARCH_T" go build -trimpath -o "$out/tunaos-media-helper$ext" ./cmd/tunaos-media-helper
           go run ./cmd/build-engine -goos "$GOOS_T" -goarch "$GOARCH_T" -o "$out/tunaos-media-engine$ext"
-          (cd "$out" && sha256sum * | tee SHA256SUMS)
+          (cd "$out" && sha256sum -- * | tee SHA256SUMS)
           file "$out"/*
 
       - uses: actions/upload-artifact@v7
