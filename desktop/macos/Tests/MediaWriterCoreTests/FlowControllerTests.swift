@@ -6,12 +6,8 @@ import XCTest
 /// events-file path for writes (what the elevated write uses), no UI.
 @MainActor
 final class FlowControllerTests: XCTestCase {
-    private var directory: URL!
+    private lazy var directory: URL = try! Fixture.temporaryDirectory()
     private var argsLog: URL { directory.appendingPathComponent("args.log") }
-
-    override func setUp() async throws {
-        directory = try Fixture.temporaryDirectory()
-    }
 
     private func makeController(_ env: [String: String] = [:]) -> FlowController {
         var environment = ["FAKE_HELPER_ARGS_LOG": argsLog.path]

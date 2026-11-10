@@ -18,6 +18,7 @@ public final class FlowController: ObservableObject {
     private var currentRun: HelperRun?
     /// Set by Cancel; also covers the gaps between helper invocations.
     private var cancelRequested = false
+    private var drivePoll: Task<Void, Never>?
     /// A successfully built ISO kept for "Try again" after a failed write.
     private var staged: (source: BuildSource, url: URL)?
 
