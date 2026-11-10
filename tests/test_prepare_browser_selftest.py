@@ -46,7 +46,11 @@ def fixture(tmp_path, diagnostic=True):
         "engineBuildResult": {
             "bytesWritten": len(iso_bytes),
             "observedInputs": {
-                "source": {"manifestDigest": source},
+                "source": {"manifestDigest": source,
+                           "config": {"descriptor": {"digest": digest(b"base-image-config"),
+                                                     "size": 17,
+                                                     "mediaType": "application/vnd.oci.image.config.v1+json"},
+                                      "bytesVerified": True}},
                 "overlay": {"status": "applied", "manifestDigest": overlay,
                             "layersApplied": True, "baseAnnotationMatched": False},
             },
@@ -118,6 +122,13 @@ def fixture(tmp_path, diagnostic=True):
     return args, source, overlay, engine, wasm, installer
 
 
+def test_requires_the_observed_source_config_digest(tmp_path):
+    args, *_ = fixture(tmp_path)
+    del args["measurements"]["engineBuildResult"]["observedInputs"]["source"]["config"]
+    with pytest.raises(helper.InputError, match="observed source config"):
+        helper.validate_inputs(**args)
+
+
 def test_binds_exact_round_trip_and_receipt_identities_without_qualifying(tmp_path):
     args, source, overlay, engine, wasm, installer = fixture(tmp_path)
     env, binding = helper.validate_inputs(**args)
@@ -125,6 +136,8 @@ def test_binds_exact_round_trip_and_receipt_identities_without_qualifying(tmp_pa
     assert env["TUNAOS_QUAL_MEDIA_DIGEST"] == digest(args["iso"].read_bytes())
     assert env["TUNAOS_QUAL_SOURCE_REF"] == "ghcr.io/tuna-os/skipjack:diagnostic"
     assert env["TUNAOS_QUAL_SOURCE_DIGEST"] == source
+    # bootc's composefs backend names the installed image by this config digest.
+    assert env["TUNAOS_QUAL_SOURCE_CONFIG_DIGEST"] == digest(b"base-image-config")
     assert env["TUNAOS_QUAL_OVERLAY_DIGEST"] == overlay
     assert env["TUNAOS_QUAL_INSTALLER_DIGEST"] == installer
     assert env["TUNAOS_QUAL_ENGINE_DIGEST"] == engine == wasm
