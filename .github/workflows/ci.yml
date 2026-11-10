@@ -907,7 +907,7 @@ jobs:
           d="luks-verify-$SLUG"
           for f in "$d"/serial.log "$d"/installed-serial.log "$d"/boot-diagnostics.txt "$d"/current-phase.txt; do
             sudo test -f "$f" || continue
-            echo "===== $f ($(sudo wc -c < "$f") bytes)"
+            echo "===== $f ($(sudo stat -c %s "$f") bytes)"
             sudo grep -aniE 'install|bootc|ostree|composefs|traceback|error|fail|panic|segfault|denied|no space|oom|gdm|gnome-shell|mutter|session|drm|scanout|core.?dump' "$f" | grep -avE 'TUNAOS_LIVE_READY' | tail -400 || true
           done
 
