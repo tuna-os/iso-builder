@@ -6,23 +6,26 @@
 optionally change **Based on**, and press the one button. What the button does
 depends on evidence, not preference (`app/public/quick-start.js`):
 
-1. **Download ISO, built in your browser** — the catalog carries a complete
-   browser qualification receipt for that image *and* this browser can build
-   it (WebAssembly, private browser storage, at least 4 GB device memory when
-   reported, and the free storage the build needs: 9.5 GB, or twice that
-   without the save dialog). The save dialog opens first; the build then runs
-   in the tab with the desktop's default apps.
-2. **Download ISO, ready-made** — otherwise, when download.tunaos.org publishes
-   an ISO for that image.
-3. **Get TunaOS Media Writer for <your OS>** — otherwise, when the native app
-   (`desktop/`) has a release: it builds the image on your computer and writes
-   the USB stick.
-4. **Build on your computer** — the full builder's local instructions.
+1. **Download ISO, built in your browser.** The page uses this route only when
+   two conditions are true. The catalog has a complete receipt of browser
+   qualification for the image. This browser can build it. The browser needs
+   WebAssembly and private browser storage. It needs at least 4 GB of device
+   memory, when the browser reports it. It needs 9.5 GB of free storage, or
+   19 GB without the save dialog. The save dialog opens first. Then the build
+   runs in the tab with the default apps of the desktop.
+2. **Download ISO, ready-made.** The page uses this route when
+   download.tunaos.org has an ISO for the image.
+3. **Get TunaOS Media Writer.** The page uses this route when the native app
+   (`desktop/`) has a release. The app builds the image on your computer. It
+   also writes the USB stick.
+4. **Build on your computer.** The page shows the local instructions of the
+   full builder.
 
-Prebuilt links and app releases come from `downloads.json`, generated at deploy
-time by `scripts/generate-downloads.py` from the published ISO index and the
-GitHub releases; when a source is unreadable its route disappears instead of
-linking to a missing file. Only standard, generic, x86-64 images appear here.
+The links to ready-made ISOs and app releases come from `downloads.json`.
+The deploy job makes this file with `scripts/generate-downloads.py`. The
+script reads the published ISO index and the GitHub releases. If the script
+cannot read a source, the page does not show that route. Thus the page never
+links to a missing file. This page shows only standard, generic x86-64 images.
 **Customize apps and settings** (or any URL parameter, such as `?customize=1`
 or a share link) opens the full builder described below, on the same image.
 
