@@ -67,6 +67,12 @@ def scenario(app: Application, out: str):
 
     yield lambda: flow.stage is Stage.BUILDING and (flow.fraction or 0) > 0.3
     shot("3-progress-building")
+    win.close()  # asks first while working
+    yield None
+    shot("3-quit-confirm")
+    win.quit_dialog.emit("response", "keep")
+    win.quit_dialog.force_close()
+    assert flow.step is Step.PROGRESS
     yield lambda: flow.stage is Stage.WRITING and (flow.fraction or 0) > 0.3
     shot("3-progress-writing")
     yield lambda: flow.step is Step.DONE
@@ -146,7 +152,8 @@ def main() -> int:
     status = app.run([sys.argv[0], "--fake-helper", helper])
     if state["failed"] is not None:
         return 1
-    expected = {"1-choose", "2-destination", "2-confirm-erase", "3-progress-building", "3-progress-writing",
+    expected = {"1-choose", "2-destination", "2-confirm-erase", "3-progress-building", "3-quit-confirm",
+                "3-progress-writing",
                 "4-done-usb", "5-error", "5-error-details", "4-done-file"}
     missing = expected - {os.path.splitext(f)[0] for f in os.listdir(out)}
     if missing:

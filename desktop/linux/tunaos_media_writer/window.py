@@ -99,6 +99,7 @@ class MainWindow(Adw.ApplicationWindow):
         self._pulse_id = 0
         self.confirm_dialog: Adw.AlertDialog | None = None
         self.details_dialog: Adw.Dialog | None = None
+        self.quit_dialog: Adw.AlertDialog | None = None
 
         self.toasts = Adw.ToastOverlay()
         self.nav = Adw.NavigationView()
@@ -116,6 +117,8 @@ class MainWindow(Adw.ApplicationWindow):
             self.nav.add(page)
         self.nav.replace([self.pages["choose"]])
         self.nav.connect("popped", self._on_popped)
+        self._quit_confirmed = False
+        self.connect("close-request", self._on_close_request)
 
         flow.connect(self._render)
         controller.connect_drives(self._render_drives)
@@ -378,6 +381,27 @@ class MainWindow(Adw.ApplicationWindow):
     def _on_popped(self, _nav, page) -> None:
         if page.get_tag() == "destination" and self.flow.step is Step.DESTINATION:
             self.flow.back()
+
+    def _on_close_request(self, _window) -> bool:
+        """Ask before quitting mid-build/write; True keeps the window open."""
+        if self._quit_confirmed or self.flow.step is not Step.PROGRESS:
+            return False
+        dialog = Adw.AlertDialog(heading=strings.QUIT_HEADING, body=strings.QUIT_BODY)
+        dialog.add_response("keep", strings.QUIT_KEEP)
+        dialog.add_response("quit", strings.QUIT)
+        dialog.set_response_appearance("quit", Adw.ResponseAppearance.DESTRUCTIVE)
+        dialog.set_default_response("keep")
+        dialog.set_close_response("keep")
+
+        def responded(_dialog, response):
+            if response == "quit":
+                self._quit_confirmed = True
+                self.close()
+
+        dialog.connect("response", responded)
+        self.quit_dialog = dialog
+        dialog.present(self)
+        return True
 
     # -- actions -----------------------------------------------------
     def _continue(self) -> None:
