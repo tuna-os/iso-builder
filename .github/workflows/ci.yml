@@ -843,7 +843,9 @@ jobs:
       - name: upload ISO chunks
         id: iso-artifact-upload
         if: ${{ always() && !cancelled() && steps.iso-artifact.outcome == 'success' }}
-        timeout-minutes: 30
+        # karnataka's uplink measured ~2.3 MB/s (run 42897853650 had uploaded
+        # 4.14 GB when the 30-minute limit hit); a ~10 GB ISO needs ~75 min.
+        timeout-minutes: ${{ github.event.inputs.runner == 'karnataka-gpu' && 120 || 30 }}
         uses: actions/upload-artifact@v7
         with:
           name: iso-${{ matrix.edition.slug }}-run${{ github.run_id }}-a${{ github.run_attempt }}
@@ -874,7 +876,7 @@ jobs:
 
       - name: download ISO artifact again
         if: ${{ always() && !cancelled() && steps.iso-artifact-upload.outcome == 'success' }}
-        timeout-minutes: 30
+        timeout-minutes: ${{ github.event.inputs.runner == 'karnataka-gpu' && 90 || 30 }}
         uses: actions/download-artifact@v8
         with:
           name: iso-${{ matrix.edition.slug }}-run${{ github.run_id }}-a${{ github.run_attempt }}
