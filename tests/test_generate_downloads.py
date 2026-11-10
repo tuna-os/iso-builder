@@ -55,3 +55,20 @@ def test_media_writer_uses_newest_published_release_with_known_assets():
 
 def test_no_media_writer_release_means_no_app_route():
     assert gen.media_writer_from_releases([release("v1", ["x.zip"])]) is None
+
+
+def test_only_trusted_signing_hides_the_first_launch_hint():
+    rel = release("media-writer-v1.0.0", ["TunaOS-Media-Writer-macOS.dmg", "TunaOS-Media-Writer-Windows-x64.msi",
+                                          "TunaOS-Media-Writer-Linux-x86_64.flatpak", "signing.json"])
+    signing = {"schemaVersion": 1, "macos": "developer-id-notarized", "windows-x64": "unsigned", "linux-x86_64": "unsigned"}
+    writer = gen.media_writer_from_releases([rel], fetch=lambda url: signing)
+    assert {k: v["signed"] for k, v in writer["assets"].items()} == {"macos": True, "windows-x64": False, "linux-x86_64": False}
+
+    def broken(url):
+        raise OSError("404")
+    for fetch in (broken, lambda url: {"macos": "adhoc"}):
+        writer = gen.media_writer_from_releases([rel], fetch=fetch)
+        assert not any(v["signed"] for v in writer["assets"].values())
+
+    unsigned_release = release("media-writer-v1.0.0", ["TunaOS-Media-Writer-macOS.dmg"])
+    assert gen.media_writer_from_releases([unsigned_release], fetch=broken)["assets"]["macos"]["signed"] is False

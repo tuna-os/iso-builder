@@ -32,6 +32,12 @@ MEDIA_WRITER_ASSETS = {
     "TunaOS-Media-Writer-Linux-x86_64.flatpak": "linux-x86_64",
     "TunaOS-Media-Writer-Linux-aarch64.flatpak": "linux-aarch64",
 }
+# signing.json, attached by media-writer-release.yml, records what each
+# platform job actually did. Only these values mean the OS will open the app
+# without a warning; anything else (absent, adhoc, unsigned) shows the
+# first-launch hint on the page.
+SIGNING_ASSET = "signing.json"
+TRUSTED_SIGNING = {"developer-id-notarized", "authenticode"}
 
 
 def fetch_json(url: str, token: str | None = None):
@@ -61,19 +67,31 @@ def prebuilt_from_index(index: dict) -> dict:
     return dict(sorted(out.items()))
 
 
-def media_writer_from_releases(releases: list) -> dict | None:
+def media_writer_from_releases(releases: list, fetch=fetch_json) -> dict | None:
     for release in releases:
         tag = str(release.get("tag_name", ""))
         if release.get("draft") or release.get("prerelease") or not tag.startswith("media-writer-v"):
             continue
-        assets = {}
+        assets, signing_url = {}, None
         for asset in release.get("assets", []):
-            key = MEDIA_WRITER_ASSETS.get(asset.get("name"))
             url = asset.get("browser_download_url")
-            if key and isinstance(url, str) and url.startswith(RELEASE_HOST) and asset.get("state", "uploaded") == "uploaded":
+            if not (isinstance(url, str) and url.startswith(RELEASE_HOST) and asset.get("state", "uploaded") == "uploaded"):
+                continue
+            if asset.get("name") == SIGNING_ASSET:
+                signing_url = url
+            elif key := MEDIA_WRITER_ASSETS.get(asset.get("name")):
                 assets[key] = {"url": url, "size": asset.get("size")}
-        if assets:
-            return {"version": tag.removeprefix("media-writer-v"), "assets": assets}
+        if not assets:
+            continue
+        signing = {}
+        if signing_url:
+            try:
+                signing = fetch(signing_url) or {}
+            except Exception as error:  # noqa: BLE001 - unknown signing shows the hint
+                print(f"::warning::{SIGNING_ASSET} of {tag} unreadable ({error}); treating every app as unsigned")
+        for key, asset in assets.items():
+            asset["signed"] = signing.get(key) in TRUSTED_SIGNING
+        return {"version": tag.removeprefix("media-writer-v"), "assets": assets}
     return None
 
 

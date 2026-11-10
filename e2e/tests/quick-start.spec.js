@@ -16,16 +16,16 @@ const WRITER = { version: "1.0.0", assets: {
   "linux-x86_64": { url: "https://github.com/tuna-os/iso-builder/releases/download/media-writer-v1.0.0/TunaOS-Media-Writer-Linux-x86_64.flatpak" },
 } };
 
-async function open(page, { prebuilt = PREBUILT, mediaWriter = null, deviceMemory = 16, freeGB = 100, url = "/" } = {}) {
+async function open(page, { prebuilt = PREBUILT, mediaWriter = null, deviceMemory = 16, freeGB = 100, url = "/", platform = "Linux" } = {}) {
   await page.route("**/wasm_exec.js", route => route.fulfill({ contentType: "text/javascript", body: "" }));
   await page.route("**/tbox.wasm", route => route.abort());
   await page.route("https://**/*", route => route.abort());
   await page.route("**/downloads.json", route => route.fulfill({ json: { schemaVersion: 1, prebuilt, mediaWriter } }));
-  await page.addInitScript(({ deviceMemory, freeGB }) => {
+  await page.addInitScript(({ deviceMemory, freeGB, platform }) => {
     Object.defineProperty(navigator, "deviceMemory", { value: deviceMemory, configurable: true });
     navigator.storage.estimate = async () => ({ quota: freeGB * 1e9, usage: 0 });
-    Object.defineProperty(navigator, "userAgentData", { value: { platform: "Linux", mobile: false }, configurable: true });
-  }, { deviceMemory, freeGB });
+    Object.defineProperty(navigator, "userAgentData", { value: { platform, mobile: false }, configurable: true });
+  }, { deviceMemory, freeGB, platform });
   await page.goto(url);
 }
 const route = page => page.evaluate(() => window.tboxQuickRoute());
@@ -85,6 +85,7 @@ test.describe("one-click download view", () => {
       await expect(page.locator("#quick-app-download")).toHaveText("Get TunaOS Media Writer for Linux");
       await expect(page.locator("#quick-app-reason")).toContainText(why === "too little memory" ? "memory" : "storage");
       await expect(page.locator("#quick-app-other a")).toHaveText(["macOS", "Windows"]);
+      await expect(page.locator("#quick-app-hint")).toHaveText("Open the downloaded file with your software center to install it.");
 
       await open(page, { ...options, prebuilt: {}, mediaWriter: null });
       await settled(page);
@@ -154,4 +155,17 @@ test.describe("one-click download view", () => {
     await expect(page.locator("#quick-progress")).toBeHidden();
     expect(await page.evaluate(() => window.__inspected)).toBe(false);
   });
+});
+
+test("the first-launch hint follows the release's recorded signing, per OS", async ({ page }) => {
+  const signed = structuredClone(WRITER);
+  signed.assets.macos.signed = true;
+  signed.assets["windows-x64"].signed = false;
+  await open(page, { prebuilt: {}, mediaWriter: signed, platform: "macOS" });
+  await settled(page);
+  await expect(page.locator("#quick-app-download")).toHaveText("Get TunaOS Media Writer for macOS");
+  await expect(page.locator("#quick-app-hint")).toBeHidden();
+  await open(page, { prebuilt: {}, mediaWriter: signed, platform: "Windows" });
+  await settled(page);
+  await expect(page.locator("#quick-app-hint")).toHaveText("If Windows SmartScreen warns you, choose More info, then Run anyway.");
 });
