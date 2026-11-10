@@ -21,6 +21,7 @@ _CSS = b"""
 flowboxchild { padding: 0; border-radius: 12px; }
 flowboxchild:selected { background: none; }
 flowboxchild:selected .desktop-card { box-shadow: inset 0 0 0 2px @accent_bg_color; }
+.done-page image.icon { color: @success_color; }
 """
 
 _STAGE_LABELS = {
@@ -220,7 +221,7 @@ class MainWindow(Adw.ApplicationWindow):
         for widget in (self.docs_link, self.show_file_button, start_over):
             buttons.append(widget)
         self.done_status = Adw.StatusPage(icon_name="emblem-ok-symbolic", child=buttons)
-        self.done_status.add_css_class("success")
+        self.done_status.add_css_class("done-page")
         page, _header = _page("done", strings.APP_NAME, self.done_status, can_pop=False)
         return page
 

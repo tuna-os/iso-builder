@@ -36,11 +36,20 @@ TIMEOUT = 60
 
 
 def capture(window: Gtk.Window, path: str) -> None:
-    width, height = window.get_width(), window.get_height()
-    paintable = Gtk.WidgetPaintable.new(window)
-    snapshot = Gtk.Snapshot()
-    paintable.snapshot(snapshot, width, height)
-    node = snapshot.to_node()
+    # A frame can be mid-layout (e.g. right after a dialog is presented) and
+    # snapshot to nothing; let the main loop run until it draws.
+    context = GLib.MainContext.default()
+    deadline = time.monotonic() + 5
+    while True:
+        width, height = window.get_width(), window.get_height()
+        snapshot = Gtk.Snapshot()
+        Gtk.WidgetPaintable.new(window).snapshot(snapshot, width, height)
+        node = snapshot.to_node()
+        if node is not None or time.monotonic() > deadline:
+            break
+        context.iteration(False)
+        time.sleep(0.02)
+    assert node is not None, f"window drew nothing for {path}"
     texture = window.get_native().get_renderer().render_texture(node, Graphene.Rect().init(0, 0, width, height))
     texture.save_to_png(path)
     print(f"screenshot {path} ({width}x{height})", flush=True)
