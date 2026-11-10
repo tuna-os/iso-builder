@@ -1,0 +1,40 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<component type="desktop-application">
+  <id>org.tunaos.MediaWriter</id>
+  <metadata_license>CC0-1.0</metadata_license>
+  <project_license>Apache-2.0</project_license>
+  <name>TunaOS Media Writer</name>
+  <summary>Make a bootable TunaOS USB stick</summary>
+  <developer id="org.tunaos">
+    <name>TunaOS</name>
+  </developer>
+  <description>
+    <p>
+      Pick the desktop you want, and TunaOS Media Writer builds the TunaOS
+      live system on your computer and writes it to a USB stick. Restart
+      from the stick to try TunaOS and install it.
+    </p>
+    <p>
+      It uses the same builder as iso.tunaos.org. You can also save the ISO
+      file instead of writing a USB stick, or open a build request exported
+      from the website.
+    </p>
+  </description>
+  <launchable type="desktop-id">org.tunaos.MediaWriter.desktop</launchable>
+  <url type="homepage">https://tunaos.org</url>
+  <url type="help">https://tunaos.org/docs</url>
+  <url type="bugtracker">https://github.com/tuna-os/iso-builder/issues</url>
+  <url type="vcs-browser">https://github.com/tuna-os/iso-builder</url>
+  <content_rating type="oars-1.1"/>
+  <supports>
+    <control>pointing</control>
+    <control>keyboard</control>
+    <control>touch</control>
+  </supports>
+  <requires>
+    <display_length compare="ge">360</display_length>
+  </requires>
+  <releases>
+    <release version="0.1.0" date="2026-11-10"/>
+  </releases>
+</component>

@@ -1,0 +1,64 @@
+id: org.tunaos.MediaWriter
+runtime: org.gnome.Platform
+runtime-version: '51'
+sdk: org.gnome.Sdk
+sdk-extensions:
+  - org.freedesktop.Sdk.Extension.golang
+command: tunaos-media-writer
+finish-args:
+  - --share=ipc
+  - --socket=wayland
+  - --socket=fallback-x11
+  - --device=dri
+  # Downloading the system image to build the ISO.
+  - --share=network
+  # Listing USB sticks, unmounting them and opening them for writing
+  # (Block.OpenDevice behind a polkit prompt). No --device=all: the app
+  # never opens /dev itself.
+  - --system-talk-name=org.freedesktop.UDisks2
+  # Default folder for "Save ISO file only…"; other folders go through the
+  # file chooser portal.
+  - --filesystem=xdg-download
+cleanup:
+  - /share/tunaos-media-writer/**/__pycache__/*.opt-*.pyc
+modules:
+  # The helper and its sibling engine (tacklebox cmd/purebuild at the pin in
+  # desktop/helper/go.mod). Module downloads need the network at build time.
+  - name: tunaos-media-helper
+    buildsystem: simple
+    build-options:
+      append-path: /usr/lib/sdk/golang/bin
+      build-args:
+        - --share=network
+      env:
+        CGO_ENABLED: '0'
+        GOTOOLCHAIN: local
+        GOFLAGS: -modcacherw -trimpath
+        GOPATH: /run/build/tunaos-media-helper/.go
+        GOCACHE: /run/build/tunaos-media-helper/.gocache
+    build-commands:
+      - go build -ldflags=-s -o /app/bin/tunaos-media-helper ./cmd/tunaos-media-helper
+      - go run ./cmd/build-engine -goos linux -goarch "$(go env GOARCH)" -o /app/bin/tunaos-media-engine
+    sources:
+      - type: dir
+        path: ../helper
+
+  - name: tunaos-media-writer
+    buildsystem: simple
+    build-commands:
+      - install -Dm755 bin/tunaos-media-writer /app/bin/tunaos-media-writer
+      - install -Dm644 -t /app/share/tunaos-media-writer/tunaos_media_writer tunaos_media_writer/*.py
+      - python3 -m compileall -q /app/share/tunaos-media-writer
+      - install -Dm644 data/org.tunaos.MediaWriter.desktop /app/share/applications/org.tunaos.MediaWriter.desktop
+      - install -Dm644 data/org.tunaos.MediaWriter.metainfo.xml /app/share/metainfo/org.tunaos.MediaWriter.metainfo.xml
+      - install -Dm644 data/org.tunaos.MediaWriter.svg /app/share/icons/hicolor/scalable/apps/org.tunaos.MediaWriter.svg
+    sources:
+      - type: dir
+        path: tunaos_media_writer
+        dest: tunaos_media_writer
+      - type: dir
+        path: data
+        dest: data
+      - type: file
+        path: bin/tunaos-media-writer
+        dest: bin

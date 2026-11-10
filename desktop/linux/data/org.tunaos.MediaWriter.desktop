@@ -1,0 +1,11 @@
+[Desktop Entry]
+Type=Application
+Name=TunaOS Media Writer
+GenericName=USB Stick Writer
+Comment=Make a bootable TunaOS USB stick
+Exec=tunaos-media-writer
+Icon=org.tunaos.MediaWriter
+Terminal=false
+Categories=System;Utility;GTK;
+Keywords=usb;iso;installer;boot;live;tunaos;
+StartupNotify=true
