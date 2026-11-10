@@ -905,10 +905,10 @@ jobs:
           SLUG: ${{ matrix.edition.slug }}
         run: |
           d="luks-verify-$SLUG"
-          for f in "$d"/serial.log "$d"/boot-diagnostics.txt "$d"/current-phase.txt; do
-            [ -f "$f" ] || continue
-            echo "===== $f ($(wc -c < "$f") bytes)"
-            grep -aniE 'install|bootc|ostree|composefs|traceback|error|fail|panic|segfault|denied|no space|oom' "$f" | grep -avE 'TUNAOS_LIVE_READY' | tail -250 || true
+          for f in "$d"/serial.log "$d"/installed-serial.log "$d"/boot-diagnostics.txt "$d"/current-phase.txt; do
+            sudo test -f "$f" || continue
+            echo "===== $f ($(sudo wc -c < "$f") bytes)"
+            sudo grep -aniE 'install|bootc|ostree|composefs|traceback|error|fail|panic|segfault|denied|no space|oom|gdm|gnome-shell|mutter|session|drm|scanout|core.?dump' "$f" | grep -avE 'TUNAOS_LIVE_READY' | tail -400 || true
           done
 
       - name: disk after build
