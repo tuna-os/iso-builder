@@ -8,7 +8,7 @@ const fs = require("fs");
 const { spawnSync } = require("child_process");
 const { diagnosticRecord } = require("./build-measurements");
 const {
-  diagnosticGrantFromEnv, installDiagnosticGrant, strictObservedGrantFromEnv, installStrictObservedGrant, resolveLiveDigests, catalogEntryFor, pageImageFor, refreshDiagnosticSnapshot, parseGateRefusal, gateRefusalMessage, gateRefusalSummary,
+  diagnosticGrantFromEnv, installDiagnosticGrant, strictObservedGrantFromEnv, installStrictObservedGrant, resolveLiveDigests, resolveLiveOverlayPins, catalogEntryFor, pageImageFor, refreshDiagnosticSnapshot, parseGateRefusal, gateRefusalMessage, gateRefusalSummary,
 } = require("./diagnostic-gate");
 const { unqualifiedSkipjackCatalog } = require("./unqualified-catalog-fixture");
 
@@ -286,11 +286,17 @@ test.describe("diagnostic pin refresh", () => {
   const CATALOG = require("../../app/public/catalog-snapshot.json");
   const h = (c) => `sha256:${c.repeat(64)}`;
   // Fake registry transport: same wire protocol as GHCR, no network.
-  function fakeRegistry({ perPlatform = 1, bad = null } = {}) {
+  function fakeRegistry({ perPlatform = 1, bad = null, overlayBase = h("a") } = {}) {
     const index = { manifests: [
       { digest: h("a"), platform: { os: "linux", architecture: "amd64" } },
       { digest: h("b"), platform: { os: "linux", architecture: "amd64", variant: "v2" } },
       ...Array.from({ length: perPlatform - 1 }, () => ({ digest: h("e"), platform: { os: "linux", architecture: "amd64" } })),
+    ] };
+    // live-overlay:skipjack-gnome, shaped like tunaOS live-overlay.yml's
+    // published index: the base binding is the descriptor annotation.
+    const overlayIndex = { manifests: [
+      { digest: h("f"), platform: { os: "linux", architecture: "amd64" },
+        annotations: overlayBase === null ? {} : { "org.tunaos.live-overlay.base-digest": overlayBase } },
     ] };
     const calls = [];
     const fetchImpl = async (url, init = {}) => {
@@ -299,8 +305,10 @@ test.describe("diagnostic pin refresh", () => {
       if (url.startsWith("https://ghcr.io/token")) return json({ token: "t" });
       expect(init.headers.Authorization).toBe("Bearer t");
       if (url.endsWith("/manifests/gnome")) return json(index, bad ?? h("1"));
+      if (url.endsWith("/live-overlay/manifests/skipjack-gnome")) return json(overlayIndex, h("2"));
       if (url.endsWith(`/manifests/${h("a")}`)) return json({ config: { digest: h("c") } }, h("a"));
       if (url.endsWith(`/manifests/${h("b")}`)) return json({ config: { digest: h("d") } }, h("b"));
+      if (url.endsWith(`/manifests/${h("f")}`)) return json({ config: { digest: h("9") } }, h("f"));
       return { ok: false, status: 404 };
     };
     return { fetchImpl, calls };
@@ -334,16 +342,30 @@ test.describe("diagnostic pin refresh", () => {
     await expect(resolveLiveDigests({ ...base, repository: "docker.io/x/y", fetchImpl: fakeRegistry().fetchImpl })).rejects.toThrow(/cannot resolve/);
   });
 
-  test("replaces only the named target's three pins and never touches qualification", () => {
+  test("resolves a published live overlay and the base it is bound to", async () => {
+    const args = { variant: "skipjack", flavor: "gnome", platform: "linux/amd64" };
+    const { fetchImpl, calls } = fakeRegistry();
+    expect(await resolveLiveOverlayPins({ ...args, fetchImpl }))
+      .toEqual({ liveOverlayDigest: h("f"), liveOverlayBaseDigest: h("a") });
+    expect(calls[0]).toContain("scope=repository:tuna-os/live-overlay:pull");
+    for (const overlayBase of [null, "nope"]) {
+      await expect(resolveLiveOverlayPins({ ...args, fetchImpl: fakeRegistry({ overlayBase }).fetchImpl }))
+        .rejects.toThrow(/carries no org\.tunaos\.live-overlay\.base-digest digest/);
+    }
+  });
+
+  test("replaces only the named target's pins and never touches qualification", () => {
     const entry = catalogEntryFor(CATALOG, "tuna-os/skipjack:gnome", "linux/amd64");
     expect(entry.targetKey).toBe("skipjack:gnome:linux/amd64");
     const live = { indexDigest: h("1"), platformManifestDigest: h("a"), configDigest: h("c") };
-    const { doc, record } = refreshDiagnosticSnapshot(CATALOG, entry.targetKey, live);
+    const overlay = { liveOverlayDigest: h("f"), liveOverlayBaseDigest: h("a") };
+    const { doc, record } = refreshDiagnosticSnapshot(CATALOG, entry.targetKey, live, overlay);
     const after = doc.targets.find((t) => t.targetKey === entry.targetKey);
-    expect(after.resolvedInputs).toMatchObject(live);
+    expect(after.resolvedInputs).toMatchObject({ ...live, ...overlay });
     expect(after.qualification).toEqual(entry.qualification);
     expect(record.before.platformManifestDigest).toBe(entry.resolvedInputs.platformManifestDigest);
-    expect(record.after).toEqual(live);
+    expect(record.before.liveOverlayBaseDigest).toBe(entry.resolvedInputs.liveOverlayBaseDigest);
+    expect(record.after).toEqual({ ...live, ...overlay });
     // Every other target and the input document are untouched.
     expect(entry.resolvedInputs.platformManifestDigest).not.toBe(live.platformManifestDigest);
     for (const t of doc.targets.filter((x) => x.targetKey !== entry.targetKey)) {
@@ -352,10 +374,27 @@ test.describe("diagnostic pin refresh", () => {
     expect(() => refreshDiagnosticSnapshot(CATALOG, "nope:gnome:linux/amd64", live)).toThrow(/no catalog target/);
   });
 
+  test("an overlay-pinned target refuses an image-only or stale-overlay refresh", () => {
+    // iso-builder run 42894083700: the image moved 80f53cbc -> 5edcb582, only
+    // the image pins were refreshed, and the engine refused the pair.
+    const entry = catalogEntryFor(CATALOG, "tuna-os/skipjack:gnome", "linux/amd64");
+    expect(entry.resolvedInputs.liveOverlayBaseDigest).toBe(entry.resolvedInputs.platformManifestDigest);
+    const live = { indexDigest: h("1"), platformManifestDigest: h("a"), configDigest: h("c") };
+    expect(() => refreshDiagnosticSnapshot(CATALOG, entry.targetKey, live))
+      .toThrow(/pins a live overlay bound to .*needs the overlay pins refreshed too/);
+    expect(() => refreshDiagnosticSnapshot(CATALOG, entry.targetKey, live,
+      { liveOverlayDigest: h("f"), liveOverlayBaseDigest: entry.resolvedInputs.platformManifestDigest }))
+      .toThrow(/overlay is stale/);
+    // An unmoved image needs no overlay refresh.
+    const same = { ...live, platformManifestDigest: entry.resolvedInputs.platformManifestDigest };
+    expect(() => refreshDiagnosticSnapshot(CATALOG, entry.targetKey, same)).not.toThrow();
+  });
+
   test("a refreshed pin reaches the build request while the target stays gated by the app", async ({ page }) => {
     const entry = catalogEntryFor(CATALOG, IMAGE, PLATFORM);
     const live = { indexDigest: h("1"), platformManifestDigest: h("a"), configDigest: h("c") };
-    const { doc } = refreshDiagnosticSnapshot(CATALOG, entry.targetKey, live);
+    const overlay = { liveOverlayDigest: h("f"), liveOverlayBaseDigest: h("a") };
+    const { doc } = refreshDiagnosticSnapshot(CATALOG, entry.targetKey, live, overlay);
     await page.route("**/catalog-snapshot.json", (route) => route.fulfill({ json: doc }));
     await page.goto(PRESET);
     await inspectPreset(page);
@@ -363,7 +402,7 @@ test.describe("diagnostic pin refresh", () => {
     await expect(page.locator("#build")).toBeDisabled();  // no grant: still refused
     await expect(page.locator("#fallbackcard")).toBeVisible();
     const request = JSON.parse(await page.locator("#fallbackjson").textContent());
-    expect(request.resolvedInputs).toMatchObject(live);
+    expect(request.resolvedInputs).toMatchObject({ ...live, ...overlay });
     expect(request.qualificationId).toBeUndefined();
   });
 

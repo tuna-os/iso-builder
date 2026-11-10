@@ -112,7 +112,7 @@ const ACCEPT = [
   "application/vnd.docker.distribution.manifest.list.v2+json", "application/vnd.docker.distribution.manifest.v2+json",
 ].join(", ");
 
-async function resolveLiveDigests({ repository, tag, platform, fetchImpl = fetch }) {
+async function resolvePlatformDescriptor({ repository, tag, platform, fetchImpl = fetch }) {
   const m = /^ghcr\.io\/(.+)$/.exec(repository || "");
   if (!m || !tag || !platform) throw new Error(`cannot resolve live digests for ${repository}:${tag} (${platform})`);
   const repo = m[1];
@@ -136,7 +136,30 @@ async function resolveLiveDigests({ repository, tag, platform, fetchImpl = fetch
   for (const d of [index.digest, hits[0].digest, configDigest]) {
     if (!/^sha256:[0-9a-f]{64}$/.test(d || "")) throw new Error(`registry returned a malformed digest ${JSON.stringify(d)}`);
   }
-  return { indexDigest: index.digest, platformManifestDigest: hits[0].digest, configDigest };
+  return { indexDigest: index.digest, platformManifestDigest: hits[0].digest, configDigest,
+    annotations: hits[0].annotations || {} };
+}
+
+async function resolveLiveDigests(args) {
+  const { indexDigest, platformManifestDigest, configDigest } = await resolvePlatformDescriptor(args);
+  return { indexDigest, platformManifestDigest, configDigest };
+}
+
+// tunaOS live-overlay.yml publishes live-overlay:<variant>-<flavor> with the
+// platform manifest digest of the base it was built from as the descriptor
+// annotation below; the engine refuses an overlay whose binding is not the
+// image it builds.
+const OVERLAY_REPOSITORY = "ghcr.io/tuna-os/live-overlay";
+const OVERLAY_BASE_ANNOTATION = "org.tunaos.live-overlay.base-digest";
+
+async function resolveLiveOverlayPins({ variant, flavor, platform, fetchImpl = fetch }) {
+  const tag = `${variant}-${flavor}`;
+  const d = await resolvePlatformDescriptor({ repository: OVERLAY_REPOSITORY, tag, platform, fetchImpl });
+  const base = d.annotations[OVERLAY_BASE_ANNOTATION];
+  if (!/^sha256:[0-9a-f]{64}$/.test(base || "")) {
+    throw new Error(`${OVERLAY_REPOSITORY}:${tag} (${platform}) carries no ${OVERLAY_BASE_ANNOTATION} digest, got ${JSON.stringify(base ?? null)}`);
+  }
+  return { liveOverlayDigest: d.platformManifestDigest, liveOverlayBaseDigest: base };
 }
 
 function catalogEntryFor(catalog, image, platform) {
@@ -158,23 +181,43 @@ function pageImageFor(catalog, image, platform) {
 
 // Pure: returns a copy of the snapshot with only the named target's three pins
 // replaced, plus a record of before/after. Qualification is never touched.
-function refreshDiagnosticSnapshot(catalog, targetKey, live) {
+// A target that also pins its live overlay (skipjack:gnome since the
+// 2026-11-07 snapshot) needs the overlay pins refreshed with the image: the
+// overlay is bound to one base, and iso-builder run 42894083700 refreshed only
+// the image (80f53cbc -> 5edcb582) and died in the engine with
+// "liveOverlayBaseDigest 80f53cbc does not match platformManifestDigest
+// 5edcb582". Such a target needs `overlay` from resolveLiveOverlayPins, bound
+// to the live image; a stale or missing overlay is refused here, before a
+// build starts.
+function refreshDiagnosticSnapshot(catalog, targetKey, live, overlay = null) {
   const doc = structuredClone(catalog);
   const entry = doc.targets.find((t) => t.targetKey === targetKey);
   if (!entry) throw new Error(`no catalog target ${targetKey}`);
   const ri = entry.resolvedInputs;
+  const pinsOverlay = Boolean(ri.liveOverlayDigest || ri.liveOverlayBaseDigest);
+  if (overlay && overlay.liveOverlayBaseDigest !== live.platformManifestDigest) {
+    throw new Error(`the published live overlay for ${targetKey} is bound to ${overlay.liveOverlayBaseDigest}, but the registry serves ${live.platformManifestDigest}: the overlay is stale; republish it (tunaOS live-overlay.yml) before a diagnostic build`);
+  }
+  if (pinsOverlay && !overlay && ri.liveOverlayBaseDigest !== live.platformManifestDigest) {
+    throw new Error(`${targetKey} pins a live overlay bound to ${ri.liveOverlayBaseDigest}; refreshing its image to ${live.platformManifestDigest} needs the overlay pins refreshed too`);
+  }
   const record = {
     targetKey, catalogSnapshotDigest: catalog.snapshotDigest ?? null,
     before: { indexDigest: ri.indexDigest ?? null, platformManifestDigest: ri.platformManifestDigest ?? null, configDigest: ri.configDigest ?? null },
     after: { ...live },
   };
-  Object.assign(ri, live);
+  if (overlay) {
+    record.before.liveOverlayDigest = ri.liveOverlayDigest ?? null;
+    record.before.liveOverlayBaseDigest = ri.liveOverlayBaseDigest ?? null;
+    Object.assign(record.after, overlay);
+  }
+  Object.assign(ri, live, overlay || {});
   if (entry.facts) entry.facts.digest = live.platformManifestDigest;
   return { doc, record };
 }
 
 module.exports = {
-  resolveLiveDigests, catalogEntryFor, pageImageFor, refreshDiagnosticSnapshot,
+  resolveLiveDigests, resolveLiveOverlayPins, catalogEntryFor, pageImageFor, refreshDiagnosticSnapshot,
   LABEL, QUALIFICATION, diagnosticGrantFromEnv, installDiagnosticGrant,
   strictObservedGrantFromEnv, installStrictObservedGrant,
   parseGateRefusal, gateRefusalMessage, gateRefusalSummary,

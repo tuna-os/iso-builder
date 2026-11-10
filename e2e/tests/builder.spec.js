@@ -16,7 +16,7 @@ const fs = require("fs");
 const { qualifiedCatalogFixture } = require("./qualified-catalog-fixture");
 const { observeLoadedWasm, loadedWasmMeasurement, hashSavedIso, buildOperationIdentity, completedBuildResult, diagnosticRecord, observeRegistryTransfers, observeConsumedBuildInputs, completedInputMeasurements, observeFrontendResponses, browserObservedInputRecord, captureExecutingSource, finalizeExecutingSource } = require("./build-measurements");
 const { removeSavePicker, buildFailedSignature } = require("./full-harness");
-const { diagnosticGrantFromEnv, installDiagnosticGrant, strictObservedGrantFromEnv, installStrictObservedGrant, resolveLiveDigests, catalogEntryFor, pageImageFor, refreshDiagnosticSnapshot, parseGateRefusal, gateRefusalMessage, gateRefusalSummary } = require("./diagnostic-gate");
+const { diagnosticGrantFromEnv, installDiagnosticGrant, strictObservedGrantFromEnv, installStrictObservedGrant, resolveLiveDigests, resolveLiveOverlayPins, catalogEntryFor, pageImageFor, refreshDiagnosticSnapshot, parseGateRefusal, gateRefusalMessage, gateRefusalSummary } = require("./diagnostic-gate");
 const { campaignValue, pairEnvironment, digest: pairDigest } = require("./pair-protocol");
 const CATALOG = require("../../app/public/catalog-snapshot.json");
 
@@ -418,7 +418,11 @@ test.describe("iso builder", () => {
       if (!entry) throw new Error(`diagnostic target ${IMAGE} is not in the catalog snapshot`);
       const live = await resolveLiveDigests({ repository: entry.publication.repository, tag: entry.publication.tag, platform: entry.target.platform });
       if (pairProtocol) campaignValue("source", live);
-      const refreshed = refreshDiagnosticSnapshot(CATALOG, entry.targetKey, live);
+      const pinnedOverlay = entry.resolvedInputs.liveOverlayDigest || entry.resolvedInputs.liveOverlayBaseDigest;
+      const overlayPins = pinnedOverlay
+        ? await resolveLiveOverlayPins({ variant: entry.target.variant, flavor: entry.target.flavor, platform: entry.target.platform })
+        : null;
+      const refreshed = refreshDiagnosticSnapshot(CATALOG, entry.targetKey, live, overlayPins);
       if (pairProtocol) {
         const overlay = await resolveLiveDigests({ repository: "ghcr.io/tuna-os/live-overlay",
           tag: `${entry.target.variant}-${entry.target.flavor}`, platform: entry.target.platform });
