@@ -3,7 +3,7 @@ test.beforeEach(async({page})=>{
  await page.route('**/wasm_exec.js',r=>r.fulfill({body:''}));
  await page.route('**/tbox.wasm',r=>r.abort());
  await page.route('https://**/*',r=>r.abort());
- await page.goto('/');
+ await page.goto('/?customize=1');
  await page.locator('#advanced-options > summary').click();
  await page.getByText('Add a repository or setup command',{exact:true}).click();
 });

@@ -5,7 +5,7 @@ const config=require('../../tests/fixtures/guided/stock-config-v2.json');
 async function guided(page,edit=()=>{}){
  const copy=structuredClone(config);edit(copy);
  await page.route('**/builder-config-data.js',route=>route.fulfill({contentType:'text/javascript',body:'globalThis.TBOX_BUILDER_CONFIG='+JSON.stringify(copy)+';'}));
- await page.goto('/');await expect(page.locator('#guided-picker')).toBeVisible();
+ await page.goto('/?customize=1');await expect(page.locator('#guided-picker')).toBeVisible();
  await page.getByRole('button',{name:'Help me choose / browse all setups'}).click();
 }
 test('guided stock default has no manual reference field and preserves exact target evidence',async({page})=>{

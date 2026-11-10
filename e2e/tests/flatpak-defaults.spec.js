@@ -7,7 +7,7 @@ async function inspect(page,ids,image='bonito:gnome') {
 }
 test.beforeEach(async({page})=>{
  await page.route('**/api/v2/search',r=>r.fulfill({json:{hits:[]}}));
- await page.goto('/'); await page.getByText('Use a custom container image').click();
+ await page.goto('/?customize=1'); await page.getByText('Use a custom container image').click();
  await page.locator('#apps-options > summary').click();
 });
 test('inspected defaults prefill, custom none persists, and changed targets offer reset',async({page})=>{
@@ -63,7 +63,7 @@ test('deployment suggestions are labelled and restore cannot run while checking'
 });
 test('missing defaults support fails with a visible message',async({page})=>{
  await page.route('**/flatpak-defaults.js',r=>r.fulfill({contentType:'text/javascript',body:''}));
- await page.goto('/');
+ await page.goto('/?customize=1');
  await expect(page.locator('main[role="alert"]')).toContainText('configuration is missing or invalid');
 });
 

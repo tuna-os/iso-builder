@@ -47,7 +47,7 @@ test.describe("curated flatpak sets", () => {
       r.fulfill({ body: BREWFILE }));
     await page.route("https://raw.githubusercontent.com/**/*.preinstall", (r) =>
       r.fulfill({ body: PREINSTALL }));
-    await page.goto("/");
+    await page.goto("/?customize=1");
   });
 
   test("lists every set before an image is inspected", async ({ page }) => {

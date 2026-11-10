@@ -1,8 +1,42 @@
 # Browser quickstart
 
-Open [ISO Builder](https://iso.tunaos.org) to choose an image and check whether
-you can build it in your browser. The build runs on your computer and saves an
-ISO file. You must then write that file to a USB drive to make it bootable.
+## One-click download (the default page)
+
+[iso.tunaos.org](https://iso.tunaos.org) opens on one screen: pick a desktop,
+optionally change **Based on**, and press the one button. What the button does
+depends on evidence, not preference (`app/public/quick-start.js`):
+
+1. **Download ISO, built in your browser.** The page uses this route only when
+   two conditions are true. The catalog has a complete receipt of browser
+   qualification for the image. This browser can build it. The browser needs
+   WebAssembly and private browser storage. It needs at least 4 GB of device
+   memory, when the browser reports it. It needs 9.5 GB of free storage, or
+   19 GB without the save dialog. The save dialog opens first. Then the build
+   runs in the tab with the default apps of the desktop.
+2. **Download ISO, ready-made.** The page uses this route when
+   download.tunaos.org has an ISO for the image.
+3. **Get TunaOS Media Writer.** The page uses this route when the native app
+   (`desktop/`) has a release. The app builds the image on your computer. It
+   also writes the USB stick.
+4. **Build on your computer.** The page shows the local instructions of the
+   full builder.
+
+The links to ready-made ISOs and app releases come from `downloads.json`.
+The deploy job makes this file with `scripts/generate-downloads.py`. The
+script reads the published ISO index and the GitHub releases. If the script
+cannot read a source, the page does not show that route. Thus the page never
+links to a missing file.
+
+This page shows only standard, generic x86-64 images.
+**Customize apps and settings** (or any URL parameter, such as `?customize=1`
+or a share link) opens the full builder described below, on the same image.
+
+## The full builder
+
+Open the full builder ([iso.tunaos.org/?customize=1](https://iso.tunaos.org/?customize=1))
+to choose any image and check whether you can build it in your browser. The
+build runs on your computer and saves an ISO file. You must then write that
+file to a USB drive to make it bootable.
 
 ## Choose and check an image
 

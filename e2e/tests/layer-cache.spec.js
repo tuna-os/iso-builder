@@ -132,7 +132,7 @@ const hexOf = (buf) => crypto.createHash("sha256").update(buf).digest("hex");
 
 test.describe("layer cache", () => {
   test.beforeEach(async ({ page }) => {
-    await page.goto("/");
+    await page.goto("/?customize=1");
     await page.evaluate(() => tboxLayerCache.clear());
   });
 

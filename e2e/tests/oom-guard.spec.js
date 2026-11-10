@@ -25,7 +25,7 @@ test.describe("engine OOM guard", () => {
   test.beforeEach(async ({ page }) => {
     await page.clock.install();
     await qualifiedCatalogFixture(page);
-    await page.goto("/");
+    await page.goto("/?customize=1");
   });
 
   test("reports out of memory when the heap parks at the ceiling and offers target-preserving local fallback", async ({ page }) => {

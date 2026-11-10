@@ -19,6 +19,8 @@
         return this.snapshot();
       },
       restore() { if (defaults) { selected = defaults.ids.slice(); edited = false; pending = false; } return this.snapshot(); },
+      // Forget every earlier target and edit: the next inspect applies its defaults.
+      reset() { target = null; defaults = null; edited = false; selected = []; pending = false; return this.snapshot(); },
       snapshot() { return { target, defaults, edited, selected: selected.slice(), pending }; },
     };
   }
