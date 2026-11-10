@@ -1,0 +1,13 @@
+<Project>
+  <PropertyGroup>
+    <LangVersion>latest</LangVersion>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <Company>TunaOS</Company>
+    <Product>TunaOS Media Writer</Product>
+    <Copyright>TunaOS contributors, Apache-2.0</Copyright>
+    <!-- Overridden by CI from the release tag (media-writer-vX.Y.Z). -->
+    <Version Condition="'$(Version)' == ''">0.1.0</Version>
+  </PropertyGroup>
+</Project>

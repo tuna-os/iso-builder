@@ -1,0 +1,15 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!--
+    Platform-neutral logic: the helper's JSONL protocol, the catalog view,
+    the four-step flow state machine and every user-facing string. Kept free
+    of WinUI so it builds and is unit-tested on any OS.
+  -->
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <RootNamespace>TunaOS.MediaWriter.Core</RootNamespace>
+    <AssemblyName>TunaOS.MediaWriter.Core</AssemblyName>
+  </PropertyGroup>
+  <ItemGroup>
+    <InternalsVisibleTo Include="TunaOS.MediaWriter.Core.Tests" />
+  </ItemGroup>
+</Project>

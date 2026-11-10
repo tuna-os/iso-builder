@@ -1,0 +1,255 @@
+# TunaOS Media Writer for Windows (desktop/windows): builds the helper + engine for
+# windows/amd64, runs the xUnit suite (JSONL parser, flow state machine, the real
+# process runner against smoke/fake-helper.ps1), publishes the self-contained WinUI 3
+# app, walks the real window through all four steps in --smoke mode (screenshots
+# uploaded as `windows-ui-smoke`), builds TunaOS-Media-Writer-Windows-x64.msi with
+# WiX, then installs it, launches the installed app against the real helper and
+# uninstalls it again.
+#
+# Signing: Authenticode only when WINDOWS_CERT_PFX / WINDOWS_CERT_PASSWORD exist.
+# Without them the job summary says "unsigned" — never a fake signature
+# (native/package/README.md).
+name: media-writer-windows
+
+permissions:
+  contents: read
+
+on:
+  pull_request:
+    paths:
+      - desktop/windows/**
+      - desktop/helper/**
+      - .github/workflows/media-writer-windows.yml
+  push:
+    branches: [main, feat/media-writer]
+    paths:
+      - desktop/windows/**
+      - desktop/helper/**
+      - .github/workflows/media-writer-windows.yml
+  workflow_dispatch:
+  workflow_call:
+    inputs:
+      version:
+        description: "Product version X.Y.Z. Empty = from a media-writer-vX.Y.Z tag, else 0.0.<run number>."
+        type: string
+        required: false
+        default: ""
+    secrets:
+      WINDOWS_CERT_PFX:
+        description: "base64 Authenticode code-signing certificate + key (.pfx)"
+        required: false
+      WINDOWS_CERT_PASSWORD:
+        required: false
+
+concurrency:
+  group: media-writer-windows-${{ github.event_name }}-${{ github.head_ref || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  windows:
+    runs-on: windows-latest
+    timeout-minutes: 60
+    defaults:
+      run:
+        shell: pwsh
+        working-directory: desktop/windows
+    env:
+      HAS_SIGNING: ${{ secrets.WINDOWS_CERT_PFX != '' && secrets.WINDOWS_CERT_PASSWORD != '' }}
+      DOTNET_NOLOGO: "1"
+      DOTNET_CLI_TELEMETRY_OPTOUT: "1"
+      MSI_NAME: TunaOS-Media-Writer-Windows-x64.msi
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-dotnet@v6
+        with:
+          dotnet-version: 10.0.x
+
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: desktop/helper/go.mod
+          cache-dependency-path: desktop/helper/go.sum
+
+      - name: Version
+        env:
+          INPUT_VERSION: ${{ inputs.version }}
+        run: |
+          $version = $env:INPUT_VERSION
+          if (-not $version -and $env:GITHUB_REF -like 'refs/tags/media-writer-v*') {
+            $version = $env:GITHUB_REF -replace '^refs/tags/media-writer-v', ''
+          }
+          if (-not $version) { $version = "0.0.$env:GITHUB_RUN_NUMBER" }
+          if ($version -notmatch '^\d+\.\d+\.\d+$') { throw "MSI needs a numeric X.Y.Z version, got '$version'" }
+          "VERSION=$version" >> $env:GITHUB_ENV
+          dotnet --info | Select-Object -First 12
+          go version
+          [Environment]::OSVersion.VersionString
+
+      - name: Unit tests (JSONL parser, flow state machine, fake-helper process runner)
+        run: >
+          dotnet test tests/MediaWriter.Core.Tests -c Release
+          --logger "console;verbosity=normal"
+          --logger "trx;LogFileName=core-tests.trx"
+          --results-directory build/test-results
+
+      - name: Build helper + engine (windows/amd64)
+        run: |
+          $out = New-Item -ItemType Directory -Force -Path build/helper
+          Push-Location ../helper
+          try {
+            $env:CGO_ENABLED = '0'; $env:GOOS = 'windows'; $env:GOARCH = 'amd64'
+            go build -trimpath -o "$out/tunaos-media-helper.exe" ./cmd/tunaos-media-helper
+            if ($LASTEXITCODE) { throw 'helper build failed' }
+            # build-engine cross-compiles inside tacklebox's own module, so it runs for the host.
+            Remove-Item env:GOOS, env:GOARCH
+            go run ./cmd/build-engine -goos windows -goarch amd64 -o "$out/tunaos-media-engine.exe"
+            if ($LASTEXITCODE) { throw 'engine build failed' }
+          } finally { Pop-Location }
+          Get-ChildItem build/helper | Format-Table Name, Length
+
+      - name: Check the real helper speaks protocol 1
+        run: |
+          build/helper/tunaos-media-helper.exe version | Tee-Object build/helper-version.jsonl
+          if (-not (Select-String -Path build/helper-version.jsonl -Pattern '"event":"version".*"protocol":1' -Quiet)) { throw 'helper version event missing protocol 1' }
+          # The runner has no removable media: an empty (or system-disk-free) list is the expected answer.
+          build/helper/tunaos-media-helper.exe drives | Tee-Object build/helper-drives.jsonl
+          if (-not (Select-String -Path build/helper-drives.jsonl -Pattern '"event":"drives"' -Quiet)) { throw 'helper drives event missing' }
+
+      - name: Publish app (WinUI 3, unpackaged, self-contained)
+        run: |
+          dotnet publish src/MediaWriter.App -c Release -r win-x64 -p:Platform=x64 `
+            "-p:Version=$env:VERSION" "-p:HelperDir=$pwd/build/helper" -o build/app
+          if ($LASTEXITCODE) { throw 'publish failed' }
+          foreach ($f in 'TunaOSMediaWriter.exe', 'tunaos-media-helper.exe', 'tunaos-media-engine.exe', 'Assets/app.ico') {
+            if (-not (Test-Path "build/app/$f")) { throw "publish output is missing $f" }
+          }
+          $files = Get-ChildItem build/app -Recurse -File
+          "publish: {0} files, {1:N0} MB" -f $files.Count, (($files | Measure-Object Length -Sum).Sum / 1MB)
+
+      - name: Authenticode-sign binaries
+        if: env.HAS_SIGNING == 'true'
+        env:
+          WINDOWS_CERT_PFX: ${{ secrets.WINDOWS_CERT_PFX }}
+          WINDOWS_CERT_PASSWORD: ${{ secrets.WINDOWS_CERT_PASSWORD }}
+        run: |
+          $pfx = Join-Path $env:RUNNER_TEMP 'cert.pfx'
+          [IO.File]::WriteAllBytes($pfx, [Convert]::FromBase64String($env:WINDOWS_CERT_PFX))
+          $signtool = Get-ChildItem "${env:ProgramFiles(x86)}\Windows Kits\10\bin\*\x64\signtool.exe" | Sort-Object FullName -Descending | Select-Object -First 1
+          "SIGNTOOL=$($signtool.FullName)" >> $env:GITHUB_ENV
+          & $signtool.FullName sign /fd SHA256 /tr http://timestamp.digicert.com /td SHA256 /f $pfx /p $env:WINDOWS_CERT_PASSWORD `
+            build/app/TunaOSMediaWriter.exe build/app/tunaos-media-helper.exe build/app/tunaos-media-engine.exe
+          if ($LASTEXITCODE) { throw 'signtool failed' }
+          Remove-Item $pfx
+
+      - name: UAC state of the runner
+        run: |
+          $key = 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System'
+          $lua = (Get-ItemProperty $key).EnableLUA
+          $consent = (Get-ItemProperty $key).ConsentPromptBehaviorAdmin
+          "EnableLUA=$lua ConsentPromptBehaviorAdmin=$consent"
+          # A visible consent prompt would hang a headless run; only then skip the runas verb
+          # (the events-file path is exercised either way).
+          if ($lua -eq 1 -and $consent -ne 0) { 'SMOKE_ELEVATE=-NoElevate' >> $env:GITHUB_ENV } else { 'SMOKE_ELEVATE=' >> $env:GITHUB_ENV }
+
+      - name: UI smoke (fake helper, all four steps, screenshots)
+        run: |
+          $extra = @{}
+          if ($env:SMOKE_ELEVATE) { $extra.NoElevate = $true }
+          ./smoke/run-ui-smoke.ps1 -App build/app/TunaOSMediaWriter.exe -Out build/ui-smoke -Scenario write -FakeHelper smoke/fake-helper.ps1 @extra
+          ./smoke/run-ui-smoke.ps1 -App build/app/TunaOSMediaWriter.exe -Out build/ui-smoke -Scenario save -FakeHelper smoke/fake-helper.ps1 @extra
+          $env:FAKE_HELPER_FAIL = 'build'
+          ./smoke/run-ui-smoke.ps1 -App build/app/TunaOSMediaWriter.exe -Out build/ui-smoke -Scenario error -FakeHelper smoke/fake-helper.ps1 @extra
+          Remove-Item env:FAKE_HELPER_FAIL
+          # Real helper: catalog + drive list only (the launch scenario never writes).
+          ./smoke/run-ui-smoke.ps1 -App build/app/TunaOSMediaWriter.exe -Out build/ui-smoke -Scenario launch
+
+      - name: Build MSI (WiX)
+        run: |
+          dotnet build installer/MediaWriter.Installer.wixproj -c Release `
+            "-p:AppDir=$pwd/build/app" "-p:ProductVersion=$env:VERSION"
+          if ($LASTEXITCODE) { throw 'MSI build failed' }
+          $msi = Get-ChildItem installer/bin -Recurse -Filter $env:MSI_NAME | Select-Object -First 1
+          if (-not $msi) { throw "$env:MSI_NAME not produced" }
+          Copy-Item $msi.FullName "build/$env:MSI_NAME"
+          "MSI: {0:N1} MB" -f ((Get-Item "build/$env:MSI_NAME").Length / 1MB)
+
+      - name: Authenticode-sign MSI
+        if: env.HAS_SIGNING == 'true'
+        env:
+          WINDOWS_CERT_PFX: ${{ secrets.WINDOWS_CERT_PFX }}
+          WINDOWS_CERT_PASSWORD: ${{ secrets.WINDOWS_CERT_PASSWORD }}
+        run: |
+          $pfx = Join-Path $env:RUNNER_TEMP 'cert.pfx'
+          [IO.File]::WriteAllBytes($pfx, [Convert]::FromBase64String($env:WINDOWS_CERT_PFX))
+          & $env:SIGNTOOL sign /fd SHA256 /tr http://timestamp.digicert.com /td SHA256 /d "TunaOS Media Writer" /f $pfx /p $env:WINDOWS_CERT_PASSWORD "build/$env:MSI_NAME"
+          if ($LASTEXITCODE) { throw 'signtool failed' }
+          Remove-Item $pfx
+          & $env:SIGNTOOL verify /pa "build/$env:MSI_NAME"
+
+      - name: Install MSI, launch the installed app, uninstall
+        run: |
+          $msi = (Resolve-Path "build/$env:MSI_NAME").Path
+          $dir = Join-Path $env:ProgramFiles 'TunaOS Media Writer'
+          $lnk = Join-Path $env:ProgramData 'Microsoft\Windows\Start Menu\Programs\TunaOS Media Writer.lnk'
+
+          $p = Start-Process msiexec.exe -ArgumentList '/i', "`"$msi`"", '/qn', '/norestart', '/l*v', "`"$pwd\build\msi-install.log`"" -Wait -PassThru
+          if ($p.ExitCode -ne 0) { throw "msiexec /i exited $($p.ExitCode)" }
+          foreach ($f in 'TunaOSMediaWriter.exe', 'tunaos-media-helper.exe', 'tunaos-media-engine.exe') {
+            if (-not (Test-Path (Join-Path $dir $f))) { throw "installed app is missing $f" }
+          }
+          if (-not (Test-Path $lnk)) { throw 'Start-menu shortcut missing' }
+          $target = (New-Object -ComObject WScript.Shell).CreateShortcut($lnk).TargetPath
+          "shortcut -> $target"
+          if ($target -ne (Join-Path $dir 'TunaOSMediaWriter.exe')) { throw "shortcut points at $target" }
+
+          ./smoke/run-ui-smoke.ps1 -App (Join-Path $dir 'TunaOSMediaWriter.exe') -Out build/ui-smoke-installed -Scenario launch
+          $extra = @{}
+          if ($env:SMOKE_ELEVATE) { $extra.NoElevate = $true }
+          ./smoke/run-ui-smoke.ps1 -App (Join-Path $dir 'TunaOSMediaWriter.exe') -Out build/ui-smoke-installed -Scenario write -FakeHelper smoke/fake-helper.ps1 @extra
+
+          $p = Start-Process msiexec.exe -ArgumentList '/x', "`"$msi`"", '/qn', '/norestart', '/l*v', "`"$pwd\build\msi-uninstall.log`"" -Wait -PassThru
+          if ($p.ExitCode -ne 0) { throw "msiexec /x exited $($p.ExitCode)" }
+          if (Test-Path (Join-Path $dir 'TunaOSMediaWriter.exe')) { throw 'uninstall left the app behind' }
+          if (Test-Path $lnk) { throw 'uninstall left the shortcut behind' }
+          Select-String -Path build/msi-install.log, build/msi-uninstall.log -Pattern 'success or error status' -ErrorAction SilentlyContinue |
+            ForEach-Object { $_.Line.Trim() }
+          'install / launch / uninstall OK'
+
+      - name: Upload UI smoke screenshots and logs
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: windows-ui-smoke
+          path: |
+            desktop/windows/build/ui-smoke
+            desktop/windows/build/ui-smoke-installed
+            desktop/windows/build/test-results
+            desktop/windows/build/*.log
+            desktop/windows/build/*.jsonl
+          if-no-files-found: warn
+
+      - name: Upload TunaOS-Media-Writer-Windows-x64.msi
+        uses: actions/upload-artifact@v7
+        with:
+          name: TunaOS-Media-Writer-Windows-x64.msi
+          path: desktop/windows/build/TunaOS-Media-Writer-Windows-x64.msi
+          if-no-files-found: error
+
+      - name: Job summary
+        if: always()
+        run: |
+          $msi = "build/$env:MSI_NAME"
+          $lines = @('## TunaOS Media Writer — Windows', '', "- Version: ``$env:VERSION``")
+          if ($env:HAS_SIGNING -eq 'true') {
+            $lines += '- Signing: **Authenticode signed** (app, helper, engine, MSI)'
+          } else {
+            $lines += '- Signing: **unsigned** (WINDOWS_CERT_PFX not configured). SmartScreen will warn: "More info" → "Run anyway".'
+          }
+          if (Test-Path $msi) {
+            $lines += "- Artifact: ``$env:MSI_NAME`` ({0:N1} MB, sha256 ``{1}``)" -f ((Get-Item $msi).Length / 1MB), (Get-FileHash -Algorithm SHA256 $msi).Hash.ToLowerInvariant()
+          }
+          if (Test-Path build/helper-version.jsonl) { $lines += "- Bundled helper: ``$(Get-Content build/helper-version.jsonl -Raw)``".Trim() }
+          Get-ChildItem build/ui-smoke, build/ui-smoke-installed -Recurse -Filter smoke.log -ErrorAction SilentlyContinue | ForEach-Object {
+            $lines += "- UI smoke $($_.Directory.Parent.Name)/$($_.Directory.Name): $(Get-Content $_.FullName -Tail 1)"
+          }
+          $lines -join "`n" >> $env:GITHUB_STEP_SUMMARY
