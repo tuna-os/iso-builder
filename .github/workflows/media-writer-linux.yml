@@ -12,7 +12,7 @@ on:
       - desktop/helper/**
       - .github/workflows/media-writer-linux.yml
   push:
-    branches: [main, feat/media-writer]
+    branches: [main]
     paths:
       - desktop/linux/**
       - desktop/helper/**

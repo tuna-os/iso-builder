@@ -27,6 +27,7 @@ modules:
   - name: tunaos-media-helper
     buildsystem: simple
     build-options:
+      no-debuginfo: true
       append-path: /usr/lib/sdk/golang/bin
       build-args:
         - --share=network
@@ -39,6 +40,9 @@ modules:
     build-commands:
       - go build -ldflags=-s -o /app/bin/tunaos-media-helper ./cmd/tunaos-media-helper
       - go run ./cmd/build-engine -goos linux -goarch "$(go env GOARCH)" -o /app/bin/tunaos-media-engine
+      # build-engine sets its own GOFLAGS, so the module cache is read-only;
+      # let go remove it or flatpak-builder cannot delete the build dir.
+      - go clean -modcache
     sources:
       - type: dir
         path: ../helper
