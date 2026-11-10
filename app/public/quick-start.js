@@ -145,6 +145,14 @@
     return quickLeaves().find((l) => l.facets.desktop[0] === desktop && l.facets.base[0] === base) || null;
   }
 
+  // What an unsigned app costs the user on first launch, in their OS's words.
+  // A Linux bundle is not store-signed, so Linux always gets its hint.
+  const FIRST_LAUNCH_HINTS = {
+    macos: 'First launch: right-click the app in Applications and choose Open.',
+    windows: 'If Windows SmartScreen warns you, choose More info, then Run anyway.',
+    linux: 'Open the downloaded file with your software center to install it.',
+  };
+
   function appLinks(asset) {
     const other = $q('quick-app-other');
     other.replaceChildren();
@@ -215,6 +223,10 @@
       $q('quick-app-download').href = r.asset.url;
       meta.textContent = `The app builds ${facetLabel('desktop', desktop)} on ${facetLabel('base', base)} and puts it on your USB stick. Free.`;
       appLinks(r.asset);
+      // Only the release's signing.json can say the OS trusts the app.
+      const hint = r.asset.signed === true ? '' : FIRST_LAUNCH_HINTS[OS.id] || '';
+      $q('quick-app-hint').textContent = hint;
+      $q('quick-app-hint').hidden = !hint;
     } else if (r.kind === 'mobile') {
       meta.textContent = capable.reason;
     } else {
