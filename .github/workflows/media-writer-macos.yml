@@ -18,8 +18,10 @@ on:
       - desktop/macos/**
       - desktop/helper/**
       - .github/workflows/media-writer-macos.yml
+  # Branch pushes are covered by their pull request run; a second push run
+  # would only double the (10x-priced) macOS minutes.
   push:
-    branches: [main, feat/media-writer]
+    branches: [main]
     paths:
       - desktop/macos/**
       - desktop/helper/**
