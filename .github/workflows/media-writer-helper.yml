@@ -28,7 +28,7 @@ on:
   workflow_dispatch:
     inputs:
       engine_smoke:
-        description: "Also build a real ISO (flounder:xfce, ~1.1 GB download) on Linux, macOS and Windows"
+        description: "Also build a real ISO (flounder-sid:xfce, ~1.2 GB download) on Linux, macOS and Windows"
         type: boolean
         default: false
 
@@ -177,10 +177,10 @@ jobs:
           go run ./cmd/build-engine -o "$bin/tunaos-media-engine$ext"
           echo "HELPER=$bin/tunaos-media-helper$ext" >> "$GITHUB_ENV"
 
-      - name: build flounder:xfce:linux/amd64
+      - name: build flounder-sid:xfce:linux/amd64
         run: |
           df -h "$RUNNER_TEMP" || true
-          "$HELPER" build --target flounder:xfce:linux/amd64 --out "$RUNNER_TEMP/tunaos.iso" \
+          "$HELPER" build --target flounder-sid:xfce:linux/amd64 --out "$RUNNER_TEMP/tunaos.iso" \
             --workdir "$RUNNER_TEMP/work" --events "$RUNNER_TEMP/build.jsonl" 2> "$RUNNER_TEMP/build.log"
           tail -n 1 "$RUNNER_TEMP/build.jsonl" | tee "$RUNNER_TEMP/done.json"
           jq -e '.event == "done" and .bytes > 100000000' "$RUNNER_TEMP/done.json"
@@ -190,9 +190,9 @@ jobs:
           size=$(jq -r .bytes "$RUNNER_TEMP/done.json")
           dev="$RUNNER_TEMP/usb.img"
           # Device = ISO rounded up to 64 MiB.
-          python3 -c "import sys; f=open(sys.argv[1],'wb'); f.truncate((int(sys.argv[2])//67108864+1)*67108864)" "$dev" "$size"
+          dd if=/dev/zero of="$dev" bs=1 count=0 seek=$(( (size / 67108864 + 1) * 67108864 )) 2>/dev/null
           export TUNAOS_MEDIA_HELPER_TEST_DEVICES="$dev"
-          id=$("$HELPER" drives | jq -r --arg p "$dev" '.drives[] | select(.path == $p or (.path|ascii_downcase) == ($p|ascii_downcase)) | .id' | head -n1)
+          id=$("$HELPER" drives | jq -r '.drives[] | select(.name | startswith("Test device")) | .id' | head -n1)
           test -n "$id"
           "$HELPER" write --iso "$RUNNER_TEMP/tunaos.iso" --device "$id" | tail -n 1 | tee "$RUNNER_TEMP/write.json"
           jq -e '.event == "done" and .verified == true' "$RUNNER_TEMP/write.json"
