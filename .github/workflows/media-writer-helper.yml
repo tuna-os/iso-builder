@@ -1,0 +1,220 @@
+name: media-writer-helper
+
+# CI for desktop/helper — tunaos-media-helper, the backend every TunaOS Media
+# Writer GUI spawns (desktop/PROTOCOL.md), and tunaos-media-engine, tacklebox's
+# cmd/purebuild built from the pin in desktop/helper/go.mod.
+#
+# test   — go vet + go test -race on real Linux, macOS and Windows runners,
+#          with and without the testdevices tag (file-backed write/verify).
+#          Per-OS files (drive enumeration, raw-disk open) only compile on
+#          their own OS, so a single Linux job would never see them.
+# cross  — helper + engine for every shipped platform, uploaded as
+#          tunaos-media-helper-<os>-<arch>.
+# engine-smoke (dispatch only, engine_smoke=true) — a real ISO build of the
+#          smallest catalog desktop with the shipped binaries on each OS.
+
+on:
+  pull_request:
+    paths:
+      - desktop/helper/**
+      - desktop/PROTOCOL.md
+      - .github/workflows/media-writer-helper.yml
+  push:
+    branches: [main]
+    paths:
+      - desktop/helper/**
+      - desktop/PROTOCOL.md
+      - .github/workflows/media-writer-helper.yml
+  workflow_dispatch:
+    inputs:
+      engine_smoke:
+        description: "Also build a real ISO (flounder:xfce, ~1.1 GB download) on Linux, macOS and Windows"
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: media-writer-helper-${{ github.event_name }}-${{ github.head_ref || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+defaults:
+  run:
+    shell: bash
+    working-directory: desktop/helper
+
+jobs:
+  test:
+    name: test (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: desktop/helper/go.mod
+          cache-dependency-path: desktop/helper/go.sum
+
+      - name: gofmt
+        if: runner.os == 'Linux'
+        run: |
+          unformatted="$(gofmt -l .)"
+          if [ -n "$unformatted" ]; then echo "::error::gofmt needed: $unformatted"; exit 1; fi
+
+      - name: go vet
+        run: |
+          go vet ./...
+          go vet -tags testdevices ./...
+
+      - name: go test -race
+        run: go test -race -count=1 ./...
+
+      - name: go test -race (testdevices)
+        run: go test -race -count=1 -tags testdevices ./...
+
+      # The embedded catalog is the offline fallback; it should track
+      # app/public. Stale is not wrong (the build verifies pinned digests),
+      # so this warns instead of failing.
+      - name: embedded catalog freshness
+        if: runner.os == 'Linux'
+        run: |
+          go generate ./internal/catalog
+          if ! git diff --quiet -- . ; then
+            echo "::warning::desktop/helper embedded catalog or parity fixtures are stale; run 'go generate ./...' in desktop/helper"
+            git diff --stat -- .
+          fi
+
+      - name: release binaries answer the protocol
+        run: |
+          ext=""; [ "$RUNNER_OS" = Windows ] && ext=.exe
+          bin="$RUNNER_TEMP/bin"; mkdir -p "$bin"
+          CGO_ENABLED=0 go build -trimpath -o "$bin/tunaos-media-helper$ext" ./cmd/tunaos-media-helper
+          go run ./cmd/build-engine -o "$bin/tunaos-media-engine$ext"
+          "$bin/tunaos-media-helper$ext" version | tee "$RUNNER_TEMP/version.json"
+          "$bin/tunaos-media-helper$ext" catalog | jq -c '{event, snapshotDigest, defaultTarget, desktops: [.desktops[].id], targets: (.targets|length)}'
+          "$bin/tunaos-media-helper$ext" drives | tee "$RUNNER_TEMP/drives.json"
+          jq -e '.event == "version" and .protocol == 1' "$RUNNER_TEMP/version.json"
+          jq -e '.event == "drives" and (.drives|type) == "array"' "$RUNNER_TEMP/drives.json"
+          {
+            echo "### helper on $RUNNER_OS"
+            echo '```'
+            cat "$RUNNER_TEMP/version.json" "$RUNNER_TEMP/drives.json"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  cross:
+    name: build (${{ matrix.goos }}/${{ matrix.goarch }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { goos: darwin, goarch: arm64 }
+          - { goos: darwin, goarch: amd64 }
+          - { goos: windows, goarch: amd64 }
+          - { goos: linux, goarch: amd64 }
+          - { goos: linux, goarch: arm64 }
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: desktop/helper/go.mod
+          cache-dependency-path: desktop/helper/go.sum
+
+      - name: build helper and engine
+        env:
+          GOOS_T: ${{ matrix.goos }}
+          GOARCH_T: ${{ matrix.goarch }}
+        run: |
+          ext=""; [ "$GOOS_T" = windows ] && ext=.exe
+          out="$RUNNER_TEMP/out"; mkdir -p "$out"
+          CGO_ENABLED=0 GOOS="$GOOS_T" GOARCH="$GOARCH_T" go build -trimpath -o "$out/tunaos-media-helper$ext" ./cmd/tunaos-media-helper
+          go run ./cmd/build-engine -goos "$GOOS_T" -goarch "$GOARCH_T" -o "$out/tunaos-media-engine$ext"
+          (cd "$out" && sha256sum * | tee SHA256SUMS)
+          file "$out"/*
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: tunaos-media-helper-${{ matrix.goos }}-${{ matrix.goarch }}
+          path: ${{ runner.temp }}/out/
+          if-no-files-found: error
+
+  engine-smoke:
+    name: real ISO build (${{ matrix.os }})
+    if: github.event_name == 'workflow_dispatch' && inputs.engine_smoke
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: desktop/helper/go.mod
+          cache-dependency-path: desktop/helper/go.sum
+
+      - name: free disk (Linux)
+        if: runner.os == 'Linux'
+        working-directory: .
+        run: sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL && df -h
+
+      - name: build helper (testdevices) and engine
+        run: |
+          ext=""; [ "$RUNNER_OS" = Windows ] && ext=.exe
+          bin="$RUNNER_TEMP/bin"; mkdir -p "$bin"
+          go build -tags testdevices -o "$bin/tunaos-media-helper$ext" ./cmd/tunaos-media-helper
+          go run ./cmd/build-engine -o "$bin/tunaos-media-engine$ext"
+          echo "HELPER=$bin/tunaos-media-helper$ext" >> "$GITHUB_ENV"
+
+      - name: build flounder:xfce:linux/amd64
+        run: |
+          df -h "$RUNNER_TEMP" || true
+          "$HELPER" build --target flounder:xfce:linux/amd64 --out "$RUNNER_TEMP/tunaos.iso" \
+            --workdir "$RUNNER_TEMP/work" --events "$RUNNER_TEMP/build.jsonl" 2> "$RUNNER_TEMP/build.log"
+          tail -n 1 "$RUNNER_TEMP/build.jsonl" | tee "$RUNNER_TEMP/done.json"
+          jq -e '.event == "done" and .bytes > 100000000' "$RUNNER_TEMP/done.json"
+
+      - name: write to a file-backed device and verify
+        run: |
+          size=$(jq -r .bytes "$RUNNER_TEMP/done.json")
+          dev="$RUNNER_TEMP/usb.img"
+          # Device = ISO rounded up to 64 MiB.
+          python3 -c "import sys; f=open(sys.argv[1],'wb'); f.truncate((int(sys.argv[2])//67108864+1)*67108864)" "$dev" "$size"
+          export TUNAOS_MEDIA_HELPER_TEST_DEVICES="$dev"
+          id=$("$HELPER" drives | jq -r --arg p "$dev" '.drives[] | select(.path == $p or (.path|ascii_downcase) == ($p|ascii_downcase)) | .id' | head -n1)
+          test -n "$id"
+          "$HELPER" write --iso "$RUNNER_TEMP/tunaos.iso" --device "$id" | tail -n 1 | tee "$RUNNER_TEMP/write.json"
+          jq -e '.event == "done" and .verified == true' "$RUNNER_TEMP/write.json"
+
+      - name: summary
+        if: always()
+        run: |
+          {
+            echo "### real ISO build on $RUNNER_OS"
+            echo '```'
+            cat "$RUNNER_TEMP/done.json" "$RUNNER_TEMP/write.json" 2>/dev/null || true
+            grep '"event":"error"' "$RUNNER_TEMP/build.jsonl" 2>/dev/null || true
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: engine-smoke-${{ matrix.os }}
+          path: |
+            ${{ runner.temp }}/build.jsonl
+            ${{ runner.temp }}/build.log
+            ${{ runner.temp }}/done.json
+            ${{ runner.temp }}/write.json
+          if-no-files-found: ignore

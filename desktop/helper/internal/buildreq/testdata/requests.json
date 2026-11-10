@@ -1,0 +1,157 @@
+[
+  {
+    "target": "skipjack:gnome:linux/amd64",
+    "desktop": "gnome",
+    "request": {
+      "schemaVersion": 1,
+      "kind": "build-request",
+      "customImage": false,
+      "image": "ghcr.io/tuna-os/skipjack:gnome",
+      "registry": "https://relay.tunaos.org",
+      "target": {
+        "variant": "skipjack",
+        "flavor": "gnome",
+        "platform": "linux/amd64",
+        "cpuBaseline": "x86-64-v3",
+        "hardwareScope": "generic"
+      },
+      "resolvedInputs": {
+        "platformManifestDigest": "sha256:80f53cbc695c3f34b94554ffa5cc0dab33c474518dc8ce4b1107f0fcc25df6cf",
+        "indexDigest": "sha256:8f5e1d947307417f1d292ae215b1ad4d9572d2f735109117b10aaf8180877849",
+        "configDigest": "sha256:911c572dc1d2293cb924836b4da8bf5ebfde443dc0d00f2758f6a7c4660dd3ec",
+        "liveOverlayDigest": "sha256:4943a7ca67ff3791164f3c63ab0d3d447bde7fe02e3ef9f2393506482520593d",
+        "liveOverlayBaseDigest": "sha256:80f53cbc695c3f34b94554ffa5cc0dab33c474518dc8ce4b1107f0fcc25df6cf",
+        "installerRevision": "sha256:ff28c254d0f0c3fc303cdcd2d7cae1632a55e6f92f1f887c4c6f00559d82417b",
+        "engineRevision": "sha256:296efe8e3f95d05ca17363d166da9e396a47958dfd07549958d460c0a1c31694"
+      },
+      "options": {
+        "label": "TUNAOS",
+        "packages": [],
+        "flatpaks": [
+          "io.github.kolunmi.Bazaar",
+          "org.mozilla.firefox",
+          "com.mattjakeman.ExtensionManager"
+        ],
+        "extraRun": [],
+        "outputFilename": "tunaos-skipjack-gnome-amd64.iso"
+      },
+      "catalogVersion": "sha256:d7a64aa187e8d2745c40d15608287a290845000543d4cb1062cf509b8ed4a523",
+      "qualificationId": "sha256:8a44c167de51a69474e1adff528d061756ac72b28cb7bee76299f00a82a95c6e"
+    }
+  },
+  {
+    "target": "flounder:xfce:linux/amd64",
+    "desktop": "xfce",
+    "request": {
+      "schemaVersion": 1,
+      "kind": "build-request",
+      "customImage": false,
+      "image": "ghcr.io/tuna-os/flounder:xfce",
+      "registry": "https://relay.tunaos.org",
+      "target": {
+        "variant": "flounder",
+        "flavor": "xfce",
+        "platform": "linux/amd64",
+        "cpuBaseline": "x86-64",
+        "hardwareScope": "generic"
+      },
+      "resolvedInputs": {
+        "platformManifestDigest": "sha256:5beb5d9d37c8a84656135499108fc5954440acbfb4b6f0f3f95f25e4090ebbac",
+        "indexDigest": "sha256:ccc8597774616b55f527a3c571458a98c9abdbe13acd1c0a3a8e8506c152e45e",
+        "configDigest": "sha256:e6d77d7018f618bc112227abb250ae1a0920cf0c0f66d51fbcc36f39dba2c3c4",
+        "liveOverlayDigest": "",
+        "liveOverlayBaseDigest": "",
+        "installerRevision": "",
+        "engineRevision": ""
+      },
+      "options": {
+        "label": "TUNAOS",
+        "packages": [],
+        "flatpaks": [
+          "io.github.kolunmi.Bazaar",
+          "org.mozilla.firefox"
+        ],
+        "extraRun": [],
+        "outputFilename": "tunaos-flounder-xfce-amd64.iso"
+      },
+      "catalogVersion": "sha256:d7a64aa187e8d2745c40d15608287a290845000543d4cb1062cf509b8ed4a523"
+    }
+  },
+  {
+    "target": "albacore:gnome-hwe:linux/amd64/v2",
+    "desktop": "gnome",
+    "request": {
+      "schemaVersion": 1,
+      "kind": "build-request",
+      "customImage": false,
+      "image": "ghcr.io/tuna-os/albacore:gnome-hwe",
+      "registry": "https://relay.tunaos.org",
+      "target": {
+        "variant": "albacore",
+        "flavor": "gnome-hwe",
+        "platform": "linux/amd64/v2",
+        "cpuBaseline": "x86-64-v2",
+        "hardwareScope": "generic"
+      },
+      "resolvedInputs": {
+        "platformManifestDigest": "sha256:af3e043a46c26c16b456e989883b7744a36f42a05ca5bdf12e184650ef49fc3b",
+        "indexDigest": "sha256:d4b68014278031ce392a38d0e9956262c3b51bff5c2da7be891787d2fe107534",
+        "configDigest": "sha256:95f9ce8f5da79c39709f604734704ab0528f773a56691bbbeb6a9b3e24df5f2f",
+        "liveOverlayDigest": "",
+        "liveOverlayBaseDigest": "",
+        "installerRevision": "",
+        "engineRevision": ""
+      },
+      "options": {
+        "label": "TUNAOS",
+        "packages": [],
+        "flatpaks": [
+          "io.github.kolunmi.Bazaar",
+          "org.mozilla.firefox",
+          "com.mattjakeman.ExtensionManager"
+        ],
+        "extraRun": [],
+        "outputFilename": "tunaos-albacore-gnome-hwe-amd64-v2.iso"
+      },
+      "catalogVersion": "sha256:d7a64aa187e8d2745c40d15608287a290845000543d4cb1062cf509b8ed4a523"
+    }
+  },
+  {
+    "target": "albacore:kde:linux/arm64",
+    "desktop": "kde",
+    "request": {
+      "schemaVersion": 1,
+      "kind": "build-request",
+      "customImage": false,
+      "image": "ghcr.io/tuna-os/albacore:kde",
+      "registry": "https://relay.tunaos.org",
+      "target": {
+        "variant": "albacore",
+        "flavor": "kde",
+        "platform": "linux/arm64",
+        "cpuBaseline": "armv8-a",
+        "hardwareScope": "generic"
+      },
+      "resolvedInputs": {
+        "platformManifestDigest": "sha256:05e99c6593e083c3437e416146552cf49f37d57e2d4b54851b4691a0dcdaa8d1",
+        "indexDigest": "sha256:bc1058540e32b4b0bc3a2414e1b149806181d29a25f0d2b7b1a01a8e5f2de540",
+        "configDigest": "sha256:1f2f40912a78636d9dcffb321dc0dbb90c157b008e054005efabb6b7293930ae",
+        "liveOverlayDigest": "",
+        "liveOverlayBaseDigest": "",
+        "installerRevision": "",
+        "engineRevision": ""
+      },
+      "options": {
+        "label": "TUNAOS",
+        "packages": [],
+        "flatpaks": [
+          "io.github.kolunmi.Bazaar",
+          "org.mozilla.firefox"
+        ],
+        "extraRun": [],
+        "outputFilename": "tunaos-albacore-kde-arm64.iso"
+      },
+      "catalogVersion": "sha256:d7a64aa187e8d2745c40d15608287a290845000543d4cb1062cf509b8ed4a523"
+    }
+  }
+]
