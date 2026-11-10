@@ -187,6 +187,7 @@ jobs:
           if ($LASTEXITCODE) { throw 'signtool failed' }
           Remove-Item $pfx
           & $env:SIGNTOOL verify /pa "build/$env:MSI_NAME"
+          if ($LASTEXITCODE) { throw 'signtool verify failed' }
 
       - name: Install MSI, launch the installed app, uninstall
         run: |
@@ -237,15 +238,35 @@ jobs:
           path: desktop/windows/build/TunaOS-Media-Writer-Windows-x64.msi
           if-no-files-found: error
 
+      # Release contract (desktop/PROTOCOL.md "Release assets"): "authenticode" only
+      # when the MSI's signature verifies, else "unsigned". Uploaded on every run.
+      - name: Record signing state
+        run: |
+          $status = (Get-AuthenticodeSignature "build/$env:MSI_NAME").Status
+          $state = if ($status -eq 'Valid') { 'authenticode' } else { 'unsigned' }
+          "MSI Authenticode status: $status -> $state"
+          if ($env:HAS_SIGNING -eq 'true' -and $state -ne 'authenticode') { throw "signing secrets present but MSI signature is $status" }
+          New-Item -ItemType Directory -Force -Path build/signing | Out-Null
+          @{ 'windows-x64' = $state } | ConvertTo-Json -Compress | Set-Content -NoNewline -Encoding utf8NoBOM build/signing/signing-windows-x64.json
+          Get-Content build/signing/signing-windows-x64.json
+          "SIGNING_STATE=$state" >> $env:GITHUB_ENV
+
+      - name: Upload signing-windows-x64
+        uses: actions/upload-artifact@v7
+        with:
+          name: signing-windows-x64
+          path: desktop/windows/build/signing/signing-windows-x64.json
+          if-no-files-found: error
+
       - name: Job summary
         if: always()
         run: |
           $msi = "build/$env:MSI_NAME"
           $lines = @('## TunaOS Media Writer — Windows', '', "- Version: ``$env:VERSION``")
-          if ($env:HAS_SIGNING -eq 'true') {
-            $lines += '- Signing: **Authenticode signed** (app, helper, engine, MSI)'
+          if ($env:SIGNING_STATE -eq 'authenticode') {
+            $lines += '- Signing: **Authenticode signed** (app, helper, engine, MSI; MSI signature verified) — `signing-windows-x64.json`: authenticode'
           } else {
-            $lines += '- Signing: **unsigned** (WINDOWS_CERT_PFX not configured). SmartScreen will warn: "More info" → "Run anyway".'
+            $lines += '- Signing: **unsigned** (WINDOWS_CERT_PFX not configured). SmartScreen will warn: "More info" → "Run anyway". `signing-windows-x64.json`: unsigned'
           }
           if (Test-Path $msi) {
             $lines += "- Artifact: ``$env:MSI_NAME`` ({0:N1} MB, sha256 ``{1}``)" -f ((Get-Item $msi).Length / 1MB), (Get-FileHash -Algorithm SHA256 $msi).Hash.ToLowerInvariant()

@@ -90,3 +90,9 @@ Authenticode only when the repository secrets `WINDOWS_CERT_PFX` (base64 .pfx) a
 timestamp. Without them the job summary says **unsigned**, and SmartScreen warns on first
 run ("More info" → "Run anyway") — see `native/package/README.md` for why no certificate
 exists yet.
+
+Every run (including `workflow_call` from the release) uploads the artifact
+`signing-windows-x64` holding `signing-windows-x64.json`: `{"windows-x64":"authenticode"}`
+only when `Get-AuthenticodeSignature` reports the built MSI as `Valid`, otherwise
+`{"windows-x64":"unsigned"}` (`../PROTOCOL.md`, "Release assets"). With the secrets present,
+a signature that does not verify fails the job instead.
