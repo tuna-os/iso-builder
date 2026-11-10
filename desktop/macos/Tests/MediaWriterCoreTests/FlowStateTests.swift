@@ -272,4 +272,9 @@ final class FlowStateTests: XCTestCase {
             XCTAssertEqual(($0 as? HelperFailure)?.message, Strings.requestUnreadable)
         }
     }
+
+    func testByteFormattingIsNumeric() {
+        XCTAssertFalse(Format.bytes(0).contains("Zero"), Format.bytes(0))
+        XCTAssertTrue(Format.bytes(32_010_928_128).contains("32"), Format.bytes(32_010_928_128))
+    }
 }

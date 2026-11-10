@@ -457,6 +457,9 @@ public enum BuildRequestFile {
 
 public enum Format {
     public static func bytes(_ count: Int64) -> String {
-        ByteCountFormatter.string(fromByteCount: count, countStyle: .file)
+        let formatter = ByteCountFormatter()
+        formatter.countStyle = .file
+        formatter.allowsNonnumericFormatting = false // "0 KB", not "Zero KB"
+        return formatter.string(fromByteCount: count)
     }
 }
