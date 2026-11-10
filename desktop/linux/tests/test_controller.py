@@ -218,12 +218,18 @@ def test_drives_from_file_and_hotplug_refresh(fake_env, run_until, monkeypatch):
         ("usb-1", BlockInfo("/b", False, "Kingston", "DT"), ["Kingston DT"]),
         ("usb-1", BlockInfo("/b", True, "", ""), []),  # udisks2 says system device
         ("usb-1", None, []),  # udisks2 does not know it: cannot be opened
-        ("test:/dev/loop5", BlockInfo("/b", True, "", ""), ["USB drive"]),  # testdevices helper builds only
     ],
 )
 def test_merge_drives(drive_id, block, expected):
     drive = protocol.Drive(drive_id, "/dev/sdb", "", 8, "usb", True)
     assert [c.label for c in merge_drives([drive], lambda _p: block)] == expected
+
+
+def test_merge_drives_offers_named_test_devices_despite_system_hint():
+    loop = protocol.Drive("/dev/loop5|8|test", "/dev/loop5", "", 8, "other", True)
+    flagged = BlockInfo("/b", True, "", "")
+    assert merge_drives([loop], lambda _p: flagged) == []
+    assert [c.label for c in merge_drives([loop], lambda _p: flagged, frozenset({"/dev/loop5"}))] == ["USB drive"]
 
 
 def test_merge_drives_never_offers_system_disks():

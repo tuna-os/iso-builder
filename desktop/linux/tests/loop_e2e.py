@@ -57,15 +57,16 @@ def make_iso(path: str) -> None:
 
 
 def write_with_controller(loop: str, iso: str, work: str) -> None:
+    # Both the testdevices helper and the GUI's udisks2 cross-check honour it.
+    os.environ["TUNAOS_MEDIA_HELPER_TEST_DEVICES"] = loop
     helper = os.environ.get("TUNAOS_MEDIA_HELPER")
     if helper:
         argv = [helper]
-        os.environ["TUNAOS_MEDIA_HELPER_TEST_DEVICES"] = loop
     else:
         argv = [sys.executable, os.path.join(HERE, "fake_helper.py")]
         drives_file = os.path.join(work, "drives.json")
         with open(drives_file, "w") as fh:
-            json.dump({"drives": [{"id": f"test:{loop}", "path": loop, "name": "", "sizeBytes": IMAGE_BYTES,
+            json.dump({"drives": [{"id": f"{loop}|{IMAGE_BYTES}|test", "path": loop, "name": "", "sizeBytes": IMAGE_BYTES,
                                    "bus": "other", "removable": True, "systemDisk": False}]}, fh)
         os.environ["FAKE_HELPER_DRIVES"] = drives_file
     print(f"app code: {tunaos_media_writer.__file__}; helper: {argv}", flush=True)

@@ -19,6 +19,13 @@ from .udisks import BlockInfo, UDisks
 
 DRIVE_POLL_SECONDS = 2
 _HOTPLUG_SETTLE_MS = 300
+# Honoured by helpers built with `-tags testdevices` only (release helpers
+# ignore it and never list loop devices); see tests/loop_e2e.py.
+TEST_DEVICES_ENV = "TUNAOS_MEDIA_HELPER_TEST_DEVICES"
+
+
+def test_device_paths() -> frozenset[str]:
+    return frozenset(p for p in os.environ.get(TEST_DEVICES_ENV, "").split(",") if p)
 
 
 @dataclass(frozen=True)
@@ -39,13 +46,17 @@ def drive_label(drive: protocol.Drive, block: BlockInfo | None) -> str:
     return strings.DRIVE_FALLBACK_NAME
 
 
-def merge_drives(drives, lookup: Callable[[str], BlockInfo | None] | None) -> list[DriveChoice]:
+def merge_drives(
+    drives,
+    lookup: Callable[[str], BlockInfo | None] | None,
+    test_paths: frozenset[str] = frozenset(),
+) -> list[DriveChoice]:
     """The helper's safety-filtered list, cross-checked against udisks2.
 
     With udisks2 (lookup given) a drive is only offered when udisks2 knows
     its block device (that is how it gets opened) and does not flag it as a
-    system device. `test:` ids come only from helpers built with the
-    testdevices tag, whose loop devices udisks2 always flags as system.
+    system device — except the file-backed test devices named in
+    TEST_DEVICES_ENV, which udisks2 always flags as system (loop devices).
     """
     choices = []
     for drive in drives:
@@ -54,7 +65,7 @@ def merge_drives(drives, lookup: Callable[[str], BlockInfo | None] | None) -> li
         block = None
         if lookup is not None:
             block = lookup(drive.path)
-            if block is None or (block.hint_system and not drive.id.startswith("test:")):
+            if block is None or (block.hint_system and drive.path not in test_paths):
                 continue
         choices.append(DriveChoice(drive, drive_label(drive, block)))
     return choices
@@ -173,7 +184,7 @@ class Controller:
             self._drives_proc = None
             if code == protocol.EXIT_OK and "drives" in state:
                 lookup = self._udisks.block_for_device if self._udisks is not None else None
-                drives = merge_drives(state["drives"], lookup)
+                drives = merge_drives(state["drives"], lookup, test_device_paths())
                 if drives != self.drives:
                     self.drives = drives
                     for listener in list(self._drive_listeners):
