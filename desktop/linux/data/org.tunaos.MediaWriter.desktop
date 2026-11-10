@@ -6,6 +6,6 @@ Comment=Make a bootable TunaOS USB stick
 Exec=tunaos-media-writer
 Icon=org.tunaos.MediaWriter
 Terminal=false
-Categories=System;Utility;GTK;
+Categories=Utility;GTK;
 Keywords=usb;iso;installer;boot;live;tunaos;
 StartupNotify=true
