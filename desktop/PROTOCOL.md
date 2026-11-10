@@ -82,3 +82,31 @@ helper polls it every second).
    path (Linux Flatpak: the GUI gets the fd from udisks2
    `Block.OpenDevice("w")` with polkit and passes it). Emits
    `{"event":"done","device":"...","bytes":N,"verified":true}`.
+
+## Release assets
+
+`media-writer-release.yml` publishes, under stable names the website links as
+`https://github.com/tuna-os/iso-builder/releases/latest/download/<name>`:
+`TunaOS-Media-Writer-macOS.dmg`, `TunaOS-Media-Writer-Windows-x64.msi`,
+`TunaOS-Media-Writer-Linux-x86_64.flatpak`,
+`TunaOS-Media-Writer-Linux-aarch64.flatpak` (when built), `SHA256SUMS` (over
+the app assets) and `signing.json`:
+
+```
+{"schemaVersion":1,"macos":"developer-id-notarized|adhoc","windows-x64":"authenticode|unsigned",
+ "linux-x86_64":"unsigned","linux-aarch64":"unsigned"}
+```
+
+`linux-aarch64` is present only when that bundle is. The website shows
+"first launch: right-click → Open" (macOS) / "More info → Run anyway"
+(Windows) only for `adhoc` / `unsigned`.
+
+The values record what the platform jobs actually did, never secret presence:
+`media-writer-macos.yml` uploads an artifact named `signing-macos` holding
+`signing-macos.json` = `{"macos":"developer-id-notarized"}` only after
+signing, notarization and stapling succeeded, else `{"macos":"adhoc"}`;
+`media-writer-windows.yml` uploads `signing-windows-x64` holding
+`signing-windows-x64.json` = `{"windows-x64":"authenticode"}` only after the
+MSI's Authenticode signature verified, else `{"windows-x64":"unsigned"}`.
+The release fails if either is missing or holds another value. Flatpak
+bundles are not signed by any job.

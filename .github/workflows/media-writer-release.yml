@@ -100,6 +100,34 @@ jobs:
           path: dist
           merge-multiple: true
 
+      # Each platform workflow uploads what its own signing step actually
+      # did (desktop/PROTOCOL.md "Release assets"); never inferred here.
+      - uses: actions/download-artifact@v8
+        with:
+          pattern: signing-*
+          path: signing
+          merge-multiple: true
+
+      - name: write signing.json
+        run: |
+          set -euo pipefail
+          state() { # file key allowed...
+            local f="signing/$1.json" key="$2"; shift 2
+            [ -s "$f" ] || { echo "::error::$f missing: the platform workflow must upload artifact ${1} (see desktop/PROTOCOL.md)" >&2; exit 1; }
+            local v; v="$(jq -er --arg k "$key" '.[$k]' "$f")"
+            for ok in "$@"; do [ "$v" = "$ok" ] && { printf '%s' "$v"; return; }; done
+            echo "::error::$f: $key=$v is not one of: $*" >&2; exit 1
+          }
+          macos="$(state signing-macos macos developer-id-notarized adhoc)"
+          windows="$(state signing-windows-x64 windows-x64 authenticode unsigned)"
+          # Flatpak bundles are not signed by any platform job.
+          aarch64=false; [ -s dist/TunaOS-Media-Writer-Linux-aarch64.flatpak ] && aarch64=true
+          jq -n --arg m "$macos" --arg w "$windows" --argjson aarch64 "$aarch64" \
+            '{schemaVersion: 1, macos: $m, "windows-x64": $w, "linux-x86_64": "unsigned"}
+             + (if $aarch64 then {"linux-aarch64": "unsigned"} else {} end)' > signing.json
+          cat signing.json
+          { echo '### signing.json'; echo '```json'; cat signing.json; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
+
       - name: check assets and write SHA256SUMS
         working-directory: dist
         run: |
@@ -118,6 +146,7 @@ jobs:
             case " ${assets[*]} " in *" $f "*) ;; *) echo "::error::unexpected file $f (asset names are a website contract)"; exit 1 ;; esac
           done
           sha256sum "${assets[@]}" > SHA256SUMS
+          cp ../signing.json signing.json
           cat SHA256SUMS
           {
             echo "### TunaOS Media Writer $VERSION ($([ "$DRY_RUN" = true ] && echo 'dry run, no release' || echo "release $TAG"))"
