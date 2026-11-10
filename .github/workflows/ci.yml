@@ -609,6 +609,13 @@ jobs:
       - uses: actions/checkout@v7
         timeout-minutes: 5
 
+      # Before the GPU preflight, which is a just recipe: the karnataka runner
+      # image has no just (run 42893991042 failed the preflight with
+      # "just: command not found", exit 127).
+      - name: install pinned just without apt
+        uses: extractions/setup-just@53165ef7e734c5c07cb06b3c8e7b647c5aa16db3 # v4
+        timeout-minutes: 5
+
       - name: preflight GPU host (karnataka-gpu only)
         if: github.event.inputs.runner == 'karnataka-gpu'
         timeout-minutes: 15
@@ -686,10 +693,6 @@ jobs:
         with:
           path: ~/.cache/ms-playwright
           key: ${{ runner.os }}-playwright-${{ hashFiles('e2e/package-lock.json') }}
-
-      - name: install pinned just without apt
-        uses: extractions/setup-just@53165ef7e734c5c07cb06b3c8e7b647c5aa16db3 # v4
-        timeout-minutes: 5
 
       - name: install deps + chromium
         timeout-minutes: 20
