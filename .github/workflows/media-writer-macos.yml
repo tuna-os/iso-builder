@@ -160,6 +160,7 @@ jobs:
         run: scripts/make-dmg.sh "build/TunaOS Media Writer.app" build/TunaOS-Media-Writer-macOS.dmg
 
       - name: Notarize and staple
+        id: notarize
         if: env.HAS_SIGNING == 'true' && env.HAS_NOTARY == 'true'
         env:
           AC_API_KEY: ${{ secrets.AC_API_KEY }}
@@ -182,6 +183,30 @@ jobs:
           path: desktop/macos/build/TunaOS-Media-Writer-macOS.dmg
           if-no-files-found: error
 
+      # Release contract (desktop/PROTOCOL.md "Release assets"): records what
+      # this job actually did, never which secrets exist. Only a successful
+      # notarize step (Developer ID signed app + dmg, notarized, stapled,
+      # validated, spctl-accepted) counts as developer-id-notarized.
+      - name: Signing state (signing-macos.json)
+        if: always()
+        env:
+          NOTARIZE_OUTCOME: ${{ steps.notarize.outcome }}
+        run: |
+          mkdir -p build/signing
+          state=adhoc
+          [[ "$NOTARIZE_OUTCOME" == success ]] && state=developer-id-notarized
+          printf '{"macos":"%s"}\n' "$state" >build/signing/signing-macos.json
+          cat build/signing/signing-macos.json
+          echo "SIGNING_STATE=$state" >>"$GITHUB_ENV"
+
+      - name: Upload signing-macos
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: signing-macos
+          path: desktop/macos/build/signing/signing-macos.json
+          if-no-files-found: error
+
       - name: Job summary
         if: always()
         run: |
@@ -190,13 +215,14 @@ jobs:
             echo "## TunaOS Media Writer — macOS"
             echo
             echo "- Version: \`${VERSION:-?}\` (build ${BUILD_NUMBER:-?})"
-            if [[ "$HAS_SIGNING" == true && "$HAS_NOTARY" == true ]]; then
+            if [[ "${SIGNING_STATE:-adhoc}" == developer-id-notarized ]]; then
               echo "- Signing: **Developer ID signed and notarized** (\`${SIGN_IDENTITY:-}\`)"
             elif [[ "$HAS_SIGNING" == true ]]; then
-              echo "- Signing: **Developer ID signed, NOT notarized** (AC_API_KEY secrets missing) — Gatekeeper will still warn"
+              echo "- Signing: **Developer ID signed, NOT notarized** (notarization skipped or failed) — reported as \`adhoc\`; Gatekeeper will still warn"
             else
               echo "- Signing: **unsigned** (ad-hoc signature only; MACOS_CERT_P12 not configured). First launch: right-click the app → Open."
             fi
+            echo "- \`signing-macos.json\`: \`{\"macos\":\"${SIGNING_STATE:-adhoc}\"}\`"
             if [[ -f "$dmg" ]]; then
               echo "- Artifact: \`TunaOS-Media-Writer-macOS.dmg\` ($(du -h "$dmg" | cut -f1), sha256 \`$(shasum -a 256 "$dmg" | cut -d' ' -f1)\`)"
             fi

@@ -86,3 +86,9 @@ the repository secrets `MACOS_CERT_P12` (base64 .p12), `MACOS_CERT_PASSWORD`
 `AC_API_KEY_ID`, `AC_API_ISSUER_ID` exist. Otherwise everything is ad-hoc
 signed and the job summary says **unsigned**: Gatekeeper then blocks the first
 launch until the user right-clicks the app → Open.
+
+Every run (including `workflow_call`) also uploads the artifact
+`signing-macos` with `signing-macos.json`: `{"macos":"developer-id-notarized"}`
+only when the notarize step (Developer ID signature, notarization, staple,
+validation) actually succeeded, otherwise `{"macos":"adhoc"}`.
+`media-writer-release.yml` turns it into the release's `signing.json`.
