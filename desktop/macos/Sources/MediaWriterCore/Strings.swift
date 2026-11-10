@@ -69,8 +69,10 @@ public enum Strings {
     }
 
     // 4. Done
+    // Title + message read as the contract's "Your USB stick is ready.
+    // Restart your computer and boot from it."
     public static let doneTitleUSB = "Your USB stick is ready"
-    public static let doneMessageUSB = "Your USB stick is ready. Restart your computer and boot from it."
+    public static let doneMessageUSB = "Restart your computer and boot from it."
     public static let doneTitleISO = "Your ISO file is saved"
     public static let doneMessageISO = "Write it to a USB stick, then restart your computer and boot from it."
     public static let showInFinder = "Show in Finder"

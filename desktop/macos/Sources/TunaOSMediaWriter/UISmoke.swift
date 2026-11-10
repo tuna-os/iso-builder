@@ -65,6 +65,12 @@ final class UISmoke {
             self.state.step != .progress || (self.state.fraction ?? 0) > 0.25
         }
         await capture("progress")
+        if scenario == "usb" {
+            await expect("writing to the stick", timeout: 60) {
+                self.state.step != .progress || self.state.stage == .writing || self.state.stage == .verifying
+            }
+            await capture("progress-writing")
+        }
 
         await expect("done step", timeout: 120) { self.state.step == .done }
         switch (scenario, state.outcome) {

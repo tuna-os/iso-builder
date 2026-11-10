@@ -16,6 +16,7 @@ exe="$app/Contents/MacOS/TunaOSMediaWriter"
 
 rm -rf "$out"
 mkdir -p "$out"
+out="$(cd "$out" && pwd)"
 status=0
 for scenario in usb iso fail; do
   dir="$out/$scenario"
