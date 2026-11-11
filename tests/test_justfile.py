@@ -319,7 +319,8 @@ def test_full_build_sequences_samples(tmp_path, mode, expected):
     r = subprocess.run(['just', 'full-build'], cwd=ROOT, env=env, text=True, capture_output=True)
     assert r.returncode == 0, r.stderr
     assert log.read_text().splitlines() == expected
-    assert sorted(p.name for p in tmp_path.glob('*.iso')) == ([] if mode.get('PAIR') == 'true' else ['x-s%s.iso' % len(expected), 'x.iso'])
+    # One ISO, not two: the sample copy is renamed (bonito-gnome-nvidia filled the disk, run 42895481162).
+    assert sorted(p.name for p in tmp_path.glob('*.iso')) == ([] if mode.get('PAIR') == 'true' else ['x.iso'])
 
 
 @needs_just
