@@ -1,0 +1,13 @@
+#!/usr/bin/env python3
+"""Launcher installed as <prefix>/bin/tunaos-media-writer; the package lives
+in <prefix>/share/tunaos-media-writer (Flatpak: /app)."""
+
+import os
+import sys
+
+prefix = os.path.dirname(os.path.dirname(os.path.realpath(__file__)))
+sys.path.insert(0, os.path.join(prefix, "share", "tunaos-media-writer"))
+
+from tunaos_media_writer.app import main  # noqa: E402
+
+sys.exit(main())

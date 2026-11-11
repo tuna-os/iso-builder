@@ -1,0 +1,25 @@
+<Project Sdk="WixToolset.Sdk/5.0.2">
+  <!--
+    dotnet build -c Release -p:AppDir=<publish dir of MediaWriter.App> -p:ProductVersion=X.Y.Z
+    → bin/x64/Release/TunaOS-Media-Writer-Windows-x64.msi
+  -->
+  <PropertyGroup>
+    <OutputName>TunaOS-Media-Writer-Windows-x64</OutputName>
+    <InstallerPlatform>x64</InstallerPlatform>
+    <Platform>x64</Platform>
+    <AppDir Condition="'$(AppDir)' == ''">$(MSBuildThisFileDirectory)..\build\app</AppDir>
+    <ProductVersion Condition="'$(ProductVersion)' == ''">0.1.0</ProductVersion>
+    <DefineConstants>AppDir=$(AppDir);ProductVersion=$(ProductVersion)</DefineConstants>
+    <!-- ICE warnings are reviewed in the build log; Directory.Build.props' strictness is for C#. -->
+    <TreatWarningsAsErrors>false</TreatWarningsAsErrors>
+    <!--
+      ICE03: WiX copies each DLL's version-resource language list into File.Language;
+      several Windows App SDK DLLs list many languages, which overflows the column and
+      reads as an "invalid language id". It only affects same-version file replacement.
+    -->
+    <SuppressIces>ICE03</SuppressIces>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="WixToolset.UI.wixext" Version="5.0.2" />
+  </ItemGroup>
+</Project>

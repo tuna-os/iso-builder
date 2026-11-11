@@ -1,0 +1,92 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Page
+    x:Class="TunaOS.MediaWriter.App.Pages.ChoosePage"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:proto="using:TunaOS.MediaWriter.Core.Protocol">
+    <Grid RowSpacing="12">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="*" />
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
+        </Grid.RowDefinitions>
+
+        <TextBlock x:Name="TitleText" Style="{StaticResource TitleTextBlockStyle}" />
+        <TextBlock
+            x:Name="SubtitleText"
+            Grid.Row="1"
+            TextWrapping="Wrap"
+            Style="{StaticResource BodyTextBlockStyle}"
+            Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+
+        <GridView
+            x:Name="DesktopList"
+            Grid.Row="2"
+            Margin="0,8,0,0"
+            SelectionMode="Single"
+            IsItemClickEnabled="False"
+            SelectionChanged="OnDesktopSelectionChanged"
+            AutomationProperties.Name="Desktops">
+            <GridView.ItemTemplate>
+                <DataTemplate x:DataType="proto:CatalogDesktop">
+                    <StackPanel Width="236" Height="112" Padding="16,14" Spacing="6">
+                        <TextBlock Text="{x:Bind Label}" Style="{StaticResource SubtitleTextBlockStyle}" />
+                        <TextBlock
+                            Text="{x:Bind Description}"
+                            TextWrapping="WrapWholeWords"
+                            MaxLines="3"
+                            Style="{StaticResource BodyTextBlockStyle}"
+                            Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                    </StackPanel>
+                </DataTemplate>
+            </GridView.ItemTemplate>
+        </GridView>
+
+        <StackPanel
+            x:Name="LoadingPanel"
+            Grid.Row="2"
+            HorizontalAlignment="Center"
+            VerticalAlignment="Center"
+            Spacing="12"
+            Visibility="Collapsed">
+            <ProgressRing IsActive="True" Width="40" Height="40" />
+            <TextBlock x:Name="LoadingText" HorizontalAlignment="Center" />
+        </StackPanel>
+
+        <ComboBox
+            x:Name="BaseBox"
+            Grid.Row="3"
+            MinWidth="320"
+            SelectionChanged="OnBaseSelectionChanged">
+            <ComboBox.ItemTemplate>
+                <DataTemplate x:DataType="proto:CatalogBase">
+                    <TextBlock Text="{x:Bind Label}" />
+                </DataTemplate>
+            </ComboBox.ItemTemplate>
+        </ComboBox>
+
+        <InfoBar
+            x:Name="RequestInfo"
+            Grid.Row="4"
+            IsClosable="False"
+            Severity="Informational"
+            IsOpen="False">
+            <InfoBar.ActionButton>
+                <Button x:Name="ClearRequestButton" Click="OnClearRequest" />
+            </InfoBar.ActionButton>
+        </InfoBar>
+
+        <Grid Grid.Row="5" Margin="0,8,0,0">
+            <Button x:Name="OpenRequestButton" HorizontalAlignment="Left" Click="OnOpenRequest" />
+            <Button
+                x:Name="ContinueButton"
+                HorizontalAlignment="Right"
+                MinWidth="140"
+                Style="{StaticResource AccentButtonStyle}"
+                Click="OnContinue" />
+        </Grid>
+    </Grid>
+</Page>

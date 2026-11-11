@@ -1,0 +1,19 @@
+//go:build !linux
+
+package main
+
+import "os"
+
+// punchReader is cmd/purebuild's --rootfs-tar input reader. The pinned
+// tacklebox defines it only in punch_linux.go (hole punching via fallocate),
+// so purebuild does not compile for macOS or Windows. This file is overlaid
+// into the package by desktop/helper/cmd/build-engine for non-Linux builds:
+// a plain sequential reader, which is all --rootfs-tar needs without hole
+// punching. The Media Writer never passes --rootfs-tar.
+type punchReader struct {
+	f *os.File
+}
+
+func (p *punchReader) Read(b []byte) (int, error) { return p.f.Read(b) }
+
+func (p *punchReader) Close() error { return p.f.Close() }

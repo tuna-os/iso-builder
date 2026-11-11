@@ -1,0 +1,21 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <RootNamespace>TunaOS.MediaWriter.Core.Tests</RootNamespace>
+    <AssemblyName>TunaOS.MediaWriter.Core.Tests</AssemblyName>
+    <IsPackable>false</IsPackable>
+    <IsTestProject>true</IsTestProject>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="18.11.1" />
+    <PackageReference Include="xunit" Version="2.9.3" />
+    <PackageReference Include="xunit.runner.visualstudio" Version="3.1.5" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\MediaWriter.Core\MediaWriter.Core.csproj" />
+  </ItemGroup>
+  <ItemGroup>
+    <!-- The same fake helper the UI smoke drives, so both exercise one script. -->
+    <None Include="..\..\smoke\fake-helper.ps1" Link="fake-helper.ps1" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+</Project>

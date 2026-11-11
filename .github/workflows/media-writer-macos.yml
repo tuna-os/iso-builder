@@ -1,0 +1,236 @@
+# TunaOS Media Writer for macOS (desktop/macos): builds the helper + engine
+# for arm64 and amd64, lipo's them, builds the universal SwiftUI app, runs the
+# XCTest suite against Fixtures/fake-helper.sh, walks the real window through
+# all four steps in --ui-smoke mode (screenshots uploaded as
+# `macos-ui-smoke`), and produces TunaOS-Media-Writer-macOS.dmg.
+#
+# Signing: Developer ID + notarization only when the secrets below exist.
+# Without them the app and dmg are ad-hoc signed and the job summary says
+# "unsigned" — never a fake signature (native/package/README.md).
+name: media-writer-macos
+
+permissions:
+  contents: read
+
+on:
+  pull_request:
+    paths:
+      - desktop/macos/**
+      - desktop/helper/**
+      - .github/workflows/media-writer-macos.yml
+  # Branch pushes are covered by their pull request run; a second push run
+  # would only double the (10x-priced) macOS minutes.
+  push:
+    branches: [main]
+    paths:
+      - desktop/macos/**
+      - desktop/helper/**
+      - .github/workflows/media-writer-macos.yml
+  workflow_dispatch:
+  workflow_call:
+    inputs:
+      version:
+        description: "Marketing version (CFBundleShortVersionString), e.g. 1.2.0. Empty = derived from the ref."
+        type: string
+        required: false
+        default: ""
+    secrets:
+      MACOS_CERT_P12:
+        description: "base64 Developer ID Application certificate + key (.p12)"
+        required: false
+      MACOS_CERT_PASSWORD:
+        required: false
+      MACOS_SIGN_IDENTITY:
+        description: 'e.g. "Developer ID Application: TunaOS (TEAMID)"; default: first Developer ID identity in the .p12'
+        required: false
+      AC_API_KEY:
+        description: "base64 App Store Connect API key (.p8) for notarytool"
+        required: false
+      AC_API_KEY_ID:
+        required: false
+      AC_API_ISSUER_ID:
+        required: false
+
+# Superseded pushes/PR updates cancel the older macOS run (10x minutes);
+# release tags never cancel.
+concurrency:
+  group: media-writer-macos-${{ github.event_name }}-${{ github.ref }}
+  cancel-in-progress: ${{ !startsWith(github.ref, 'refs/tags/') }}
+
+jobs:
+  macos:
+    runs-on: macos-latest
+    timeout-minutes: 45
+    defaults:
+      run:
+        working-directory: desktop/macos
+    env:
+      HAS_SIGNING: ${{ secrets.MACOS_CERT_P12 != '' && secrets.MACOS_CERT_PASSWORD != '' }}
+      HAS_NOTARY: ${{ secrets.AC_API_KEY != '' && secrets.AC_API_KEY_ID != '' && secrets.AC_API_ISSUER_ID != '' }}
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Toolchain
+        run: |
+          sw_vers
+          xcodebuild -version
+          swift --version
+
+      - name: Version
+        env:
+          INPUT_VERSION: ${{ inputs.version }}
+        run: |
+          version="$INPUT_VERSION"
+          if [[ -z "$version" && "$GITHUB_REF" == refs/tags/media-writer-v* ]]; then
+            version="${GITHUB_REF#refs/tags/media-writer-v}"
+          fi
+          echo "VERSION=${version:-0.0.0}" >>"$GITHUB_ENV"
+          echo "BUILD_NUMBER=$GITHUB_RUN_NUMBER" >>"$GITHUB_ENV"
+
+      - name: Unit tests (JSONL parser, helper client, flow state machine)
+        run: swift test
+
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: desktop/helper/go.mod
+          cache-dependency-path: desktop/helper/go.sum
+
+      - name: Build helper + engine (darwin arm64 + amd64, lipo)
+        run: scripts/build-helper.sh build/helper
+
+      - name: Import Developer ID certificate
+        if: env.HAS_SIGNING == 'true'
+        env:
+          MACOS_CERT_P12: ${{ secrets.MACOS_CERT_P12 }}
+          MACOS_CERT_PASSWORD: ${{ secrets.MACOS_CERT_PASSWORD }}
+          MACOS_SIGN_IDENTITY: ${{ secrets.MACOS_SIGN_IDENTITY }}
+        run: |
+          keychain="$RUNNER_TEMP/signing.keychain-db"
+          keychain_password="$(uuidgen)"
+          echo "$MACOS_CERT_P12" | base64 --decode >"$RUNNER_TEMP/cert.p12"
+          security create-keychain -p "$keychain_password" "$keychain"
+          security set-keychain-settings -lut 21600 "$keychain"
+          security unlock-keychain -p "$keychain_password" "$keychain"
+          security import "$RUNNER_TEMP/cert.p12" -P "$MACOS_CERT_PASSWORD" -A -t cert -f pkcs12 -k "$keychain"
+          security set-key-partition-list -S apple-tool:,apple: -k "$keychain_password" "$keychain" >/dev/null
+          security list-keychains -d user -s "$keychain" $(security list-keychains -d user | tr -d '"')
+          rm -f "$RUNNER_TEMP/cert.p12"
+          identity="$MACOS_SIGN_IDENTITY"
+          if [[ -z "$identity" ]]; then
+            identity="$(security find-identity -v -p codesigning "$keychain" | sed -n 's/.*"\(Developer ID Application: .*\)"/\1/p' | head -n1)"
+          fi
+          [[ -n "$identity" ]] || { echo "no Developer ID Application identity in MACOS_CERT_P12" >&2; exit 1; }
+          echo "SIGN_IDENTITY=$identity" >>"$GITHUB_ENV"
+
+      - name: Build app bundle (universal)
+        run: |
+          echo "SIGN_IDENTITY=${SIGN_IDENTITY:--}"
+          scripts/build-app.sh
+
+      - name: Inspect bundle and bundled helper
+        run: |
+          app="build/TunaOS Media Writer.app"
+          for bin in TunaOSMediaWriter tunaos-media-helper tunaos-media-engine; do
+            archs="$(lipo -archs "$app/Contents/MacOS/$bin")"
+            echo "$bin: $archs"
+            [[ "$archs" == *arm64* && "$archs" == *x86_64* ]] || { echo "$bin is not universal" >&2; exit 1; }
+          done
+          plutil -p "$app/Contents/Info.plist"
+          codesign -dvv "$app" 2>&1 | sed -n '1,12p'
+          # The real helper must speak the protocol this app was built for.
+          "$app/Contents/MacOS/tunaos-media-helper" version | tee build/helper-version.jsonl
+          grep -q '"event":"version".*"protocol":1' build/helper-version.jsonl
+          # drives works unprivileged on macOS (diskutil); the runner has no
+          # removable media, so an empty list is the expected answer.
+          "$app/Contents/MacOS/tunaos-media-helper" drives | tee build/helper-drives.jsonl
+          grep -q '"event":"drives"' build/helper-drives.jsonl
+
+      - name: UI smoke (fake helper, all four steps, screenshots)
+        run: scripts/ui-smoke.sh "build/TunaOS Media Writer.app" build/ui-smoke
+
+      - name: Upload UI smoke screenshots
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: macos-ui-smoke
+          path: desktop/macos/build/ui-smoke
+          if-no-files-found: warn
+
+      - name: Disk image
+        run: scripts/make-dmg.sh "build/TunaOS Media Writer.app" build/TunaOS-Media-Writer-macOS.dmg
+
+      - name: Notarize and staple
+        id: notarize
+        if: env.HAS_SIGNING == 'true' && env.HAS_NOTARY == 'true'
+        env:
+          AC_API_KEY: ${{ secrets.AC_API_KEY }}
+          AC_API_KEY_ID: ${{ secrets.AC_API_KEY_ID }}
+          AC_API_ISSUER_ID: ${{ secrets.AC_API_ISSUER_ID }}
+        run: |
+          key="$RUNNER_TEMP/AuthKey.p8"
+          echo "$AC_API_KEY" | base64 --decode >"$key"
+          xcrun notarytool submit build/TunaOS-Media-Writer-macOS.dmg \
+            --key "$key" --key-id "$AC_API_KEY_ID" --issuer "$AC_API_ISSUER_ID" --wait --timeout 30m
+          rm -f "$key"
+          xcrun stapler staple build/TunaOS-Media-Writer-macOS.dmg
+          xcrun stapler validate build/TunaOS-Media-Writer-macOS.dmg
+          spctl -a -t open --context context:primary-signature -vv build/TunaOS-Media-Writer-macOS.dmg
+
+      - name: Upload TunaOS-Media-Writer-macOS.dmg
+        uses: actions/upload-artifact@v7
+        with:
+          name: TunaOS-Media-Writer-macOS.dmg
+          path: desktop/macos/build/TunaOS-Media-Writer-macOS.dmg
+          if-no-files-found: error
+
+      # Release contract (desktop/PROTOCOL.md "Release assets"): records what
+      # this job actually did, never which secrets exist. Only a successful
+      # notarize step (Developer ID signed app + dmg, notarized, stapled,
+      # validated, spctl-accepted) counts as developer-id-notarized.
+      - name: Signing state (signing-macos.json)
+        if: always()
+        env:
+          NOTARIZE_OUTCOME: ${{ steps.notarize.outcome }}
+        run: |
+          mkdir -p build/signing
+          state=adhoc
+          [[ "$NOTARIZE_OUTCOME" == success ]] && state=developer-id-notarized
+          printf '{"macos":"%s"}\n' "$state" >build/signing/signing-macos.json
+          cat build/signing/signing-macos.json
+          echo "SIGNING_STATE=$state" >>"$GITHUB_ENV"
+
+      - name: Upload signing-macos
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: signing-macos
+          path: desktop/macos/build/signing/signing-macos.json
+          if-no-files-found: error
+
+      - name: Job summary
+        if: always()
+        run: |
+          dmg=build/TunaOS-Media-Writer-macOS.dmg
+          {
+            echo "## TunaOS Media Writer — macOS"
+            echo
+            echo "- Version: \`${VERSION:-?}\` (build ${BUILD_NUMBER:-?})"
+            if [[ "${SIGNING_STATE:-adhoc}" == developer-id-notarized ]]; then
+              echo "- Signing: **Developer ID signed and notarized** (\`${SIGN_IDENTITY:-}\`)"
+            elif [[ "$HAS_SIGNING" == true ]]; then
+              echo "- Signing: **Developer ID signed, NOT notarized** (notarization skipped or failed) — reported as \`adhoc\`; Gatekeeper will still warn"
+            else
+              echo "- Signing: **unsigned** (ad-hoc signature only; MACOS_CERT_P12 not configured). First launch: right-click the app → Open."
+            fi
+            echo "- \`signing-macos.json\`: \`{\"macos\":\"${SIGNING_STATE:-adhoc}\"}\`"
+            if [[ -f "$dmg" ]]; then
+              echo "- Artifact: \`TunaOS-Media-Writer-macOS.dmg\` ($(du -h "$dmg" | cut -f1), sha256 \`$(shasum -a 256 "$dmg" | cut -d' ' -f1)\`)"
+            fi
+            if [[ -f build/helper-version.jsonl ]]; then
+              echo "- Bundled helper: \`$(cat build/helper-version.jsonl)\`"
+            fi
+            for log in build/ui-smoke/*/smoke.log; do
+              [[ -f "$log" ]] || continue
+              echo "- UI smoke $(basename "$(dirname "$log")"): $(tail -n1 "$log")"
+            done
+          } >>"$GITHUB_STEP_SUMMARY"

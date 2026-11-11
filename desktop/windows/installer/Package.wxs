@@ -1,0 +1,61 @@
+<Wix xmlns="http://wixtoolset.org/schemas/v4/wxs"
+     xmlns:ui="http://wixtoolset.org/schemas/v4/wxs/ui">
+  <!--
+    Per-machine install into Program Files with a Start-menu shortcut. Per-machine
+    because writing a USB stick needs administrator rights anyway (UAC at the write
+    step), so a per-user install would not spare anyone a prompt.
+    The UpgradeCode is permanent: never change it, or upgrades install side by side.
+  -->
+  <Package
+      Name="TunaOS Media Writer"
+      Manufacturer="TunaOS"
+      Version="$(var.ProductVersion)"
+      UpgradeCode="7a2e9c4b-3d1f-4e8a-9b6c-5f0d2a1e7c34"
+      Scope="perMachine">
+    <SummaryInformation Description="TunaOS Media Writer" />
+    <MajorUpgrade DowngradeErrorMessage="A newer version of [ProductName] is already installed." />
+    <MediaTemplate EmbedCab="yes" CompressionLevel="high" />
+
+    <Icon Id="AppIcon.ico" SourceFile="$(var.AppDir)\Assets\app.ico" />
+    <Property Id="ARPPRODUCTICON" Value="AppIcon.ico" />
+    <Property Id="ARPURLINFOABOUT" Value="https://tunaos.org" />
+    <Property Id="ARPHELPLINK" Value="https://tunaos.org/docs" />
+
+    <Feature Id="Main" Title="TunaOS Media Writer">
+      <ComponentGroupRef Id="AppFiles" />
+      <ComponentRef Id="StartMenuShortcut" />
+    </Feature>
+
+    <ui:WixUI Id="WixUI_Minimal" />
+    <WixVariable Id="WixUILicenseRtf" Value="license.rtf" />
+  </Package>
+
+  <Fragment>
+    <StandardDirectory Id="ProgramFiles64Folder">
+      <Directory Id="INSTALLFOLDER" Name="TunaOS Media Writer" />
+    </StandardDirectory>
+
+    <!-- The whole self-contained publish folder: app, .NET, Windows App SDK, helper, engine. -->
+    <ComponentGroup Id="AppFiles" Directory="INSTALLFOLDER">
+      <Files Include="$(var.AppDir)\**" />
+    </ComponentGroup>
+
+    <StandardDirectory Id="ProgramMenuFolder">
+      <Component Id="StartMenuShortcut" Guid="3f6b1d2e-8c4a-4b7e-a9d5-2e1c0f7b6a48">
+        <Shortcut
+            Id="AppShortcut"
+            Name="TunaOS Media Writer"
+            Description="Put TunaOS on a USB stick"
+            Target="[INSTALLFOLDER]TunaOSMediaWriter.exe"
+            WorkingDirectory="INSTALLFOLDER" />
+        <RegistryValue
+            Root="HKCU"
+            Key="Software\TunaOS\Media Writer"
+            Name="StartMenuShortcut"
+            Type="integer"
+            Value="1"
+            KeyPath="yes" />
+      </Component>
+    </StandardDirectory>
+  </Fragment>
+</Wix>

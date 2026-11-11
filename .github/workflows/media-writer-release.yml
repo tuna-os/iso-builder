@@ -1,0 +1,183 @@
+name: media-writer-release
+
+# Publishes TunaOS Media Writer: on a tag media-writer-vX.Y.Z, builds the
+# three platform apps through their own workflows (workflow_call), collects
+# exactly the stable asset names the website links
+# (releases/latest/download/<name>), writes SHA256SUMS and creates the GitHub
+# Release. Signing happens inside each platform workflow when its secrets
+# exist (secrets: inherit); unsigned artifacts say so in their job summary.
+#
+# workflow_dispatch with dry_run=true (the default) runs everything except
+# the release: the assets and SHA256SUMS are uploaded as one artifact.
+
+on:
+  push:
+    tags: ["media-writer-v*"]
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: "Build and checksum only; upload as an artifact instead of creating a release"
+        type: boolean
+        default: true
+      version:
+        description: "X.Y.Z. Required without dry_run (the tag media-writer-vX.Y.Z must already exist); optional for a dry run"
+        type: string
+        default: ""
+
+permissions:
+  contents: read
+
+concurrency:
+  group: media-writer-release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  version:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.v.outputs.version }}
+      tag: ${{ steps.v.outputs.tag }}
+      dry_run: ${{ steps.v.outputs.dry_run }}
+    steps:
+      - id: v
+        env:
+          REF_NAME: ${{ github.ref_name }}
+          REF_TYPE: ${{ github.ref_type }}
+          INPUT_VERSION: ${{ inputs.version }}
+          INPUT_DRY_RUN: ${{ inputs.dry_run }}
+        run: |
+          if [ "$REF_TYPE" = tag ]; then
+            version="${REF_NAME#media-writer-v}"; dry_run=false
+          elif [ "$INPUT_DRY_RUN" = false ]; then
+            version="$INPUT_VERSION"; dry_run=false
+          else
+            # Dry run: an empty version lets each platform derive its own.
+            version="$INPUT_VERSION"; dry_run=true
+          fi
+          if [ -n "$version" ] || [ "$dry_run" = false ]; then
+            if ! printf '%s' "$version" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+$'; then
+              echo "::error::version '$version' is not X.Y.Z (tag media-writer-vX.Y.Z)"; exit 1
+            fi
+          fi
+          {
+            echo "version=$version"
+            echo "tag=media-writer-v$version"
+            echo "dry_run=$dry_run"
+          } >> "$GITHUB_OUTPUT"
+
+  macos:
+    needs: version
+    uses: ./.github/workflows/media-writer-macos.yml
+    with:
+      version: ${{ needs.version.outputs.version }}
+    secrets: inherit
+
+  windows:
+    needs: version
+    uses: ./.github/workflows/media-writer-windows.yml
+    with:
+      version: ${{ needs.version.outputs.version }}
+    secrets: inherit
+
+  linux:
+    needs: version
+    uses: ./.github/workflows/media-writer-linux.yml
+    secrets: inherit
+
+  publish:
+    needs: [version, macos, windows, linux]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    env:
+      VERSION: ${{ needs.version.outputs.version }}
+      TAG: ${{ needs.version.outputs.tag }}
+      DRY_RUN: ${{ needs.version.outputs.dry_run }}
+    steps:
+      - uses: actions/download-artifact@v8
+        with:
+          pattern: TunaOS-Media-Writer-*
+          path: dist
+          merge-multiple: true
+
+      # Each platform workflow uploads what its own signing step actually
+      # did (desktop/PROTOCOL.md "Release assets"); never inferred here.
+      - uses: actions/download-artifact@v8
+        with:
+          pattern: signing-*
+          path: signing
+          merge-multiple: true
+
+      - name: write signing.json
+        run: |
+          set -euo pipefail
+          state() { # file key allowed...
+            local f="signing/$1.json" key="$2"; shift 2
+            [ -s "$f" ] || { echo "::error::$f missing: the platform workflow must upload artifact ${1} (see desktop/PROTOCOL.md)" >&2; exit 1; }
+            local v; v="$(jq -er --arg k "$key" '.[$k]' "$f")"
+            for ok in "$@"; do [ "$v" = "$ok" ] && { printf '%s' "$v"; return; }; done
+            echo "::error::$f: $key=$v is not one of: $*" >&2; exit 1
+          }
+          macos="$(state signing-macos macos developer-id-notarized adhoc)"
+          windows="$(state signing-windows-x64 windows-x64 authenticode unsigned)"
+          # Flatpak bundles are not signed by any platform job.
+          aarch64=false; [ -s dist/TunaOS-Media-Writer-Linux-aarch64.flatpak ] && aarch64=true
+          jq -n --arg m "$macos" --arg w "$windows" --argjson aarch64 "$aarch64" \
+            '{schemaVersion: 1, macos: $m, "windows-x64": $w, "linux-x86_64": "unsigned"}
+             + (if $aarch64 then {"linux-aarch64": "unsigned"} else {} end)' > signing.json
+          cat signing.json
+          { echo '### signing.json'; echo '```json'; cat signing.json; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: check assets and write SHA256SUMS
+        working-directory: dist
+        run: |
+          required=(TunaOS-Media-Writer-macOS.dmg TunaOS-Media-Writer-Windows-x64.msi TunaOS-Media-Writer-Linux-x86_64.flatpak)
+          optional=(TunaOS-Media-Writer-Linux-aarch64.flatpak)
+          assets=()
+          for a in "${required[@]}"; do
+            [ -s "$a" ] || { echo "::error::missing release asset $a"; ls -la; exit 1; }
+            assets+=("$a")
+          done
+          for a in "${optional[@]}"; do
+            if [ -s "$a" ]; then assets+=("$a"); fi
+          done
+          for f in ./*; do
+            f="${f#./}"
+            case " ${assets[*]} " in *" $f "*) ;; *) echo "::error::unexpected file $f (asset names are a website contract)"; exit 1 ;; esac
+          done
+          sha256sum "${assets[@]}" > SHA256SUMS
+          cp ../signing.json signing.json
+          cat SHA256SUMS
+          {
+            echo "### TunaOS Media Writer $VERSION ($([ "$DRY_RUN" = true ] && echo 'dry run, no release' || echo "release $TAG"))"
+            echo '```'
+            cat SHA256SUMS
+            echo '```'
+            echo "Signing status is in each platform job's summary."
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: upload (dry run)
+        if: needs.version.outputs.dry_run == 'true'
+        uses: actions/upload-artifact@v7
+        with:
+          name: media-writer-release-dry-run
+          path: dist/
+          if-no-files-found: error
+
+      - name: create GitHub release
+        if: needs.version.outputs.dry_run == 'false'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        working-directory: dist
+        run: |
+          notes="TunaOS Media Writer $VERSION — build a TunaOS live USB stick without a terminal.
+
+          | Platform | Download |
+          |---|---|
+          | macOS 13+ (Apple silicon and Intel) | TunaOS-Media-Writer-macOS.dmg |
+          | Windows 10/11 x64 | TunaOS-Media-Writer-Windows-x64.msi |
+          | Linux x86_64 (Flatpak) | TunaOS-Media-Writer-Linux-x86_64.flatpak |
+
+          Verify downloads with SHA256SUMS."
+          gh release create "$TAG" --verify-tag --title "TunaOS Media Writer $VERSION" --notes "$notes" ./*

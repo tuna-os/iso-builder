@@ -1,0 +1,130 @@
+name: media-writer-linux
+
+# TunaOS Media Writer for Linux (desktop/linux): builds the Flatpak bundle
+# (helper + engine + GTK app) per architecture, then installs that bundle on
+# a clean runner and runs the unit tests and the UI smoke walk inside it, on
+# the GNOME runtime it ships with. See desktop/linux/README.md.
+
+on:
+  pull_request:
+    paths:
+      - desktop/linux/**
+      - desktop/helper/**
+      - .github/workflows/media-writer-linux.yml
+  push:
+    branches: [main]
+    paths:
+      - desktop/linux/**
+      - desktop/helper/**
+      - .github/workflows/media-writer-linux.yml
+  workflow_dispatch:
+  workflow_call:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: media-writer-linux-${{ github.event_name }}-${{ github.head_ref || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  flatpak:
+    name: flatpak (${{ matrix.arch }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: x86_64
+            runner: ubuntu-24.04
+          - arch: aarch64
+            runner: ubuntu-24.04-arm
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 60
+    container:
+      image: ghcr.io/flathub-infra/flatpak-github-actions:gnome-51
+      options: --privileged
+    steps:
+      - uses: actions/checkout@v4
+      - uses: flatpak/flatpak-github-actions/flatpak-builder@v6
+        with:
+          manifest-path: desktop/linux/org.tunaos.MediaWriter.yml
+          bundle: TunaOS-Media-Writer-Linux-${{ matrix.arch }}.flatpak
+          arch: ${{ matrix.arch }}
+          cache-key: media-writer-linux-${{ matrix.arch }}-${{ hashFiles('desktop/helper/go.sum') }}
+          upload-artifact: false
+      - name: Summarize
+        run: |
+          bundle=TunaOS-Media-Writer-Linux-${{ matrix.arch }}.flatpak
+          {
+            echo "### $bundle"
+            echo
+            echo "- size: $(du -h "$bundle" | cut -f1)"
+            echo "- sha256: \`$(sha256sum "$bundle" | cut -d' ' -f1)\`"
+            echo "- signature: none (Flatpak bundles are unsigned single files; the release attaches SHA256SUMS)"
+          } >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: TunaOS-Media-Writer-Linux-${{ matrix.arch }}.flatpak
+          path: TunaOS-Media-Writer-Linux-${{ matrix.arch }}.flatpak
+          if-no-files-found: error
+
+  verify:
+    name: verify (${{ matrix.arch }})
+    needs: flatpak
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: x86_64
+            runner: ubuntu-24.04
+          - arch: aarch64
+            runner: ubuntu-24.04-arm
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 30
+    env:
+      BUNDLE: TunaOS-Media-Writer-Linux-${{ matrix.arch }}.flatpak
+      APP: org.tunaos.MediaWriter
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: TunaOS-Media-Writer-Linux-${{ matrix.arch }}.flatpak
+      - name: Install the bundle (pulls the GNOME runtime from Flathub)
+        run: |
+          sudo apt-get update -q
+          sudo apt-get install -y -q flatpak xvfb dbus-x11 python3-pip
+          flatpak remote-add --user --if-not-exists flathub https://dl.flathub.org/repo/flathub.flatpakrepo
+          flatpak install --user -y --noninteractive "$BUNDLE"
+          flatpak info --user "$APP"
+      - name: Helper inside the sandbox
+        run: |
+          flatpak run --command=tunaos-media-helper "$APP" version
+          # No USB sticks on a runner: an empty, well-formed list.
+          flatpak run --command=tunaos-media-helper "$APP" drives
+          flatpak run --command=tunaos-media-helper "$APP" catalog | python3 -c '
+          import json, sys
+          events = [json.loads(line) for line in sys.stdin if line.strip()]
+          catalog = next(e for e in events if e["event"] == "catalog")
+          print(len(catalog["targets"]), "targets; default", catalog["defaultTarget"])'
+      - name: Unit tests on the shipped runtime and code
+        run: |
+          # pytest is pure Python; vendor it so it imports inside the sandbox.
+          python3 -m pip install -q --break-system-packages --target "$RUNNER_TEMP/pytest" pytest
+          dbus-run-session -- flatpak run --filesystem="$GITHUB_WORKSPACE" --filesystem="$RUNNER_TEMP" \
+            --env=PYTHONPATH="/app/share/tunaos-media-writer:$RUNNER_TEMP/pytest" \
+            --command=python3 "$APP" -m pytest -v -p no:cacheprovider desktop/linux/tests
+      - name: UI smoke (all four steps, screenshots)
+        run: |
+          mkdir -p screenshots
+          # xvfb-run outermost so the session bus (and the portal it starts) sees DISPLAY.
+          xvfb-run -a -s '-screen 0 1280x1024x24' dbus-run-session -- \
+            flatpak run --filesystem="$GITHUB_WORKSPACE" \
+            --env=PYTHONPATH=/app/share/tunaos-media-writer \
+            --command=python3 "$APP" desktop/linux/tests/ui_smoke.py --out "$GITHUB_WORKSPACE/screenshots"
+          ls -l screenshots
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: media-writer-linux-screenshots-${{ matrix.arch }}
+          path: screenshots/
+          if-no-files-found: warn
