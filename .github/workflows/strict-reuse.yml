@@ -61,9 +61,11 @@ jobs:
     outputs:
       editions: ${{ steps.pick.outputs.editions }}
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@v7.0.1
+        with:
+          persist-credentials: false
       - name: install just without apt
-        uses: extractions/setup-just@53165ef7e734c5c07cb06b3c8e7b647c5aa16db3 # v4
+        uses: extractions/setup-just@v4.0.0 # zizmor: ignore[unpinned-tools] takes the latest just as before; pinning a version is a behaviour change
       - id: pick
         env:
           ONLY: ${{ github.event.inputs.only }}
@@ -93,11 +95,13 @@ jobs:
       PRODUCER_RUN: ${{ github.event.inputs.reuse_iso_run_id }}
       PRODUCER_ATTEMPT: ${{ github.event.inputs.reuse_iso_attempt }}
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@v7.0.1
+        with:
+          persist-credentials: false
         timeout-minutes: 5
 
       - name: install pinned just without apt
-        uses: extractions/setup-just@53165ef7e734c5c07cb06b3c8e7b647c5aa16db3 # v4
+        uses: extractions/setup-just@v4.0.0 # zizmor: ignore[unpinned-tools] takes the latest just as before; pinning a version is a behaviour change
         timeout-minutes: 5
 
       - name: resolve the producing run and its ISO artifact
@@ -123,7 +127,7 @@ jobs:
 
       - name: download the producer's ISO chunks
         timeout-minutes: 30
-        uses: actions/download-artifact@v8
+        uses: actions/download-artifact@v8.0.2
         with:
           name: ${{ steps.producer.outputs.name }}
           path: ${{ runner.temp }}/iso-roundtrip
@@ -133,7 +137,7 @@ jobs:
 
       - name: download the producer's browser evidence (ISO hash, measurements)
         timeout-minutes: 5
-        uses: actions/download-artifact@v8
+        uses: actions/download-artifact@v8.0.2
         with:
           name: browser-evidence-${{ matrix.edition.slug }}-run${{ github.event.inputs.reuse_iso_run_id }}-a${{ github.event.inputs.reuse_iso_attempt }}
           path: e2e/test-results
@@ -159,9 +163,10 @@ jobs:
           echo "commit=${commit}" >> "$GITHUB_OUTPUT"
 
       - name: checkout current tunaOS strict harness (pinned)
-        uses: actions/checkout@v7
+        uses: actions/checkout@v7.0.1
         timeout-minutes: 5
         with:
+          persist-credentials: false
           repository: tuna-os/tunaOS
           ref: ${{ steps.pin.outputs.commit }}
           path: tunaos-e2e-current
@@ -214,7 +219,7 @@ jobs:
       - name: upload diagnostics
         if: always()
         timeout-minutes: 10
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@v7.0.2
         with:
           name: reuse-${{ matrix.edition.slug }}-run${{ github.run_id }}-a${{ github.run_attempt }}-diag
           path: |
