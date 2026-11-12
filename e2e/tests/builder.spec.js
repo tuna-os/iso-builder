@@ -368,12 +368,14 @@ test.describe("iso builder", () => {
     await page.goto("/?customize=1");
     // Published catalog inspection is lightweight; full unpack belongs to @full.
     await page.getByText("Use a custom container image").click();
-    await page.locator("#image").fill("sailfin:gnome");
+    // An image the catalog has not qualified: its inspection ends at the local
+    // fallback. (sailfin:gnome is qualified, so it would be buildable.)
+    await page.locator("#image").fill("sailfin:kde");
     await shot(page, "02-image-entered.png");
     await page.locator("#introspect").click();
 
     await expect(page.locator("#facts")).toBeVisible();
-    await expect(page.locator(".badge.de")).toContainText("gnome");
+    await expect(page.locator(".badge.de")).toContainText("kde");
     await expect(page.locator("#build")).toBeDisabled();
     await expect(page.locator("#fallbackcard")).toBeVisible();
     await shot(page, "03-inspected.png");
