@@ -221,3 +221,69 @@ def test_imported_snapshot_copies_and_guided_catalog_agree():
     result = subprocess.run([sys.executable, str(ROOT / 'scripts/sync-catalog-snapshot.py'), '--check'],
                             capture_output=True, text=True, check=False)
     assert result.returncode == 0, result.stderr
+
+
+# --- nvidia targets inherit their sibling's receipt (tunaOS iso_delivery `inherits`) ----
+
+def inherited_pair():
+    """(sibling, nvidia) entries: the nvidia one carries the sibling's receipt with
+    `inheritedFrom`, its own image and its own overlay built on that image."""
+    sibling = receipt_entry()
+    nvidia = copy.deepcopy(sibling)
+    t = nvidia['target']
+    sibling['target'].update(variant='fish', flavor='gnome')
+    sibling['targetKey'] = 'fish:gnome:linux/amd64'
+    t.update(variant='fish', flavor='gnome-nvidia')
+    nvidia['targetKey'] = 'fish:gnome-nvidia:linux/amd64'
+    image = 'sha256:' + '9' * 64
+    nvidia['resolvedInputs'].update(platformManifestDigest=image, liveOverlayBaseDigest=image,
+                                    liveOverlayDigest='sha256:' + 'a' * 64)
+    nvidia['qualification']['inheritedFrom'] = 'fish:gnome:linux/amd64'
+    return sibling, nvidia
+
+
+def test_an_inheriting_nvidia_entry_passes_without_its_own_receipt_image():
+    sibling, nvidia = inherited_pair()
+    assert nvidia['qualification']['receiptImageDigest'] != nvidia['resolvedInputs']['platformManifestDigest']
+    assert vc.qualification_provenance_complete(nvidia)
+    assert browser_status(nvidia) == 'qualified'
+
+
+@pytest.mark.parametrize('mutate', [
+    lambda s, n: n['qualification'].update(inheritedFrom='fish:kde:linux/amd64'),       # not its sibling
+    lambda s, n: n['qualification'].update(inheritedFrom='other:gnome:linux/amd64'),    # another variant
+    lambda s, n: n['qualification'].update(inheritedFrom=''),
+    lambda s, n: n['target'].update(flavor='gnome'),                                    # not an nvidia flavor
+    lambda s, n: n['resolvedInputs'].update(liveOverlayBaseDigest='sha256:' + 'b' * 64),  # overlay of other bytes
+])
+def test_a_malformed_inheritance_is_refused(mutate):
+    """Falsification: accepting any `inheritedFrom` would let an unrelated image
+    borrow a receipt; the JS and Python gates must refuse the same shapes."""
+    sibling, nvidia = inherited_pair()
+    mutate(sibling, nvidia)
+    assert not vc.qualification_provenance_complete(nvidia)
+    assert browser_status(nvidia) == 'unqualified'
+
+
+def test_the_snapshot_validator_follows_inheritedFrom_to_a_sibling_on_the_same_receipt(tmp_path):
+    sibling, nvidia = inherited_pair()
+
+    def validate(entries):
+        targets = sorted(entries, key=lambda e: e['targetKey'])
+        canonical = json.dumps(targets, sort_keys=True, separators=(',', ':'), ensure_ascii=True,
+                               allow_nan=False).encode()
+        doc = {'schemaVersion': 1, 'kind': 'catalog-snapshot', 'coverageDigest': 'sha256:' + '0' * 64,
+               'snapshotDigest': 'sha256:' + hashlib.sha256(canonical).hexdigest(), 'targets': targets}
+        path = tmp_path / 'snap.json'
+        path.write_text(json.dumps(doc))
+        return vc.validate_snapshot(path)
+
+    assert validate([sibling, nvidia])
+    other = copy.deepcopy(sibling)
+    other['qualification']['receiptDigest'] = 'sha256:' + 'c' * 64
+    with pytest.raises(SystemExit, match='not qualified on the same receipt'):
+        validate([other, nvidia])
+    unqualified = copy.deepcopy(sibling)
+    unqualified['qualification'] = {'status': 'unqualified', 'reason': 'x'}
+    with pytest.raises(SystemExit, match='not qualified on the same receipt'):
+        validate([unqualified, nvidia])
