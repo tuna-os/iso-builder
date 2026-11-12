@@ -54,9 +54,11 @@ jobs:
     runs-on: ${{ matrix.os }}
     timeout-minutes: 20
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@v7.0.1
+        with:
+          persist-credentials: false
 
-      - uses: actions/setup-go@v7
+      - uses: actions/setup-go@v7.0.0
         with:
           go-version-file: desktop/helper/go.mod
           cache-dependency-path: desktop/helper/go.sum
@@ -122,9 +124,11 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@v7.0.1
+        with:
+          persist-credentials: false
 
-      - uses: actions/setup-go@v7
+      - uses: actions/setup-go@v7.0.0
         with:
           go-version-file: desktop/helper/go.mod
           cache-dependency-path: desktop/helper/go.sum
@@ -141,7 +145,7 @@ jobs:
           (cd "$out" && sha256sum -- * | tee SHA256SUMS)
           file "$out"/*
 
-      - uses: actions/upload-artifact@v7
+      - uses: actions/upload-artifact@v7.0.2
         with:
           name: tunaos-media-helper-${{ matrix.goos }}-${{ matrix.goarch }}
           path: ${{ runner.temp }}/out/
@@ -157,9 +161,11 @@ jobs:
     runs-on: ${{ matrix.os }}
     timeout-minutes: 60
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@v7.0.1
+        with:
+          persist-credentials: false
 
-      - uses: actions/setup-go@v7
+      - uses: actions/setup-go@v7.0.0
         with:
           go-version-file: desktop/helper/go.mod
           cache-dependency-path: desktop/helper/go.sum
@@ -208,7 +214,7 @@ jobs:
             echo '```'
           } >> "$GITHUB_STEP_SUMMARY"
 
-      - uses: actions/upload-artifact@v7
+      - uses: actions/upload-artifact@v7.0.2
         if: always()
         with:
           name: engine-smoke-${{ matrix.os }}

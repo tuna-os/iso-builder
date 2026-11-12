@@ -11,6 +11,9 @@ import pytest
 import yaml
 
 ROOT = Path(__file__).parents[1]
+sys.path.insert(0, str(ROOT / 'tests'))
+from ci_sources import pinned_commit  # noqa: E402
+
 needs_just = pytest.mark.skipif(shutil.which('just') is None, reason='just not installed')
 
 
@@ -145,7 +148,8 @@ def test_full_runner_uses_existing_pinned_just_and_preserves_setup_cap():
     assert full['runs-on'] == "${{ github.event.inputs.runner == 'karnataka-gpu' && 'tuna-iso-gpu' || 'ubuntu-24.04' }}"
     steps = full['steps']
     tool = next(step for step in steps if step.get('name') == 'install pinned just without apt')
-    assert tool['uses'] == 'extractions/setup-just@53165ef7e734c5c07cb06b3c8e7b647c5aa16db3'
+    assert tool['uses'].startswith('extractions/setup-just@')
+    assert pinned_commit('ci.yml', tool['uses']) == '53165ef7e734c5c07cb06b3c8e7b647c5aa16db3'
     setup = next(step for step in steps if step.get('name') == 'install deps + chromium')
     assert setup['timeout-minutes'] == 20
     assert setup['run'] == 'just e2e-install'

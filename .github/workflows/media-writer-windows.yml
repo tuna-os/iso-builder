@@ -61,13 +61,15 @@ jobs:
       DOTNET_CLI_TELEMETRY_OPTOUT: "1"
       MSI_NAME: TunaOS-Media-Writer-Windows-x64.msi
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@v7.0.1
+        with:
+          persist-credentials: false
 
-      - uses: actions/setup-dotnet@v6
+      - uses: actions/setup-dotnet@v6.1.0
         with:
           dotnet-version: 10.0.x
 
-      - uses: actions/setup-go@v7
+      - uses: actions/setup-go@v7.0.0
         with:
           go-version-file: desktop/helper/go.mod
           cache-dependency-path: desktop/helper/go.sum
@@ -220,7 +222,7 @@ jobs:
 
       - name: Upload UI smoke screenshots and logs
         if: always()
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@v7.0.2
         with:
           name: windows-ui-smoke
           path: |
@@ -232,7 +234,7 @@ jobs:
           if-no-files-found: warn
 
       - name: Upload TunaOS-Media-Writer-Windows-x64.msi
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@v7.0.2
         with:
           name: TunaOS-Media-Writer-Windows-x64.msi
           path: desktop/windows/build/TunaOS-Media-Writer-Windows-x64.msi
@@ -252,7 +254,7 @@ jobs:
           "SIGNING_STATE=$state" >> $env:GITHUB_ENV
 
       - name: Upload signing-windows-x64
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@v7.0.2
         with:
           name: signing-windows-x64
           path: desktop/windows/build/signing/signing-windows-x64.json
