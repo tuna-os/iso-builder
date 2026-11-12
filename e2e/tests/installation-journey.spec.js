@@ -10,7 +10,7 @@ test('maintained starting point is honest and browsing preserves a single catalo
  await page.goto('/?customize=1');
  await expect(page.locator('#experience')).toHaveValue('tunaos');
  await expect(page.locator('#guided-start')).toBeVisible();
- await expect(page.locator('#guided-picker')).toContainText('Browser build not yet verified');
+ await expect(page.locator('#guided-picker')).toContainText('Browser build verified');
  await expect(page.locator('.guided-question')).toHaveCount(0);
  await page.getByRole('button',{name:'Help me choose / browse all setups'}).click();
  await expect(page.locator('#guided-question')).toBeFocused();
