@@ -764,7 +764,7 @@ jobs:
         timeout-minutes: 5
         with:
           repository: tuna-os/tunaOS
-          ref: 844275b245f73a44fa2702c9548b0995634135cf
+          ref: 2ddc3586639a19aa9fc6627701bad7aaa1672729
           path: tunaos-e2e
       - name: checkout current tunaOS strict harness (pinned)
         if: github.event.inputs.strict_roundtrip_test == 'true'
@@ -772,7 +772,7 @@ jobs:
         timeout-minutes: 5
         with:
           repository: tuna-os/tunaOS
-          ref: 844275b245f73a44fa2702c9548b0995634135cf
+          ref: 2ddc3586639a19aa9fc6627701bad7aaa1672729
           path: tunaos-e2e-current
 
       - name: verify guest under QEMU (${{ matrix.edition.slug }})
@@ -999,6 +999,30 @@ jobs:
           STRICT_ROUNDTRIP_TEST: ${{ github.event.inputs.strict_roundtrip_test }}
           DIAGNOSTIC_UNQUALIFIED: ${{ github.event.inputs.diagnostic_unqualified }}
         run: just full-label-output
+
+      # DIAG ONLY (branch diag/qual-xfce, never merge): print the strict
+      # harness frames and evidence into the job log, so they can be read
+      # without downloading the artifact.
+      - name: dump strict frames to log (diag)
+        if: always() && github.event.inputs.strict_roundtrip_test == 'true'
+        timeout-minutes: 15
+        env:
+          SLUG: ${{ matrix.edition.slug }}
+        run: |
+          set +e
+          OUT="luks-verify-${SLUG}"
+          [ -d "$OUT" ] || { echo "no $OUT"; exit 0; }
+          echo "=====TREE"; find "$OUT" -type f -printf '%TT %s %p\n' | sort | head -400
+          for f in $(find "$OUT" -type f \( -name '*.json' -o -name 'evidence*' -o -name '*.txt' \) -size -200k | sort); do
+            echo "=====FILE $f"; head -c 60000 "$f"; echo
+          done
+          n=0
+          for f in $(find "$OUT" -type f -name '*.png' -printf '%T@ %p\n' | sort -n | awk '{print $2}'); do
+            n=$((n+1)); [ "$n" -gt 160 ] && break
+            if convert "$f" -quality 82 /tmp/frame.jpg 2>/dev/null; then src=/tmp/frame.jpg; else src="$f"; fi
+            echo "=====FRAME $f"; base64 -w0 "$src"; echo
+          done
+          echo "=====END frames=$n"
 
       # Qualification receipt (BrowserIsoQualificationReceipt/v1), only for a
       # passed non-diagnostic both-mode strict run on refs/heads/main: one ISO,
