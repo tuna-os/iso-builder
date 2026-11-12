@@ -2,8 +2,8 @@
   "schemaVersion": 1,
   "kind": "guided-image-catalog",
   "catalogId": "stock",
-  "generatedAt": "2026-11-07T02:41:16Z",
-  "snapshotDigest": "sha256:d7a64aa187e8d2745c40d15608287a290845000543d4cb1062cf509b8ed4a523",
+  "generatedAt": "2026-11-12T06:45:03Z",
+  "snapshotDigest": "sha256:98dde44f9a2be56e584cf916373ecd37803e1d95b640506125fd07a96cfb5acb",
   "leaves": [
     {
       "id": "albacore:base-hwe:linux/amd64",
@@ -1781,31 +1781,6 @@
       "notices": []
     },
     {
-      "id": "bonito:gnome-x13s:linux/arm64",
-      "source": {
-        "kind": "target",
-        "targetKey": "bonito:gnome-x13s:linux/arm64"
-      },
-      "facets": {
-        "base": [
-          "bonito"
-        ],
-        "desktop": [
-          "gnome"
-        ],
-        "hardware": [
-          "generic"
-        ],
-        "platform": [
-          "linux/arm64"
-        ],
-        "edition": [
-          "x13s"
-        ]
-      },
-      "notices": []
-    },
-    {
       "id": "bonito:gnome:linux/amd64",
       "source": {
         "kind": "target",
@@ -3251,31 +3226,6 @@
         ],
         "edition": [
           "nvidia"
-        ]
-      },
-      "notices": []
-    },
-    {
-      "id": "marlin:gnome-x13s:linux/arm64",
-      "source": {
-        "kind": "target",
-        "targetKey": "marlin:gnome-x13s:linux/arm64"
-      },
-      "facets": {
-        "base": [
-          "marlin"
-        ],
-        "desktop": [
-          "gnome"
-        ],
-        "hardware": [
-          "generic"
-        ],
-        "platform": [
-          "linux/arm64"
-        ],
-        "edition": [
-          "x13s"
         ]
       },
       "notices": []
