@@ -110,7 +110,9 @@ when its desktop qualifies. Such an entry also has `inheritedFrom`. This is
 exactly `<variant>:<sibling>:linux/amd64`, where the sibling is the same flavor
 without `nvidia` (`gnome-nvidia-hwe` inherits `gnome-hwe`). The entry keeps the
 sibling's receipt fields, so `receiptImageDigest` is the digest of the
-sibling's image, not its own. Its own image has its own overlay, and the
+sibling's image, not its own.
+
+Its own image has its own overlay, and the
 overlay base is that image. `scripts/verify-catalog.py` makes sure that the
 sibling entry in the same snapshot is `qualified` on the same `receiptDigest`
 and is not itself inherited.
