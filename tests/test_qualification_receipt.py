@@ -20,6 +20,9 @@ import yaml
 ROOT = Path(__file__).parents[1]
 SCRIPT = ROOT / "scripts/build-qualification-receipt.py"
 CI_YML = ROOT / ".github/workflows/ci.yml"
+sys.path.insert(0, str(ROOT / "tests"))
+from ci_sources import pinned_commit  # noqa: E402
+
 spec = importlib.util.spec_from_file_location("qualification_receipt", SCRIPT)
 receipt_mod = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(receipt_mod)
@@ -401,7 +404,8 @@ def test_receipt_is_built_only_after_a_passed_both_mode_run_on_main():
 
 def test_receipt_is_attested_with_a_pinned_action_then_verified_and_uploaded():
     attest = step("attest qualification receipt")
-    assert re.fullmatch(r"actions/attest-build-provenance@[0-9a-f]{40}", attest["uses"])
+    assert attest["uses"].startswith("actions/attest-build-provenance@")
+    assert pinned_commit("ci.yml", attest["uses"]), "attest-build-provenance must be SHA-pinned or locked in actions.lock"
     assert attest["with"] == {"subject-path": "${{ runner.temp }}/qualification-receipt/receipt.json"}
     assert "steps.qualification-receipt.outcome == 'success'" in attest["if"]
     verify = step("verify qualification receipt attestation bundle")
