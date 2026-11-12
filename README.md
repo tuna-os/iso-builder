@@ -24,10 +24,10 @@ Never post account credentials or API keys in issues or pull requests.
 For step-by-step browser instructions and current limits, see the [browser quickstart](docs/browser-quickstart.md).
 
 1. **Pick a desktop:** the bare URL is one screen: desktop cards, a "Based on" menu and one button.
-2. **One click:** the button builds the ISO in your browser when that image has a browser qualification receipt and your browser can build it. Otherwise it downloads the ready-made ISO, or offers TunaOS Media Writer.
+2. **One click:** the button builds the ISO in your browser if the image has a qualification receipt and your browser can build it. If not, it downloads the ready-made ISO or offers TunaOS Media Writer.
 3. **Write the USB stick:** use Fedora Media Writer, balenaEtcher, or TunaOS Media Writer.
 
-**Customize apps and settings** (or `?customize=1`) opens the full builder: any image and platform, Flatpaks, system packages ([remora](https://github.com/tuna-os/remora)), custom repos, a custom registry relay, and the build-on-your-computer fallback.
+**Customize apps and settings** (or `?customize=1`) opens the full builder. It offers any image and platform, Flatpaks, system packages ([remora](https://github.com/tuna-os/remora)), custom repos and a custom registry relay. It also has the build-on-your-computer fallback.
 
 **TunaOS Media Writer** ([`desktop/`](desktop/README.md)) is the native app for macOS (SwiftUI), Windows (WinUI 3) and Linux (GTK4/libadwaita, Flatpak). It builds the same image on your computer with the same engine and writes it to a USB stick. Downloads: the latest [`media-writer-v*` release](https://github.com/tuna-os/iso-builder/releases); `downloads.json` links them from iso.tunaos.org at deploy time.
 
