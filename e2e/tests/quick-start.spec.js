@@ -4,6 +4,23 @@
 const { test, expect } = require("@playwright/test");
 const { qualifiedCatalogFixture } = require("./qualified-catalog-fixture");
 const config = require("../../app/public/builder-config.json");
+const snapshot = require("../../app/public/catalog-snapshot.json");
+
+// The deployed catalog qualifies some targets (the default, yellowfin:gnome,
+// among them), which changes the route under test. These specs serve the same
+// snapshot with every qualification removed except bonito:gnome (the one
+// qualified target the browser-route specs use, with its real receipt), and
+// opt out where qualifiedCatalogFixture is the point.
+const QUALIFIED_FOR_SPECS = "bonito:gnome:linux/amd64";
+async function unqualifiedCatalog(page) {
+  const doc = structuredClone(snapshot);
+  for (const entry of doc.targets) {
+    if (entry.targetKey === QUALIFIED_FOR_SPECS) continue;
+    entry.qualification = { browser: null, qualifiedAt: null, reason: "no-qualification-receipt",
+      receiptDigest: null, resources: null, status: "unqualified" };
+  }
+  await page.route("**/catalog-snapshot.json", route => route.fulfill({ json: doc }));
+}
 
 const DEFAULT_APPS = Object.fromEntries(config.desktops.map(d => [d.id, d.default_flatpaks]));
 const PREBUILT = {
@@ -16,7 +33,8 @@ const WRITER = { version: "1.0.0", assets: {
   "linux-x86_64": { url: "https://github.com/tuna-os/iso-builder/releases/download/media-writer-v1.0.0/TunaOS-Media-Writer-Linux-x86_64.flatpak" },
 } };
 
-async function open(page, { prebuilt = PREBUILT, mediaWriter = null, deviceMemory = 16, freeGB = 100, url = "/", platform = "Linux" } = {}) {
+async function open(page, { prebuilt = PREBUILT, mediaWriter = null, deviceMemory = 16, freeGB = 100, url = "/", platform = "Linux", catalog = "unqualified" } = {}) {
+  if (catalog === "unqualified") await unqualifiedCatalog(page);
   await page.route("**/wasm_exec.js", route => route.fulfill({ contentType: "text/javascript", body: "" }));
   await page.route("**/tbox.wasm", route => route.abort());
   await page.route("https://**/*", route => route.abort());
@@ -114,7 +132,7 @@ test.describe("one-click download view", () => {
 
   test("one click builds with each desktop's default apps, never the previous desktop's", async ({ page }) => {
     await qualifiedCatalogFixture(page);
-    await open(page);
+    await open(page, { catalog: null });
     await settled(page);
     await page.evaluate(() => {
       window.__builds = [];
@@ -142,7 +160,7 @@ test.describe("one-click download view", () => {
 
   test("a cancelled save dialog starts nothing", async ({ page }) => {
     await qualifiedCatalogFixture(page);
-    await open(page);
+    await open(page, { catalog: null });
     await settled(page);
     await page.evaluate(() => {
       window.__inspected = false;
