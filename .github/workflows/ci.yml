@@ -123,9 +123,13 @@ on:
 # single push to the PR wipes it out — that is exactly what happened to
 # run 30510986807, where six cells died mid-pull as "The operation was
 # canceled" and the sweep taught us nothing about those bases.
+#
+# Only pull-request runs are cancelled. A run on main (a push or the weekly
+# schedule) always finishes: a cancelled push run would leave main unchecked
+# or skip a deploy, and the next main run queues behind it instead.
 concurrency:
   group: ci-${{ github.workflow }}-${{ github.event_name == 'workflow_dispatch' && github.run_id || github.head_ref || github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   # Decide, from the changed paths, which job families this push/PR can affect.
@@ -135,13 +139,19 @@ jobs:
   # The gated jobs also run when this job itself fails (result != success), so a
   # broken selector can never turn a required check into a vacuous skip.
   #   native: native/** or this workflow (the Go module the three OS jobs test)
-  #   code:   anything except docs/examples/licence-type files
+  #   code:   anything except docs/examples/licence-type files and desktop/**
+  #           (TunaOS Media Writer: nothing here builds, tests or deploys it; its
+  #           own media-writer-*.yml workflows cover it)
+  #   catalog: the catalog sources scripts/verify-catalog.py reads. The registry
+  #           check is for the weekly schedule; a pull request or push runs it
+  #           only when it could change the answer.
   changes:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     outputs:
       native: ${{ steps.sel.outputs.native }}
       code: ${{ steps.sel.outputs.code }}
+      catalog: ${{ steps.sel.outputs.catalog }}
     steps:
       - uses: actions/checkout@v7.0.1
         with:
@@ -153,21 +163,23 @@ jobs:
           BASE: ${{ github.event.pull_request.base.sha || github.event.before }}
           HEAD: ${{ github.event.pull_request.head.sha || github.sha }}
         run: |
-          all() { echo native=true >> "$GITHUB_OUTPUT"; echo code=true >> "$GITHUB_OUTPUT"; exit 0; }
+          all() { printf '%s\n' native=true code=true catalog=true >> "$GITHUB_OUTPUT"; exit 0; }
           if [[ "$EVENT" != pull_request && "$EVENT" != push ]] || [[ -z "$BASE" || "$BASE" =~ ^0+$ ]]; then all; fi
           if [[ "$EVENT" == pull_request ]]; then range="$BASE...$HEAD"; else range="$BASE $HEAD"; fi
           # shellcheck disable=SC2086
           git diff --no-renames --name-only -z $range > changed-paths 2>/dev/null || all
-          native=false code=false
+          native=false code=false catalog=false
           while IFS= read -r -d '' path; do
             case "$path" in
               native/*|.github/workflows/ci.yml) native=true; code=true ;;
-              *.md|docs/*|LICENSE|examples/*|.editorconfig|.github/CODEOWNERS) ;;
+              *.md|docs/*|LICENSE|examples/*|.editorconfig|.github/CODEOWNERS|desktop/*) ;;
               *) code=true ;;
             esac
+            case "$path" in
+              app/*|native/catalog*|scripts/verify-catalog.py|e2e/editions.json|.github/workflows/ci.yml) catalog=true ;;
+            esac
           done < changed-paths
-          echo "native=$native" >> "$GITHUB_OUTPUT"
-          echo "code=$code" >> "$GITHUB_OUTPUT"
+          printf '%s\n' "native=$native" "code=$code" "catalog=$catalog" >> "$GITHUB_OUTPUT"
 
   # Three OS-native jobs, not one cross-compiled one: exec_windows.go,
   # exec_darwin.go, blockdev_windows.go, blockdev_darwin.go,
@@ -491,6 +503,8 @@ jobs:
   # redden unrelated pull requests. A parser that matches nothing exits 2,
   # because a pass over zero refs would mean nothing.
   catalog:
+    needs: changes
+    if: ${{ !cancelled() && (needs.changes.result != 'success' || needs.changes.outputs.catalog == 'true') }}
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
