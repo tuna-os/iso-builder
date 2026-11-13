@@ -17,7 +17,11 @@ from pathlib import Path
 import re
 import sys
 
-MAX_ISO_BYTES = 16 * 1024 ** 3
+# guppy:gnome builds a 19,415,322,624-byte ISO (run 43429581152), above the
+# old 16 GiB bound, and failed here after a clean 56-minute build. The hosted
+# runner had 66 GB free at this step. Splitting adds one ISO of chunks; the
+# strict route deletes them before downloading the round-trip copy.
+MAX_ISO_BYTES = 24 * 1024 ** 3
 DEFAULT_CHUNK_BYTES = 2 * 1024 ** 3
 MAX_CHUNKS = 64
 BLOCK = 8 * 1024 ** 2
