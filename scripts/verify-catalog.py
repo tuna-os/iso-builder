@@ -74,6 +74,30 @@ RECEIPT_PRODUCER = {"repository": "tuna-os/iso-builder", "workflow": ".github/wo
 RECEIPT_PLATFORM = "linux/amd64"
 
 
+def nvidia_sibling(flavor) -> str | None:
+    """The flavor an nvidia flavor layers on (gnome-nvidia-hwe -> gnome-hwe); None otherwise."""
+    if not isinstance(flavor, str) or "nvidia" not in flavor.split("-"):
+        return None
+    tokens = flavor.split("-")
+    tokens.remove("nvidia")
+    return "-".join(tokens) or None
+
+
+def inherited_basis_key(entry: dict) -> str | None:
+    """targetKey an nvidia entry inherits its qualification from, or None when it
+    does not inherit. `inheritedFrom` must name exactly the same variant's
+    non-nvidia sibling on linux/amd64; any other value is malformed."""
+    q = entry.get("qualification") or {}
+    if "inheritedFrom" not in q:
+        return None
+    target = entry.get("target") or {}
+    sibling = nvidia_sibling(target.get("flavor"))
+    if sibling is None or target.get("platform") != RECEIPT_PLATFORM:
+        return ""
+    expected = f"{target.get('variant')}:{sibling}:{RECEIPT_PLATFORM}"
+    return expected if q["inheritedFrom"] == expected else ""
+
+
 def _digest(value) -> bool:
     return isinstance(value, str) and DIGEST_RE.fullmatch(value) is not None
 
@@ -125,6 +149,13 @@ def qualification_provenance_complete(entry: dict) -> bool:
             return False
         if not _digest(q.get("receiptImageDigest")) or q.get("receiptPlatform") != RECEIPT_PLATFORM:
             return False
+        inherited = inherited_basis_key(entry)
+        if inherited == "":
+            return False
+        if inherited:
+            # The receipt proves the sibling's image, not this one; this target
+            # builds its own image on its own overlay (pinned checks the base).
+            return pinned
         if target.get("platform") == RECEIPT_PLATFORM:
             return pinned and q["receiptImageDigest"] == ri["platformManifestDigest"]
         return target.get("platform") == "linux/arm64"
@@ -171,7 +202,14 @@ def validate_snapshot(snapshot_path: Path | None = None) -> dict:
             sys.exit(f"qualified entry {entry.get('targetKey')} has incomplete qualification provenance in {path}")
         if qual.get("status") == "qualified" and qual.get("receiptSchema") == RECEIPT_SCHEMA:
             target = entry["target"]
-            basis = by_key.get(f"{target.get('variant')}:{target.get('flavor')}:{RECEIPT_PLATFORM}") or {}
+            inherited = inherited_basis_key(entry)
+            basis = by_key.get(inherited or f"{target.get('variant')}:{target.get('flavor')}:{RECEIPT_PLATFORM}") or {}
+            if inherited:
+                held = basis.get("qualification") or {}
+                if held.get("status") != "qualified" or "inheritedFrom" in held \
+                        or held.get("receiptDigest") != qual.get("receiptDigest"):
+                    sys.exit(f"qualified entry {entry.get('targetKey')} inherits from {inherited}, "
+                             f"which is not qualified on the same receipt in {path}")
             if (basis.get("resolvedInputs") or {}).get("platformManifestDigest") != qual["receiptImageDigest"]:
                 sys.exit(f"qualified entry {entry.get('targetKey')} cites a receipt for an image its "
                          f"{RECEIPT_PLATFORM} target does not publish in {path}")

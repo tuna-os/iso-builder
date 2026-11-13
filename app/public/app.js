@@ -139,11 +139,23 @@ function catalogQualification(entry) {
     const p = q.producer || {};
     const run = (v) => Number.isSafeInteger(v) && v > 0;
     const platform = entry?.target?.platform;
+    // An nvidia target inherits its sibling's receipt (tunaOS iso_delivery
+    // `inherits`): the receipt proves the sibling's image, so the digest match
+    // below does not apply; the target builds its own image on its own overlay
+    // (`pinned` checks the overlay's base). inheritedFrom must be exactly the
+    // same variant's non-nvidia sibling on linux/amd64.
+    const parts = String(entry?.target?.flavor || "").split("-");
+    const at = parts.indexOf("nvidia");
+    const sibling = at < 0 ? "" : parts.filter((_, i) => i !== at).join("-");
+    const inherits = "inheritedFrom" in q;
+    const inheritsOk = inherits && platform === "linux/amd64" && sibling !== "" &&
+      q.inheritedFrom === `${entry.target.variant}:${sibling}:linux/amd64`;
     complete = common && digest(q.receiptImageDigest) && q.receiptPlatform === "linux/amd64" &&
+      (!inherits || inheritsOk) &&
       p.repository === "tuna-os/iso-builder" && p.workflow === ".github/workflows/ci.yml" &&
       p.ref === "refs/heads/main" && typeof p.sha === "string" && /^[0-9a-f]{40}$/.test(p.sha) &&
       run(p.runId) && run(p.runAttempt) &&
-      (platform === "linux/amd64" ? pinned && q.receiptImageDigest === ri.platformManifestDigest
+      (platform === "linux/amd64" ? pinned && (inherits || q.receiptImageDigest === ri.platformManifestDigest)
         : platform === "linux/arm64");
   } else {
     complete = common && pinned && digest(q.browserBuildReceiptDigest) &&
