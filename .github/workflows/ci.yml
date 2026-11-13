@@ -15,24 +15,27 @@
 # full-disk encryption, and booted — not just "looks like an ISO".
 # (Browser/CI boot parity history: tuna-os/tunaOS#673.)
 #
-# Expect this job to be mostly red today, and don't "fix" it by raising
-# budgets. Re-running the failures with linear memory sampled found *two*
-# independent engine bugs, not one (an earlier revision of this comment
-# blamed the ceiling for all of them, which measurement refuted):
+# Historical context, now resolved: do not read a red cell here as expected.
+# Two independent engine bugs used to make this job mostly red, and the fix
+# for either alone unblocked almost nothing:
 #
 #   1. A non-deterministic hang fetching layers. bonito:kde froze at layer
-#      38/65 on 114 MB, yellowfin:gnome at 50/65 on 121 MB — and at 47/65 in
+#      38/65 on 114 MB, yellowfin:gnome at 50/65 on 121 MB, and at 47/65 in
 #      CI, i.e. a different layer per run. Go's js/wasm streamReader.Read
-#      selects only on the read promise, with no context case, so a stalled
-#      response body blocks forever and no deadline can break it.
+#      selected only on the read promise, with no context case, so a stalled
+#      response body blocked forever and no deadline could break it.
 #   2. The wasm32 4 GiB ceiling. Go targets 32-bit linear memory, so the
-#      unpacked tree, the EROFS image and the ISO share one address space.
-#      flounder:xfce is the *smallest* edition and therefore the only one to
-#      survive (1) and reach authoring, where it dies with
+#      unpacked tree, the EROFS image and the ISO shared one address space.
+#      flounder:xfce, the smallest edition, was the only one to survive (1)
+#      and reach authoring, where it died with
 #      `runtime: out of memory ... 4252303360 in use` at 4094 MB.
 #
-# (1) blocks large editions before (2) can, so fixing either alone unblocks
-# almost nothing. Both live in tacklebox's engine — tuna-os/tacklebox#156.
+# Both were fixed in tacklebox's engine (tuna-os/tacklebox#156, closed), and
+# the local trackers #47/#48/#49 are closed with the roadmap rows complete.
+#
+# What is not established is that this job passes: verification is still
+# active (#126). Treat a failure as a new finding to diagnose, and still
+# don't "fix" it by raising budgets, which measurement refuted the first time.
 name: CI
 
 # Least-privilege default (iso-builder#117): no job here needs to write
