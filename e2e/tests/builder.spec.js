@@ -675,7 +675,18 @@ test.describe("iso builder", () => {
     // saveAs copy has been observed vanishing on CI. Duplicate to a path
     // wholly outside playwright's purview before the test ends.
     if (process.env.TBOX_E2E_ISO_COPY) {
-      fs.copyFileSync(out, process.env.TBOX_E2E_ISO_COPY);
+      // A hard link is a second name for the same bytes, so it survives
+      // Playwright unlinking `out`, and costs no disk. A full copy of a 16-25 GB
+      // ISO ran guppy:gnome out of space on a hosted runner (runs 43356259675 and
+      // 43368149419: ENOSPC at this line) beside Playwright's download artifact
+      // and `out`. Copy only across filesystems or where links are refused.
+      fs.rmSync(process.env.TBOX_E2E_ISO_COPY, { force: true });
+      try {
+        fs.linkSync(out, process.env.TBOX_E2E_ISO_COPY);
+      } catch (e) {
+        if (!["EXDEV", "EPERM", "ENOTSUP"].includes(e.code)) throw e;
+        fs.copyFileSync(out, process.env.TBOX_E2E_ISO_COPY);
+      }
       console.log("copied to:", process.env.TBOX_E2E_ISO_COPY, fs.statSync(process.env.TBOX_E2E_ISO_COPY).size, "bytes");
     }
     phases.saveMs = performance.now() - saveStartedAt;
