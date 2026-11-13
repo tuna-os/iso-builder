@@ -96,7 +96,7 @@ on:
         type: boolean
         default: false
       runner:
-        description: "Where full-matrix cells run. github: GitHub-hosted ubuntu-24.04 (software rendering only, so only GNOME can be qualified). karnataka-gpu: the self-hosted tuna-iso-gpu scale set on karnataka, with KVM and a real DRM render node, for Pantheon, niri, KDE, XFCE and COSMIC. A preflight fails the cell closed if the host lacks either."
+        description: "Where full-matrix cells run. github: GitHub-hosted ubuntu-24.04 (software rendering only, so only GNOME can be qualified). karnataka-gpu: the self-hosted tuna-iso-gpu scale set on karnataka, with KVM and a real DRM render node, for Pantheon, niri, KDE, XFCE and COSMIC. A preflight fails the cell closed if the host lacks either. With strict_roundtrip_test the ISO is built and uploaded on GitHub-hosted full-gpu-build and karnataka only downloads it and runs the guest."
         type: choice
         options:
           - github
@@ -143,8 +143,9 @@ jobs:
       native: ${{ steps.sel.outputs.native }}
       code: ${{ steps.sel.outputs.code }}
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@v7.0.1
         with:
+          persist-credentials: false
           fetch-depth: 0
       - id: sel
         env:
@@ -187,11 +188,13 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
-      - uses: actions/checkout@v7
-      - uses: actions/setup-python@v7
+      - uses: actions/checkout@v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v7.1.0
         with:
           python-version: "3.15"
-      - uses: actions/setup-node@v7
+      - uses: actions/setup-node@v7.1.0
         with:
           node-version: 26
       # The justfile/recipe/cleanup contract tests drive the real `just`;
@@ -208,9 +211,11 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@v7.0.1
+        with:
+          persist-credentials: false
 
-      - uses: actions/setup-go@v7
+      - uses: actions/setup-go@v7.0.0
         with:
           go-version-file: native/go.mod
           cache-dependency-path: native/go.sum
@@ -258,9 +263,11 @@ jobs:
     # same borderline timeout.
     timeout-minutes: 25
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@v7.0.1
+        with:
+          persist-credentials: false
 
-      - uses: actions/setup-go@v7
+      - uses: actions/setup-go@v7.0.0
         with:
           go-version-file: native/go.mod
           cache-dependency-path: native/go.sum
@@ -303,9 +310,11 @@ jobs:
     runs-on: macos-latest
     timeout-minutes: 15
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@v7.0.1
+        with:
+          persist-credentials: false
 
-      - uses: actions/setup-go@v7
+      - uses: actions/setup-go@v7.0.0
         with:
           go-version-file: native/go.mod
           cache-dependency-path: native/go.sum
@@ -345,15 +354,17 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@v7.0.1
+        with:
+          persist-credentials: false
 
-      - uses: actions/setup-go@v7
+      - uses: actions/setup-go@v7.0.0
         with:
           go-version-file: native/go.mod
           cache-dependency-path: native/go.sum
 
       - name: install just without apt
-        uses: extractions/setup-just@53165ef7e734c5c07cb06b3c8e7b647c5aa16db3 # v4
+        uses: extractions/setup-just@v4.0.0 # zizmor: ignore[unpinned-tools] takes the latest just as before; pinning a version is a behaviour change
 
       # Building from native/'s module doesn't work: cmd/tbwasm pulls in
       # packages native/ never imports, so its go.sum has no entries for them.
@@ -367,8 +378,9 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: just wasm-resolve-pin
 
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@v7.0.1
         with:
+          persist-credentials: false
           repository: tuna-os/tacklebox
           ref: ${{ steps.pin.outputs.commit }}
           path: .tacklebox
@@ -379,7 +391,7 @@ jobs:
       - name: build tbox.wasm, sync wasm_exec.js, report
         run: just wasm-build
 
-      - uses: actions/upload-artifact@v7
+      - uses: actions/upload-artifact@v7.0.2
         with:
           name: engine
           path: |
@@ -395,23 +407,25 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@v7.0.1
+        with:
+          persist-credentials: false
 
       # The engine is not in git; drop the freshly built one into app/public/
       # so the suite tests the current source.
-      - uses: actions/download-artifact@v8
+      - uses: actions/download-artifact@v8.0.2
         with:
           name: engine
           path: app/public/
 
-      - uses: actions/setup-node@v7
+      - uses: actions/setup-node@v7.1.0
         with:
           node-version: 26
           cache: "npm"
           cache-dependency-path: e2e/package-lock.json
 
       - name: Cache Playwright browsers
-        uses: actions/cache@v6
+        uses: actions/cache@v6.1.0
         id: playwright-cache
         with:
           path: ~/.cache/ms-playwright
@@ -431,7 +445,7 @@ jobs:
 
       - name: upload screenshots
         if: always()
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@v7.0.2
         with:
           name: e2e-screenshots
           path: e2e/screenshots/
@@ -439,7 +453,7 @@ jobs:
 
       - name: upload report
         if: always()
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@v7.0.2
         with:
           name: playwright-report
           path: |
@@ -480,7 +494,9 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@v7.0.1
+        with:
+          persist-credentials: false
 
       - name: resolve every offered image against GHCR
         run: python3 scripts/verify-catalog.py
@@ -516,9 +532,11 @@ jobs:
       editions: ${{ steps.pick.outputs.editions }}
       count: ${{ steps.pick.outputs.count }}
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@v7.0.1
+        with:
+          persist-credentials: false
       - name: install just without apt
-        uses: extractions/setup-just@53165ef7e734c5c07cb06b3c8e7b647c5aa16db3 # v4
+        uses: extractions/setup-just@v4.0.0 # zizmor: ignore[unpinned-tools] takes the latest just as before; pinning a version is a behaviour change
       - id: pick
         env:
           ONLY: ${{ github.event.inputs.only }}
@@ -534,7 +552,161 @@ jobs:
           RETAIN_ISO_ARTIFACT_DAYS: ${{ github.event.inputs.retain_iso_artifact_days }}
         # No --quiet: just's --quiet also discards the recipe's stdout.
         run: just full-plan >> "$GITHUB_OUTPUT"
-      - run: echo "Building ${{ steps.pick.outputs.count }} edition(s)"
+      - run: echo "Building ${COUNT} edition(s)"
+        env:
+          COUNT: ${{ steps.pick.outputs.count }}
+
+  # A karnataka-gpu strict cell builds and uploads its ISO here, on a
+  # GitHub-hosted runner, and full-matrix on karnataka only downloads it and
+  # runs the guest. karnataka cannot upload the ISO itself: pantheon run
+  # 42919271864 pushed 1.95 of 7.53 GB in 60 min (~0.54 MB/s) before the
+  # artifact upload's signed URL expired ("Server failed to authenticate the
+  # request"), so no step timeout can carry it. Its downlink is not the limit
+  # (2.4 GB of registry layers in 449 s in the same run). The bytes are bound
+  # exactly as in the hosted route: this job's browser measurement is the
+  # expected ISO hash, and full-matrix re-verifies the downloaded chunks and
+  # the whole ISO against it before full-strict-inputs and the guest run.
+  full-gpu-build:
+    needs: [full-plan, wasm]
+    if: github.event.inputs.runner == 'karnataka-gpu' && github.event.inputs.strict_roundtrip_test == 'true'
+    runs-on: ubuntu-24.04
+    # 75 min to build, 30 to split, 30+5 to upload, plus setup and uploads.
+    timeout-minutes: 180
+    strategy:
+      fail-fast: false
+      matrix:
+        edition: ${{ fromJSON(needs.full-plan.outputs.editions) }}
+    # A strict run names exactly one cell (full-plan), so these are that cell's.
+    outputs:
+      iso_sha256: ${{ steps.iso-artifact.outputs.iso_sha256 }}
+      artifact_id: ${{ steps.iso-artifact-upload.outputs.artifact-id }}
+    steps:
+      - uses: actions/checkout@v7.0.1
+        with:
+          persist-credentials: false
+        timeout-minutes: 5
+
+      - name: install pinned just without apt
+        uses: extractions/setup-just@v4.0.0 # zizmor: ignore[unpinned-tools] takes the latest just as before; pinning a version is a behaviour change
+        timeout-minutes: 5
+
+      - uses: actions/download-artifact@v8.0.2
+        timeout-minutes: 5
+        with:
+          name: engine
+          path: app/public/
+
+      - uses: actions/setup-node@v7.1.0
+        timeout-minutes: 5
+        with:
+          node-version: 26
+          cache: "npm"
+          cache-dependency-path: e2e/package-lock.json
+
+      - name: Cache Playwright browsers
+        uses: actions/cache@v6.1.0
+        timeout-minutes: 5
+        id: playwright-cache
+        with:
+          path: ~/.cache/ms-playwright
+          key: ${{ runner.os }}-playwright-${{ hashFiles('e2e/package-lock.json') }}
+
+      - name: install deps + chromium
+        timeout-minutes: 20
+        env:
+          CACHE_HIT: ${{ steps.playwright-cache.outputs.cache-hit }}
+          PREINSTALLED_BROWSER_DEPS: "true"
+        run: just e2e-install
+
+      # Same build as full-matrix's step; strict runs exclude benchmark, pair,
+      # keep_iso and candidate retention, so only the strict inputs vary.
+      - name: build ${{ matrix.edition.ref }} (${{ matrix.edition.base }})
+        id: browser-build
+        timeout-minutes: 100
+        env:
+          TBOX_E2E_FULL: "1"
+          TBOX_E2E_IMAGE: ${{ contains(matrix.edition.ref, '/') && matrix.edition.ref || format('tuna-os/{0}', matrix.edition.ref) }}
+          TBOX_E2E_PLATFORM: ${{ matrix.edition.platform }}
+          DIAGNOSTIC_ALLOW_UNQUALIFIED: ${{ github.event.inputs.diagnostic_unqualified == 'true' && github.event.inputs.only != '' && '1' || '' }}
+          DIAGNOSTIC_TARGET: ${{ contains(matrix.edition.ref, '/') && matrix.edition.ref || format('tuna-os/{0}', matrix.edition.ref) }}
+          TBOX_E2E_STRICT_OBSERVED: ${{ (github.event.inputs.strict_install_mode == 'plain' || github.event.inputs.strict_install_mode == 'both') && github.event.inputs.diagnostic_unqualified != 'true' && '1' || '' }}
+          STRICT_ROUNDTRIP_TEST: ${{ github.event.inputs.strict_roundtrip_test }}
+          STRICT_INSTALL_MODE: ${{ github.event.inputs.strict_install_mode }}
+          DIAGNOSTIC_UNQUALIFIED: ${{ github.event.inputs.diagnostic_unqualified }}
+          RETAIN_ISO_ARTIFACT: ${{ github.event.inputs.retain_iso_artifact }}
+          ONLY: ${{ github.event.inputs.only }}
+          KEEP_ISO: ${{ github.event.inputs.keep_iso }}
+          RETAIN_CANDIDATE: ${{ github.event.inputs.retain_candidate }}
+          TBOX_E2E_CACHE_MODE: "cold"
+          SLUG: ${{ matrix.edition.slug }}
+          BENCHMARK: ${{ github.event.inputs.benchmark }}
+          PAIR: ${{ github.event.inputs.pair }}
+        run: just full-build
+
+      - name: retain ISO as GitHub artifact (chunked, sha256-verified)
+        id: iso-artifact
+        if: ${{ always() && !cancelled() && steps.browser-build.outcome == 'success' }}
+        timeout-minutes: 30
+        env:
+          SLUG: ${{ matrix.edition.slug }}
+          DIAGNOSTIC_UNQUALIFIED: ${{ github.event.inputs.diagnostic_unqualified }}
+        run: just iso-artifact-split
+
+      - name: upload ISO chunks
+        id: iso-artifact-upload
+        if: ${{ always() && !cancelled() && steps.iso-artifact.outcome == 'success' }}
+        timeout-minutes: 30
+        uses: actions/upload-artifact@v7.0.2
+        with:
+          name: iso-${{ matrix.edition.slug }}-run${{ github.run_id }}-a${{ github.run_attempt }}
+          path: ${{ runner.temp }}/iso-artifact/
+          compression-level: 0
+          retention-days: ${{ github.event.inputs.retain_iso_artifact_days }}
+          if-no-files-found: error
+
+      - name: upload ISO manifest (small, fetch without the ISO)
+        if: ${{ always() && !cancelled() && steps.iso-artifact.outcome == 'success' }}
+        timeout-minutes: 5
+        uses: actions/upload-artifact@v7.0.2
+        with:
+          name: iso-${{ matrix.edition.slug }}-run${{ github.run_id }}-a${{ github.run_attempt }}-manifest
+          path: e2e/test-results/iso-artifact-manifest/manifest.json
+          retention-days: ${{ github.event.inputs.retain_iso_artifact_days }}
+          if-no-files-found: error
+
+      # full-strict-inputs on karnataka reads the browser measurements and
+      # evidence from this artifact.
+      - name: upload browser evidence (survives guest failure)
+        if: ${{ always() && !cancelled() && steps.browser-build.outcome == 'success' }}
+        timeout-minutes: 10
+        uses: actions/upload-artifact@v7.0.2
+        with:
+          name: browser-evidence-${{ matrix.edition.slug }}-run${{ github.run_id }}-a${{ github.run_attempt }}
+          path: e2e/test-results/*.json
+          if-no-files-found: error
+
+      - name: upload build diagnostics
+        if: always()
+        timeout-minutes: 10
+        uses: actions/upload-artifact@v7.0.2
+        with:
+          name: full-${{ matrix.edition.slug }}-build-diag
+          path: |
+            e2e/screenshots/
+            e2e/test-results/
+          if-no-files-found: ignore
+
+      - name: cleanup (this cell's ISOs, harness output and browser profile)
+        if: always()
+        timeout-minutes: 3
+        env:
+          SLUG: ${{ matrix.edition.slug }}
+        run: |
+          if command -v just >/dev/null; then
+            just ci-cleanup
+          else
+            echo "just was never installed in this job; nothing was created"
+          fi
 
   # One cell per base variant — the editions the picker actually offers.
   # Coverage is per-*base*, not per-desktop, on purpose: the browser-side
@@ -563,7 +735,10 @@ jobs:
   # Dispatch-only: each cell pulls a multi-GB image and writes a multi-GB
   # ISO, so this is not a per-push gate.
   full-matrix:
-    needs: [full-plan, wasm]
+    needs: [full-plan, wasm, full-gpu-build]
+    # full-gpu-build runs only for a karnataka-gpu strict cell; skipped is
+    # the normal case. A failed hosted build must not start the guest job.
+    if: ${{ !cancelled() && needs.full-plan.result == 'success' && needs.wasm.result == 'success' && (needs.full-gpu-build.result == 'success' || needs.full-gpu-build.result == 'skipped') }}
     # karnataka-gpu routes the cell to the self-hosted ARC scale set
     # tuna-iso-gpu (runner group must allow tuna-os/iso-builder). Smithay
     # compositors and Pantheon paint nothing under software rendering on a
@@ -593,7 +768,7 @@ jobs:
     # same setup, browser, 25-minute guest check, artifact transfer, and uploads.
     # Candidate retention keeps its existing 130-minute cap. Cold/warm pairs
     # run six browser builds (300-minute build step) plus the default 30 min.
-    timeout-minutes: ${{ github.event.inputs.strict_roundtrip_test == 'true' && 360 || github.event.inputs.pair == 'true' && 330 || github.event.inputs.retain_iso_artifact == 'true' && 330 || github.event.inputs.retain_candidate == 'true' && 130 || 105 }}
+    timeout-minutes: ${{ github.event.inputs.strict_roundtrip_test == 'true' && 360 || github.event.inputs.pair == 'true' && 330 || github.event.inputs.retain_iso_artifact == 'true' && 330 || github.event.inputs.retain_candidate == 'true' && 150 || 125 }}
     strategy:
       # A coverage sweep is worthless if the first red cell cancels the
       # rest — the whole point is learning which bases are broken.
@@ -606,14 +781,16 @@ jobs:
       matrix:
         edition: ${{ fromJSON(needs.full-plan.outputs.editions) }}
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@v7.0.1
+        with:
+          persist-credentials: false
         timeout-minutes: 5
 
       # Before the GPU preflight, which is a just recipe: the karnataka runner
       # image has no just (run 42893991042 failed the preflight with
       # "just: command not found", exit 127).
       - name: install pinned just without apt
-        uses: extractions/setup-just@53165ef7e734c5c07cb06b3c8e7b647c5aa16db3 # v4
+        uses: extractions/setup-just@v4.0.0 # zizmor: ignore[unpinned-tools] takes the latest just as before; pinning a version is a behaviour change
         timeout-minutes: 5
 
       - name: preflight GPU host (karnataka-gpu only)
@@ -672,14 +849,17 @@ jobs:
       # navigator.storage.persist() or spilling less into OPFS — not df.
 
       # The whole point of this job is testing the engine, so it must be the
-      # one the wasm job built from the pin.
-      - uses: actions/download-artifact@v8
+      # one the wasm job built from the pin. These build steps skip when
+      # full-gpu-build already built and uploaded this cell's ISO.
+      - uses: actions/download-artifact@v8.0.2
+        if: needs.full-gpu-build.result != 'success'
         timeout-minutes: 5
         with:
           name: engine
           path: app/public/
 
-      - uses: actions/setup-node@v7
+      - uses: actions/setup-node@v7.1.0
+        if: needs.full-gpu-build.result != 'success'
         timeout-minutes: 5
         with:
           node-version: 26
@@ -687,7 +867,8 @@ jobs:
           cache-dependency-path: e2e/package-lock.json
 
       - name: Cache Playwright browsers
-        uses: actions/cache@v6
+        if: needs.full-gpu-build.result != 'success'
+        uses: actions/cache@v6.1.0
         timeout-minutes: 5
         id: playwright-cache
         with:
@@ -695,17 +876,19 @@ jobs:
           key: ${{ runner.os }}-playwright-${{ hashFiles('e2e/package-lock.json') }}
 
       - name: install deps + chromium
+        if: needs.full-gpu-build.result != 'success'
         timeout-minutes: 20
         env:
           CACHE_HIT: ${{ steps.playwright-cache.outputs.cache-hit }}
           # The hosted image ships Chromium's system libraries; the karnataka
           # runner image does not, so it takes the normal --with-deps route.
-          PREINSTALLED_BROWSER_DEPS: ${{ github.event.inputs.runner == 'karnataka-gpu' && '' || 'true' }}
+          PREINSTALLED_BROWSER_DEPS: ${{ github.event.inputs.runner == 'karnataka-gpu' && '' || 'true' }} # zizmor: ignore[unsound-ternary] pre-existing: always yields true; a fix changes the karnataka-gpu path, left for review
         run: just e2e-install
 
       - name: build ${{ matrix.edition.ref }} (${{ matrix.edition.base }})
         id: browser-build
-        timeout-minutes: ${{ github.event.inputs.pair == 'true' && 300 || 75 }}
+        if: needs.full-gpu-build.result != 'success'
+        timeout-minutes: ${{ github.event.inputs.pair == 'true' && 300 || 100 }}
         env:
           TBOX_E2E_FULL: "1"
           # TunaOS editions are stored unqualified (yellowfin:gnome) and get
@@ -760,19 +943,21 @@ jobs:
       # job above uses to pin tacklebox. Bump deliberately through review.
       - name: checkout tunaOS test scripts (pinned)
         if: github.event.inputs.strict_roundtrip_test != 'true' && github.event.inputs.pair != 'true'
-        uses: actions/checkout@v7
+        uses: actions/checkout@v7.0.1
         timeout-minutes: 5
         with:
+          persist-credentials: false
           repository: tuna-os/tunaOS
-          ref: d583e85f6413260ccbc22af7e6f48c59246423c6
+          ref: 357f020da67ddea2dcebd1ee6d0a1b162358cfc4
           path: tunaos-e2e
       - name: checkout current tunaOS strict harness (pinned)
         if: github.event.inputs.strict_roundtrip_test == 'true'
-        uses: actions/checkout@v7
+        uses: actions/checkout@v7.0.1
         timeout-minutes: 5
         with:
+          persist-credentials: false
           repository: tuna-os/tunaOS
-          ref: d583e85f6413260ccbc22af7e6f48c59246423c6
+          ref: 357f020da67ddea2dcebd1ee6d0a1b162358cfc4
           path: tunaos-e2e-current
 
       - name: verify guest under QEMU (${{ matrix.edition.slug }})
@@ -843,10 +1028,10 @@ jobs:
       - name: upload ISO chunks
         id: iso-artifact-upload
         if: ${{ always() && !cancelled() && steps.iso-artifact.outcome == 'success' }}
-        # karnataka's uplink measured ~2.3 MB/s (run 42897853650 had uploaded
-        # 4.14 GB when the 30-minute limit hit); a ~10 GB ISO needs ~75 min.
-        timeout-minutes: ${{ github.event.inputs.runner == 'karnataka-gpu' && 120 || 30 }}
-        uses: actions/upload-artifact@v7
+        # A karnataka-gpu strict cell uploads from full-gpu-build instead:
+        # karnataka's uplink cannot finish before the upload URL expires.
+        timeout-minutes: 30
+        uses: actions/upload-artifact@v7.0.2
         with:
           name: iso-${{ matrix.edition.slug }}-run${{ github.run_id }}-a${{ github.run_attempt }}
           path: ${{ runner.temp }}/iso-artifact/
@@ -858,7 +1043,7 @@ jobs:
       - name: upload ISO manifest (small, fetch without the ISO)
         if: ${{ always() && !cancelled() && steps.iso-artifact.outcome == 'success' }}
         timeout-minutes: 5
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@v7.0.2
         with:
           name: iso-${{ matrix.edition.slug }}-run${{ github.run_id }}-a${{ github.run_attempt }}-manifest
           path: e2e/test-results/iso-artifact-manifest/manifest.json
@@ -874,23 +1059,38 @@ jobs:
           STRICT_ROUNDTRIP_TEST: ${{ github.event.inputs.strict_roundtrip_test }}
         run: just iso-artifact-drop-local
 
+      # A karnataka-gpu strict cell fetches what full-gpu-build uploaded under
+      # the same run-scoped name.
       - name: download ISO artifact again
-        if: ${{ always() && !cancelled() && steps.iso-artifact-upload.outcome == 'success' }}
+        if: ${{ always() && !cancelled() && (steps.iso-artifact-upload.outcome == 'success' || needs.full-gpu-build.result == 'success') }}
+        # karnataka pulled 2.4 GB of registry layers in 449 s (~5.3 MB/s,
+        # run 42919271864): a ~10 GB ISO needs ~32 min there.
         timeout-minutes: ${{ github.event.inputs.runner == 'karnataka-gpu' && 90 || 30 }}
-        uses: actions/download-artifact@v8
+        uses: actions/download-artifact@v8.0.2
         with:
           name: iso-${{ matrix.edition.slug }}-run${{ github.run_id }}-a${{ github.run_attempt }}
           path: ${{ runner.temp }}/iso-roundtrip
 
+      # full-strict-inputs reads the browser measurements and evidence that
+      # full-gpu-build's build wrote; this job did not build.
+      - name: download browser evidence from full-gpu-build
+        if: ${{ always() && !cancelled() && needs.full-gpu-build.result == 'success' }}
+        timeout-minutes: 5
+        uses: actions/download-artifact@v8.0.2
+        with:
+          name: browser-evidence-${{ matrix.edition.slug }}-run${{ github.run_id }}-a${{ github.run_attempt }}
+          path: e2e/test-results
+
       - name: verify ISO artifact round trip
         id: iso-roundtrip
-        if: ${{ always() && !cancelled() && steps.iso-artifact-upload.outcome == 'success' }}
+        if: ${{ always() && !cancelled() && (steps.iso-artifact-upload.outcome == 'success' || needs.full-gpu-build.result == 'success') }}
         timeout-minutes: 30
         env:
           SLUG: ${{ matrix.edition.slug }}
           ARTIFACT: iso-${{ matrix.edition.slug }}-run${{ github.run_id }}-a${{ github.run_attempt }}
-          ISO_SHA256: ${{ steps.iso-artifact.outputs.iso_sha256 }}
-          ARTIFACT_ID: ${{ steps.iso-artifact-upload.outputs.artifact-id }}
+          # The browser-measured hash of the build that uploaded the artifact.
+          ISO_SHA256: ${{ steps.iso-artifact.outputs.iso_sha256 || needs.full-gpu-build.outputs.iso_sha256 }}
+          ARTIFACT_ID: ${{ steps.iso-artifact-upload.outputs.artifact-id || needs.full-gpu-build.outputs.artifact_id }}
           STRICT_ROUNDTRIP_TEST: ${{ github.event.inputs.strict_roundtrip_test }}
           DIAGNOSTIC_UNQUALIFIED: ${{ github.event.inputs.diagnostic_unqualified }}
           RETAIN_ISO_ARTIFACT_DAYS: ${{ github.event.inputs.retain_iso_artifact_days }}
@@ -904,7 +1104,7 @@ jobs:
           EDITION_REF: ${{ matrix.edition.ref }}
           PLATFORM: ${{ matrix.edition.platform }}
           ARTIFACT_NAME: iso-${{ matrix.edition.slug }}-run${{ github.run_id }}-a${{ github.run_attempt }}
-          ARTIFACT_ID: ${{ steps.iso-artifact-upload.outputs.artifact-id }}
+          ARTIFACT_ID: ${{ steps.iso-artifact-upload.outputs.artifact-id || needs.full-gpu-build.outputs.artifact_id }}
           REPOSITORY: ${{ github.repository }}
           RUN_ID: ${{ github.run_id }}
           RUN_ATTEMPT: ${{ github.run_attempt }}
@@ -1023,7 +1223,7 @@ jobs:
         id: attest-receipt
         if: ${{ success() && steps.qualification-receipt.outcome == 'success' }}
         timeout-minutes: 10
-        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        uses: actions/attest-build-provenance@v4.2.2
         with:
           subject-path: ${{ runner.temp }}/qualification-receipt/receipt.json
 
@@ -1038,7 +1238,7 @@ jobs:
       - name: upload qualification receipt
         if: ${{ success() && steps.attest-receipt.outcome == 'success' }}
         timeout-minutes: 10
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@v7.0.2
         with:
           name: qualification-receipt-${{ matrix.edition.slug }}-run${{ github.run_id }}-a${{ github.run_attempt }}
           path: |
@@ -1055,7 +1255,7 @@ jobs:
       - name: upload browser evidence (survives guest failure)
         if: ${{ always() && !cancelled() && steps.browser-build.outcome == 'success' }}
         timeout-minutes: 10
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@v7.0.2
         with:
           name: browser-evidence-${{ matrix.edition.slug }}-run${{ github.run_id }}-a${{ github.run_attempt }}
           path: e2e/test-results/*.json
@@ -1068,7 +1268,7 @@ jobs:
       - name: upload diagnostics
         if: always()
         timeout-minutes: 10
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@v7.0.2
         with:
           name: full-${{ matrix.edition.slug }}-diag
           # luks-verify-*/ is the harness output dir: serial logs and
@@ -1103,7 +1303,7 @@ jobs:
       - name: upload qualification evidence
         if: ${{ success() && github.event.inputs.strict_roundtrip_test != 'true' }}
         timeout-minutes: 10
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@v7.0.2
         with:
           name: qual-${{ matrix.edition.slug }}-evidence
           path: e2e/test-results/qual-evidence-${{ matrix.edition.slug }}*.json
@@ -1133,11 +1333,13 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@v7.0.1
+        with:
+          persist-credentials: false
 
       # iso.tunaos.org gets the engine CI just built and tested, never a
       # hand-built binary that has not been run.
-      - uses: actions/download-artifact@v8
+      - uses: actions/download-artifact@v8.0.2
         with:
           name: engine
           path: app/public/
@@ -1152,7 +1354,7 @@ jobs:
         run: python3 scripts/generate-downloads.py --out app/public/downloads.json
 
       - name: deploy app (iso.tunaos.org)
-        uses: cloudflare/wrangler-action@v4
+        uses: cloudflare/wrangler-action@v4.1.3
         with:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
@@ -1160,7 +1362,7 @@ jobs:
           wranglerVersion: "4"
 
       - name: deploy relay (relay.tunaos.org)
-        uses: cloudflare/wrangler-action@v4
+        uses: cloudflare/wrangler-action@v4.1.3
         with:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}

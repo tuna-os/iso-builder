@@ -43,8 +43,11 @@ const WAIT_MS = Number(process.env.TBOX_E2E_WAIT_MS || 1_200_000);
 // runner): unpack 10 min, overlay+EROFS 8 min, so "Streaming ISO" began 18.5
 // min after the click and the 20 min download wait ended 50 s later with the
 // ISO still being written. That was a spent budget, not a stalled engine.
-// inspect 20 + build 45 stays under the 75 min per-test cap in ci.yml.
-const BUILD_WAIT_MS = Number(process.env.TBOX_E2E_BUILD_WAIT_MS || 2_700_000);
+// yellowfin:kde (6.4 GB ISO) needed 44 min 51 s in run 43233767372 and ran out
+// of the 45 min wait in runs 43219283448 and 43260171968 with the engine still
+// writing, so the build gets 70 min. inspect 20 + build 70 stays under the
+// 95 min per-test cap in the justfile's full-build recipe.
+const BUILD_WAIT_MS = Number(process.env.TBOX_E2E_BUILD_WAIT_MS || 4_200_000);
 // The engine is a Go binary on wasm32, so the unpacked tree, the EROFS
 // image and the ISO all share one 4 GiB linear-memory address space. Every
 // red cell in the first full sweep was that one ceiling:
@@ -368,12 +371,14 @@ test.describe("iso builder", () => {
     await page.goto("/?customize=1");
     // Published catalog inspection is lightweight; full unpack belongs to @full.
     await page.getByText("Use a custom container image").click();
-    await page.locator("#image").fill("sailfin:gnome");
+    // An image the catalog has not qualified: its inspection ends at the local
+    // fallback. (sailfin:gnome is qualified, so it would be buildable.)
+    await page.locator("#image").fill("sailfin:kde");
     await shot(page, "02-image-entered.png");
     await page.locator("#introspect").click();
 
     await expect(page.locator("#facts")).toBeVisible();
-    await expect(page.locator(".badge.de")).toContainText("gnome");
+    await expect(page.locator(".badge.de")).toContainText("kde");
     await expect(page.locator("#build")).toBeDisabled();
     await expect(page.locator("#fallbackcard")).toBeVisible();
     await shot(page, "03-inspected.png");

@@ -480,13 +480,19 @@ test.describe("production code and CI wiring", () => {
     const wf = fs.readFileSync(path.join(ROOT, ".github/workflows/ci.yml"), "utf8");
     const lines = wf.split("\n");
     const hits = lines.map((l, i) => [l, i]).filter(([l]) => /DIAGNOSTIC_ALLOW_UNQUALIFIED:/.test(l));
-    expect(hits).toHaveLength(1);
-    const [line, idx] = hits[0];
-    expect(line).toContain("diagnostic_unqualified");
-    expect(line).toContain("inputs.only");
-    // The nearest preceding step header is the @full build step.
-    const header = lines.slice(0, idx).reverse().find((l) => /^      - name:/.test(l));
-    expect(header).toContain("build ${{ matrix.edition.ref }}");
+    // Two build steps may exist: full-gpu-build (hosted runner, uploads the
+    // ISO for a karnataka guest) and full-matrix (builds itself when that job
+    // did not). Each is the @full build step of its job.
+    expect(hits).toHaveLength(2);
+    for (const [line, idx] of hits) {
+      expect(line).toContain("diagnostic_unqualified");
+      expect(line).toContain("inputs.only");
+      // The nearest preceding step header is the @full build step.
+      const header = lines.slice(0, idx).reverse().find((l) => /^      - name:/.test(l));
+      expect(header).toContain("build ${{ matrix.edition.ref }}");
+    }
+    const jobs = hits.map(([, idx]) => lines.slice(0, idx).reverse().find((l) => /^  [a-z-]+:$/.test(l)));
+    expect(jobs).toEqual(["  full-gpu-build:", "  full-matrix:"]);
     expect(wf).toMatch(/DIAGNOSTIC_TARGET: \$\{\{ contains\(matrix\.edition\.ref/);
     // Input defaults off.
     expect(wf).toMatch(/diagnostic_unqualified:\n\s+description:[^\n]*\n\s+type: boolean\n\s+default: false/);
@@ -494,8 +500,9 @@ test.describe("production code and CI wiring", () => {
 
   test("a refused full-build cell fails within seconds with the gate reason, not after the 5 min stall watchdog", async () => {
     test.setTimeout(180_000);
-    // A cell the catalog still refuses; skipjack:gnome itself is qualified now.
-    const refused = "tuna-os/yellowfin:gnome";
+    // A cell the catalog still refuses; the GNOME cells with receipts are
+    // qualified, so this uses one without (bonito:kde: no-qualification-receipt).
+    const refused = "tuna-os/bonito:kde";
     const env = { ...process.env, TBOX_E2E_FULL: "1", TBOX_E2E_IMAGE: refused, TBOX_E2E_PLATFORM: PLATFORM };
     for (const k of ["DIAGNOSTIC_ALLOW_UNQUALIFIED", "DIAGNOSTIC_TARGET"]) delete env[k];
     const summary = path.join(require("os").tmpdir(), `gate-summary-${process.pid}.md`);
@@ -504,7 +511,7 @@ test.describe("production code and CI wiring", () => {
     env.TBOX_E2E_SAMPLE = "1";
     env.TBOX_E2E_CACHE_MODE = "cold";
     env.TBOX_E2E_PAIR_STATE = path.join(failureRoot, "pair-inputs.json");
-    env.TBOX_E2E_EVIDENCE = path.join(failureRoot, "qual-evidence-yellowfin-gnome-s1.json");
+    env.TBOX_E2E_EVIDENCE = path.join(failureRoot, "qual-evidence-bonito-kde-s1.json");
     fs.rmSync(summary, { force: true });
     env.GITHUB_STEP_SUMMARY = summary;
     const started = Date.now();
@@ -521,7 +528,7 @@ test.describe("production code and CI wiring", () => {
     expect(elapsed).toBeLessThan(100);
     const md = fs.readFileSync(summary, "utf8");
     expect(md).toContain("no-qualification-receipt");
-    const failed = JSON.parse(fs.readFileSync(path.join(failureRoot, "failed-build-qual-evidence-yellowfin-gnome-s1.json"), "utf8"));
+    const failed = JSON.parse(fs.readFileSync(path.join(failureRoot, "failed-build-qual-evidence-bonito-kde-s1.json"), "utf8"));
     expect(failed.kind).toBe("failed-browser-build-measurements");
     expect(failed.run.outcome).toBe("failed");
     expect(failed.phase).toBe("inspect");

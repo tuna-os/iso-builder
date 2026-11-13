@@ -104,6 +104,19 @@ when it has all of these fields:
 - A `linux/amd64` target has its overlay, base, installer and engine digests
   from the receipt. `receiptImageDigest` is equal to its own digest.
 
+An nvidia target can inherit its sibling's receipt. The strict guest has no
+GPU, so it cannot prove the driver. The maintainer decided to assume nvidia
+when its desktop qualifies. Such an entry also has `inheritedFrom`. This is
+exactly `<variant>:<sibling>:linux/amd64`, where the sibling is the same flavor
+without `nvidia` (`gnome-nvidia-hwe` inherits `gnome-hwe`). The entry keeps the
+sibling's receipt fields, so `receiptImageDigest` is the digest of the
+sibling's image, not its own.
+
+Its own image has its own overlay, and the
+overlay base is that image. `scripts/verify-catalog.py` makes sure that the
+sibling entry in the same snapshot is `qualified` on the same `receiptDigest`
+and is not itself inherited.
+
 `scripts/verify-catalog.py` also makes sure that each `linux/arm64` entry
 cites the digest of the `linux/amd64` entry in the same snapshot. The gate
 does not verify the attestation. tunaOS

@@ -11,6 +11,9 @@ import pytest
 import yaml
 
 ROOT = Path(__file__).parents[1]
+sys.path.insert(0, str(ROOT / 'tests'))
+from ci_sources import pinned_commit  # noqa: E402
+
 needs_just = pytest.mark.skipif(shutil.which('just') is None, reason='just not installed')
 
 
@@ -145,7 +148,8 @@ def test_full_runner_uses_existing_pinned_just_and_preserves_setup_cap():
     assert full['runs-on'] == "${{ github.event.inputs.runner == 'karnataka-gpu' && 'tuna-iso-gpu' || 'ubuntu-24.04' }}"
     steps = full['steps']
     tool = next(step for step in steps if step.get('name') == 'install pinned just without apt')
-    assert tool['uses'] == 'extractions/setup-just@53165ef7e734c5c07cb06b3c8e7b647c5aa16db3'
+    assert tool['uses'].startswith('extractions/setup-just@')
+    assert pinned_commit('ci.yml', tool['uses']) == '53165ef7e734c5c07cb06b3c8e7b647c5aa16db3'
     setup = next(step for step in steps if step.get('name') == 'install deps + chromium')
     assert setup['timeout-minutes'] == 20
     assert setup['run'] == 'just e2e-install'
@@ -430,6 +434,46 @@ def test_gpu_runner_input_defaults_to_hosted_and_preflights_only_on_karnataka():
     just = next(step for step in steps if step.get('name') == 'install pinned just without apt')
     # The preflight is a just recipe, and the karnataka runner image has no just.
     assert steps.index(just) == 1 and steps.index(pre) == 2, 'install just, then preflight before any build work'
+
+
+def test_karnataka_strict_cell_builds_and_uploads_on_hosted_and_only_tests_on_gpu():
+    """karnataka's uplink cannot upload an ISO before the artifact URL expires
+    (run 42919271864), so a karnataka-gpu strict cell builds on GitHub-hosted
+    full-gpu-build and full-matrix on karnataka verifies those exact bytes."""
+    jobs = yaml.safe_load((ROOT / '.github/workflows/ci.yml').read_text())['jobs']
+    build, full = jobs['full-gpu-build'], jobs['full-matrix']
+    assert build['runs-on'] == 'ubuntu-24.04'
+    assert build['if'] == "github.event.inputs.runner == 'karnataka-gpu' && github.event.inputs.strict_roundtrip_test == 'true'"
+    assert build['outputs'] == {'iso_sha256': '${{ steps.iso-artifact.outputs.iso_sha256 }}',
+                                'artifact_id': '${{ steps.iso-artifact-upload.outputs.artifact-id }}'}
+    by_id = {step.get('id'): step for step in build['steps'] if step.get('id')}
+    assert by_id['browser-build']['run'] == 'just full-build'
+    assert by_id['iso-artifact']['run'] == 'just iso-artifact-split'
+    names = {step.get('name'): step for step in build['steps']}
+    # Both artifacts full-matrix fetches, under the names it fetches them by.
+    assert by_id['iso-artifact-upload']['with']['name'] == 'iso-${{ matrix.edition.slug }}-run${{ github.run_id }}-a${{ github.run_attempt }}'
+    assert names['upload browser evidence (survives guest failure)']['with']['name'] == \
+        'browser-evidence-${{ matrix.edition.slug }}-run${{ github.run_id }}-a${{ github.run_attempt }}'
+    assert build['steps'][-1]['name'].startswith('cleanup')
+
+    assert 'full-gpu-build' in full['needs']
+    assert "needs.full-gpu-build.result == 'success' || needs.full-gpu-build.result == 'skipped'" in full['if']
+    steps = full['steps']
+    local = [step for step in steps if step.get('if') == "needs.full-gpu-build.result != 'success'"]
+    assert [step.get('id') or step.get('name') or step['uses'] for step in local][-1] == 'browser-build'
+    assert len(local) == 5, 'engine, node, playwright cache, browser deps and the build skip on karnataka'
+    fetch = next(step for step in steps if step.get('name') == 'download ISO artifact again')
+    evidence = next(step for step in steps if step.get('name') == 'download browser evidence from full-gpu-build')
+    verify = next(step for step in steps if step.get('id') == 'iso-roundtrip')
+    inputs = next(step for step in steps if step.get('id') == 'same-byte-inputs')
+    assert "needs.full-gpu-build.result == 'success'" in fetch['if'] and "needs.full-gpu-build.result == 'success'" in verify['if']
+    assert evidence['with']['path'] == 'e2e/test-results'
+    assert steps.index(fetch) < steps.index(evidence) < steps.index(verify) < steps.index(inputs)
+    # The expected hash is the hosted build's browser measurement.
+    assert verify['env']['ISO_SHA256'] == '${{ steps.iso-artifact.outputs.iso_sha256 || needs.full-gpu-build.outputs.iso_sha256 }}'
+    for step in (verify, inputs):
+        assert step['env']['ARTIFACT_ID'] == \
+            '${{ steps.iso-artifact-upload.outputs.artifact-id || needs.full-gpu-build.outputs.artifact_id }}'
 
 
 def test_kvm_udev_rule_is_skipped_when_kvm_is_already_accessible():

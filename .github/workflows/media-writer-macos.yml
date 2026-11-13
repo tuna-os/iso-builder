@@ -68,7 +68,9 @@ jobs:
       HAS_SIGNING: ${{ secrets.MACOS_CERT_P12 != '' && secrets.MACOS_CERT_PASSWORD != '' }}
       HAS_NOTARY: ${{ secrets.AC_API_KEY != '' && secrets.AC_API_KEY_ID != '' && secrets.AC_API_ISSUER_ID != '' }}
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@v7.0.1
+        with:
+          persist-credentials: false
 
       - name: Toolchain
         run: |
@@ -90,7 +92,7 @@ jobs:
       - name: Unit tests (JSONL parser, helper client, flow state machine)
         run: swift test
 
-      - uses: actions/setup-go@v7
+      - uses: actions/setup-go@v7.0.0
         with:
           go-version-file: desktop/helper/go.mod
           cache-dependency-path: desktop/helper/go.sum
@@ -150,7 +152,7 @@ jobs:
 
       - name: Upload UI smoke screenshots
         if: always()
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@v7.0.2
         with:
           name: macos-ui-smoke
           path: desktop/macos/build/ui-smoke
@@ -177,7 +179,7 @@ jobs:
           spctl -a -t open --context context:primary-signature -vv build/TunaOS-Media-Writer-macOS.dmg
 
       - name: Upload TunaOS-Media-Writer-macOS.dmg
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@v7.0.2
         with:
           name: TunaOS-Media-Writer-macOS.dmg
           path: desktop/macos/build/TunaOS-Media-Writer-macOS.dmg
@@ -201,7 +203,7 @@ jobs:
 
       - name: Upload signing-macos
         if: always()
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@v7.0.2
         with:
           name: signing-macos
           path: desktop/macos/build/signing/signing-macos.json
