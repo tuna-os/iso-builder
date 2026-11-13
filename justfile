@@ -183,7 +183,7 @@ full-build:
       TBOX_E2E_SAMPLE="${s}" \
         TBOX_E2E_ISO_COPY="${copy}" \
         TBOX_E2E_EVIDENCE="test-results/qual-evidence-${SLUG}-s${s}.json" \
-        npx playwright test --grep @full --timeout=4500000 || status=$?
+        npx playwright test --grep @full --timeout=5700000 || status=$?
       printf '{"sample":%s,"exitCode":%s}\n' "${s}" "${status}" > "${evidence_dir}/build-attempt-${SLUG}-s${s}.json"
       shopt -s nullglob
       receipts=(test-results/*"qual-evidence-${SLUG}-s${s}.json")

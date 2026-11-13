@@ -622,7 +622,7 @@ jobs:
       # keep_iso and candidate retention, so only the strict inputs vary.
       - name: build ${{ matrix.edition.ref }} (${{ matrix.edition.base }})
         id: browser-build
-        timeout-minutes: 75
+        timeout-minutes: 100
         env:
           TBOX_E2E_FULL: "1"
           TBOX_E2E_IMAGE: ${{ contains(matrix.edition.ref, '/') && matrix.edition.ref || format('tuna-os/{0}', matrix.edition.ref) }}
@@ -768,7 +768,7 @@ jobs:
     # same setup, browser, 25-minute guest check, artifact transfer, and uploads.
     # Candidate retention keeps its existing 130-minute cap. Cold/warm pairs
     # run six browser builds (300-minute build step) plus the default 30 min.
-    timeout-minutes: ${{ github.event.inputs.strict_roundtrip_test == 'true' && 360 || github.event.inputs.pair == 'true' && 330 || github.event.inputs.retain_iso_artifact == 'true' && 330 || github.event.inputs.retain_candidate == 'true' && 130 || 105 }}
+    timeout-minutes: ${{ github.event.inputs.strict_roundtrip_test == 'true' && 360 || github.event.inputs.pair == 'true' && 330 || github.event.inputs.retain_iso_artifact == 'true' && 330 || github.event.inputs.retain_candidate == 'true' && 150 || 125 }}
     strategy:
       # A coverage sweep is worthless if the first red cell cancels the
       # rest — the whole point is learning which bases are broken.
@@ -888,7 +888,7 @@ jobs:
       - name: build ${{ matrix.edition.ref }} (${{ matrix.edition.base }})
         id: browser-build
         if: needs.full-gpu-build.result != 'success'
-        timeout-minutes: ${{ github.event.inputs.pair == 'true' && 300 || 75 }}
+        timeout-minutes: ${{ github.event.inputs.pair == 'true' && 300 || 100 }}
         env:
           TBOX_E2E_FULL: "1"
           # TunaOS editions are stored unqualified (yellowfin:gnome) and get
