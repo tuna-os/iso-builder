@@ -2,8 +2,8 @@
   "schemaVersion": 1,
   "kind": "guided-image-catalog",
   "catalogId": "stock",
-  "generatedAt": "2026-11-13T07:54:28Z",
-  "snapshotDigest": "sha256:37331a0c2b31cd90c1da99a8dc0047e1bbd191d9307303a27926bdf74f8e6550",
+  "generatedAt": "2026-11-13T14:52:08Z",
+  "snapshotDigest": "sha256:7d1de4421819ce0aecc5b13e229398dd6a4468e2360066a9db974f6892563f9a",
   "leaves": [
     {
       "id": "albacore:base-hwe:linux/amd64",
@@ -4373,6 +4373,206 @@
         ],
         "platform": [
           "linux/amd64"
+        ],
+        "edition": [
+          "standard"
+        ]
+      },
+      "notices": []
+    },
+    {
+      "id": "stingray:base:linux/amd64",
+      "source": {
+        "kind": "target",
+        "targetKey": "stingray:base:linux/amd64"
+      },
+      "facets": {
+        "base": [
+          "stingray"
+        ],
+        "desktop": [
+          "none"
+        ],
+        "hardware": [
+          "generic"
+        ],
+        "platform": [
+          "linux/amd64"
+        ],
+        "edition": [
+          "standard"
+        ]
+      },
+      "notices": []
+    },
+    {
+      "id": "stingray:base:linux/arm64",
+      "source": {
+        "kind": "target",
+        "targetKey": "stingray:base:linux/arm64"
+      },
+      "facets": {
+        "base": [
+          "stingray"
+        ],
+        "desktop": [
+          "none"
+        ],
+        "hardware": [
+          "generic"
+        ],
+        "platform": [
+          "linux/arm64"
+        ],
+        "edition": [
+          "standard"
+        ]
+      },
+      "notices": []
+    },
+    {
+      "id": "stingray:gnome:linux/amd64",
+      "source": {
+        "kind": "target",
+        "targetKey": "stingray:gnome:linux/amd64"
+      },
+      "facets": {
+        "base": [
+          "stingray"
+        ],
+        "desktop": [
+          "gnome"
+        ],
+        "hardware": [
+          "generic"
+        ],
+        "platform": [
+          "linux/amd64"
+        ],
+        "edition": [
+          "standard"
+        ]
+      },
+      "notices": []
+    },
+    {
+      "id": "stingray:gnome:linux/arm64",
+      "source": {
+        "kind": "target",
+        "targetKey": "stingray:gnome:linux/arm64"
+      },
+      "facets": {
+        "base": [
+          "stingray"
+        ],
+        "desktop": [
+          "gnome"
+        ],
+        "hardware": [
+          "generic"
+        ],
+        "platform": [
+          "linux/arm64"
+        ],
+        "edition": [
+          "standard"
+        ]
+      },
+      "notices": []
+    },
+    {
+      "id": "stingray:kde:linux/amd64",
+      "source": {
+        "kind": "target",
+        "targetKey": "stingray:kde:linux/amd64"
+      },
+      "facets": {
+        "base": [
+          "stingray"
+        ],
+        "desktop": [
+          "kde"
+        ],
+        "hardware": [
+          "generic"
+        ],
+        "platform": [
+          "linux/amd64"
+        ],
+        "edition": [
+          "standard"
+        ]
+      },
+      "notices": []
+    },
+    {
+      "id": "stingray:kde:linux/arm64",
+      "source": {
+        "kind": "target",
+        "targetKey": "stingray:kde:linux/arm64"
+      },
+      "facets": {
+        "base": [
+          "stingray"
+        ],
+        "desktop": [
+          "kde"
+        ],
+        "hardware": [
+          "generic"
+        ],
+        "platform": [
+          "linux/arm64"
+        ],
+        "edition": [
+          "standard"
+        ]
+      },
+      "notices": []
+    },
+    {
+      "id": "stingray:xfce:linux/amd64",
+      "source": {
+        "kind": "target",
+        "targetKey": "stingray:xfce:linux/amd64"
+      },
+      "facets": {
+        "base": [
+          "stingray"
+        ],
+        "desktop": [
+          "xfce"
+        ],
+        "hardware": [
+          "generic"
+        ],
+        "platform": [
+          "linux/amd64"
+        ],
+        "edition": [
+          "standard"
+        ]
+      },
+      "notices": []
+    },
+    {
+      "id": "stingray:xfce:linux/arm64",
+      "source": {
+        "kind": "target",
+        "targetKey": "stingray:xfce:linux/arm64"
+      },
+      "facets": {
+        "base": [
+          "stingray"
+        ],
+        "desktop": [
+          "xfce"
+        ],
+        "hardware": [
+          "generic"
+        ],
+        "platform": [
+          "linux/arm64"
         ],
         "edition": [
           "standard"
