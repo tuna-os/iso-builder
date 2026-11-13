@@ -480,13 +480,19 @@ test.describe("production code and CI wiring", () => {
     const wf = fs.readFileSync(path.join(ROOT, ".github/workflows/ci.yml"), "utf8");
     const lines = wf.split("\n");
     const hits = lines.map((l, i) => [l, i]).filter(([l]) => /DIAGNOSTIC_ALLOW_UNQUALIFIED:/.test(l));
-    expect(hits).toHaveLength(1);
-    const [line, idx] = hits[0];
-    expect(line).toContain("diagnostic_unqualified");
-    expect(line).toContain("inputs.only");
-    // The nearest preceding step header is the @full build step.
-    const header = lines.slice(0, idx).reverse().find((l) => /^      - name:/.test(l));
-    expect(header).toContain("build ${{ matrix.edition.ref }}");
+    // Two build steps may exist: full-gpu-build (hosted runner, uploads the
+    // ISO for a karnataka guest) and full-matrix (builds itself when that job
+    // did not). Each is the @full build step of its job.
+    expect(hits).toHaveLength(2);
+    for (const [line, idx] of hits) {
+      expect(line).toContain("diagnostic_unqualified");
+      expect(line).toContain("inputs.only");
+      // The nearest preceding step header is the @full build step.
+      const header = lines.slice(0, idx).reverse().find((l) => /^      - name:/.test(l));
+      expect(header).toContain("build ${{ matrix.edition.ref }}");
+    }
+    const jobs = hits.map(([, idx]) => lines.slice(0, idx).reverse().find((l) => /^  [a-z-]+:$/.test(l)));
+    expect(jobs).toEqual(["  full-gpu-build:", "  full-matrix:"]);
     expect(wf).toMatch(/DIAGNOSTIC_TARGET: \$\{\{ contains\(matrix\.edition\.ref/);
     // Input defaults off.
     expect(wf).toMatch(/diagnostic_unqualified:\n\s+description:[^\n]*\n\s+type: boolean\n\s+default: false/);
