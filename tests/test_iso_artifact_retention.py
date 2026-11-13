@@ -7,6 +7,7 @@ import importlib.util
 import json
 import os
 from pathlib import Path
+import shutil
 import subprocess
 import sys
 
@@ -91,6 +92,30 @@ def test_round_trip_restores_identical_bytes(tmp_path, iso):
     assert r.returncode == 0, r.stderr
     assert json.loads(r.stdout)['verified'] is True
     assert restored.read_bytes() == iso[1]
+
+
+@pytest.mark.skipif(not shutil.which('just'), reason='just not installed')
+@pytest.mark.parametrize('strict', [True, False])
+def test_recipe_drops_verified_chunks_only_on_the_strict_route(tmp_path, iso, strict):
+    """bonito-gnome-nvidia's 16 GB ISO filled the runner while the chunks sat next
+    to the reassembled ISO (run 42895481162); strict only reads the manifest after."""
+    temp = tmp_path / 'temp'
+    temp.mkdir()
+    assert split(temp, iso, out='iso-roundtrip').returncode == 0
+    env = {**os.environ, 'RUNNER_TEMP': str(temp), 'SLUG': 'skipjack-gnome', 'ARTIFACT': 'a',
+           'ISO_SHA256': digest(iso[1]), 'ARTIFACT_ID': '1', 'RETAIN_ISO_ARTIFACT_DAYS': '1',
+           'STRICT_ROUNDTRIP_TEST': str(strict).lower(), 'DIAGNOSTIC_UNQUALIFIED': 'false',
+           'GITHUB_STEP_SUMMARY': str(tmp_path / 'summary.md'), 'GITHUB_RUN_ID': '7',
+           'GITHUB_REPOSITORY': 'tuna-os/iso-builder'}
+    r = subprocess.run(['just', 'iso-artifact-verify'], cwd=ROOT, env=env, text=True, capture_output=True)
+    assert r.returncode == 0, r.stderr
+    left = sorted(p.name for p in (temp / 'iso-roundtrip').iterdir())
+    if strict:
+        assert left == ['manifest.json']
+        assert (temp / 'skipjack-gnome-roundtrip.iso').read_bytes() == iso[1]
+    else:
+        assert left == ['manifest.json'] + sorted(c['name'] for c in json.loads(
+            (temp / 'iso-roundtrip/manifest.json').read_text())['chunks'])
 
 
 def test_diagnostic_label_is_carried_into_the_manifest(tmp_path, iso):

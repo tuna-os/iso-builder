@@ -191,8 +191,11 @@ full-build:
       if [ "${status}" -ne 0 ]; then exit "${status}"; fi
       if [ "${s}" != "${last}" ] && [ -n "${copy}" ]; then rm -f "${copy}"; fi
     done
+    # mv, not cp: nothing reads the -s<N> name after this, and a second copy of
+    # a 16 GB ISO is what filled the hosted runner on bonito-gnome-nvidia
+    # (run 42895481162, "No space left on device" in the strict guest step).
     if [ "${PAIR:-}" != "true" ]; then
-      cp "${RUNNER_TEMP}/${SLUG}-s${last}.iso" "${RUNNER_TEMP}/${SLUG}.iso"
+      mv "${RUNNER_TEMP}/${SLUG}-s${last}.iso" "${RUNNER_TEMP}/${SLUG}.iso"
     fi
 
 # Install the built ISO under QEMU with LUKS and verify the installed system
@@ -294,6 +297,13 @@ iso-artifact-verify:
     python3 scripts/retain-iso-artifact.py verify --dir "$RUNNER_TEMP/iso-roundtrip" \
       --diagnostic-unqualified "${DIAGNOSTIC_UNQUALIFIED:-false}" \
       --expected-sha256 "$ISO_SHA256" "${output_args[@]}" > "$RUNNER_TEMP/iso-roundtrip-result.json"
+    # The strict route boots the reassembled ISO and later reads only the
+    # manifest, so the verified chunks are a second full copy of the ISO on
+    # the runner's one disk. A 13.5 GB ISO left 47 GB free with them kept
+    # (run 42894110929); a 16 GB ISO ran out (run 42895481162).
+    if [ "$STRICT_ROUNDTRIP_TEST" = "true" ]; then
+      find "$RUNNER_TEMP/iso-roundtrip" -maxdepth 1 -type f -name '*.part*' -delete
+    fi
     {
       echo "### ISO retained as GitHub artifact (observed, not qualified)"
       echo ""
@@ -374,6 +384,8 @@ full-guest-verify-strict:
       echo "::error::Verified round-trip ISO is missing: $ISO"
       exit 1
     fi
+    # Headroom the harness starts with; it logs disk_free_gb_after_<leg> itself.
+    df -h / "$RUNNER_TEMP"
     # A self-hosted pod gets /dev/kvm from a device plugin and has no udev.
     if [ -r /dev/kvm ] && [ -w /dev/kvm ]; then
       echo "/dev/kvm already accessible; skipping udev rule"
