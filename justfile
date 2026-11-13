@@ -328,6 +328,16 @@ full-strict-inputs:
     sudo apt-get install -y --no-install-recommends \
       xorriso squashfs-tools qemu-system-x86 qemu-utils ovmf swtpm swtpm-tools socat \
       netpbm python3-pil imagemagick tesseract-ocr sshpass jq
+    # A virgl guest (a runner with a DRM render node) scans out through GL, where
+    # QEMU's screendump finds no surface; the harness then captures and clicks
+    # through VNC with vncdo. marlin-niri and gurnard-pantheon runs
+    # 43354056905 / 43354053681 stopped at 'GUI capture unavailable' without
+    # it: socat was present, vncdo was not.
+    if [ -e /dev/dri/renderD128 ]; then
+      sudo apt-get install -y --no-install-recommends python3-pip
+      sudo python3 -m pip install --break-system-packages --no-cache-dir vncdotool
+      command -v vncdo
+    fi
     IFS=: read -r variant flavor <<< "$EDITION_REF"
     iso="$RUNNER_TEMP/${SLUG}-roundtrip.iso"
     python3 scripts/prepare-browser-selftest.py \
