@@ -348,3 +348,11 @@ def test_strict_both_plan_rejects_unbounded_unqualifiable_or_diagnostic(key, val
     env.update(STRICT_ROUNDTRIP_TEST='true', STRICT_INSTALL_MODE='both', DIAGNOSTIC_UNQUALIFIED='false', ONLY='bonito-kde')
     env[key] = value
     assert plan(env).returncode != 0
+
+
+def test_bound_admits_the_largest_measured_cell():
+    # guppy:gnome measured 19,415,322,624 bytes (run 43429581152) and was
+    # refused by a 16 GiB bound after a complete build.
+    # Falsification: set MAX_ISO_BYTES back to 16 GiB; this fails.
+    assert m.MAX_ISO_BYTES >= 19_415_322_624
+    assert m.MAX_ISO_BYTES <= m.MAX_CHUNKS * m.DEFAULT_CHUNK_BYTES
