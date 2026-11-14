@@ -85,10 +85,16 @@ sequenceDiagram
 
 ## Develop
 
+Run these from the root of this repository. They need Go, `just` and git.
+
 ```sh
-# Build the WASM engine first (not committed to git — see "Updating the WASM Engine")
-GOOS=js GOARCH=wasm go build -o app/public/tbox.wasm ./cmd/tbwasm   # from the pinned tacklebox checkout
-cp "$(go env GOROOT)/lib/wasm/wasm_exec.js" app/public/
+# Build the WASM engine first (not committed to git — see "Updating the WASM Engine").
+# Check out tacklebox at the commit native/go.mod pins, into .tacklebox/ (where
+# `just wasm-build` looks for it). .tacklebox/ is not ignored; do not commit it.
+pin=$(cd native && go list -m -f '{{.Version}}' github.com/tuna-os/tacklebox)
+git clone https://github.com/tuna-os/tacklebox .tacklebox
+git -C .tacklebox checkout "${pin##*-}"
+just wasm-build   # writes app/public/tbox.wasm and the matching wasm_exec.js
 
 # Serve the app locally
 cd app/public && python3 -m http.server 8080   # → http://localhost:8080
@@ -249,16 +255,9 @@ validation. The new pin needs a fresh browser-built ISO; retained
 media from the old engine still contains the defect. Build and source checks
 do not prove an offline installation through the GUI or detached cold and warm login.
 
-`app/public/tbox.wasm` is built from the [tacklebox](https://github.com/tuna-os/tacklebox) repository:
-
-```sh
-GOOS=js GOARCH=wasm go build -o tbox.wasm ./cmd/tbwasm
-```
-
-When you update the WASM file, always copy the matching `wasm_exec.js` from your Go installation:
-```sh
-cp "$(go env GOROOT)/lib/wasm/wasm_exec.js" app/public/
-```
+`app/public/tbox.wasm` is built from the [tacklebox](https://github.com/tuna-os/tacklebox) repository.
+`just wasm-build` builds it from the `.tacklebox/` checkout and copies the matching
+`wasm_exec.js` from the same Go installation; see [Develop](#develop) for the steps.
 
 ## Updating systemd-boot
 
