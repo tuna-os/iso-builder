@@ -72,7 +72,9 @@ func TestVersion(t *testing.T) {
 	if code != 0 || v["event"] != "version" || v["helper"] != version || v["protocol"] != float64(1) {
 		t.Fatalf("%d %v", code, evs)
 	}
-	if e, _ := v["engine"].(string); !strings.HasPrefix(e, "v0.0.0-") {
+	// The pin is a pseudo-version (v0.0.0-<time>-<sha>) or a release tag
+	// (v0.1.0); both start with "v". Only the "unknown" fallback does not.
+	if e, _ := v["engine"].(string); !strings.HasPrefix(e, "v") {
 		t.Fatalf("engine version %q", e)
 	}
 }
