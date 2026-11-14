@@ -64,7 +64,7 @@ jobs:
             echo "- sha256: \`$(sha256sum "$bundle" | cut -d' ' -f1)\`"
             echo "- signature: none (Flatpak bundles are unsigned single files; the release attaches SHA256SUMS)"
           } >> "$GITHUB_STEP_SUMMARY"
-      - uses: actions/upload-artifact@v4.6.2
+      - uses: actions/upload-artifact@v7.0.2
         with:
           name: TunaOS-Media-Writer-Linux-${{ matrix.arch }}.flatpak
           path: TunaOS-Media-Writer-Linux-${{ matrix.arch }}.flatpak
@@ -90,7 +90,7 @@ jobs:
       - uses: actions/checkout@v4.4.0
         with:
           persist-credentials: false
-      - uses: actions/download-artifact@v4.3.0
+      - uses: actions/download-artifact@v8.0.2
         with:
           name: TunaOS-Media-Writer-Linux-${{ matrix.arch }}.flatpak
       - name: Install the bundle (pulls the GNOME runtime from Flathub)
@@ -126,7 +126,7 @@ jobs:
             --env=PYTHONPATH=/app/share/tunaos-media-writer \
             --command=python3 "$APP" desktop/linux/tests/ui_smoke.py --out "$GITHUB_WORKSPACE/screenshots"
           ls -l screenshots
-      - uses: actions/upload-artifact@v4.6.2
+      - uses: actions/upload-artifact@v7.0.2
         if: always()
         with:
           name: media-writer-linux-screenshots-${{ matrix.arch }}
