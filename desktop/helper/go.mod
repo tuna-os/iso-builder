@@ -6,7 +6,7 @@ go 1.26.3
 // The engine shipped beside the helper is built from this exact pin by
 // `go run ./cmd/build-engine` (see desktop/README.md).
 require (
-	github.com/tuna-os/tacklebox v0.1.1-0.20261114100014-d5dc98aa402d
+	github.com/tuna-os/tacklebox v0.1.1-0.20261114105507-96b1f4ea8695
 	golang.org/x/sys v0.50.0
 	howett.net/plist v1.0.1
 )
