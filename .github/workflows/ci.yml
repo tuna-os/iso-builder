@@ -109,6 +109,18 @@ on:
         description: "DIAGNOSTIC ONLY: let the named only= cell build a target the catalog gate marks unqualified. Result is labelled diagnostic-unqualified, never a qualification. Requires only=; refused with keep_iso."
         type: boolean
         default: false
+      probe_iso_run:
+        description: "PROBE: run id whose iso-<slug> artifact the gpu-probe job boots (empty = no probe)"
+        type: string
+        default: ""
+      probe_harness_ref:
+        description: "PROBE: tunaOS ref (sha) of the harness the probe runs"
+        type: string
+        default: ""
+      probe_variants:
+        description: "PROBE: comma list of variants (base,legacy,egldbg,swgl,trace)"
+        type: string
+        default: "base,legacy,egldbg,swgl,trace"
   schedule:
     # Weekly: the app talks to live infra (relay, GHCR) that can drift.
     - cron: "40 5 * * 1"
@@ -1343,6 +1355,58 @@ jobs:
           else
             echo "just was never installed in this job; nothing was created"
           fi
+
+  gpu-probe:
+    if: github.event.inputs.probe_iso_run != ''
+    runs-on: tuna-iso-gpu
+    timeout-minutes: 240
+    permissions:
+      contents: read
+      actions: read
+    steps:
+      - uses: actions/checkout@v7.0.1
+        with:
+          persist-credentials: false
+      - name: install pinned just without apt
+        uses: extractions/setup-just@v4.0.0 # zizmor: ignore[unpinned-tools] same as full-matrix
+      - name: preflight GPU host
+        run: just gpu-host-preflight
+      - name: probe deps
+        run: |
+          sudo apt-get install -y --no-install-recommends ovmf socat python3-pil imagemagick tesseract-ocr sshpass jq netpbm python3-pip swtpm swtpm-tools xorriso
+          sudo python3 -m pip install --break-system-packages --no-cache-dir vncdotool
+      - name: checkout probe harness
+        uses: actions/checkout@v7.0.1
+        with:
+          persist-credentials: false
+          repository: tuna-os/tunaOS
+          ref: ${{ github.event.inputs.probe_harness_ref }}
+          path: tunaos-e2e-current
+      - name: download the ISO artifact of the earlier run
+        uses: actions/download-artifact@v8.0.2
+        with:
+          name: iso-yellowfin-xfce-run${{ github.event.inputs.probe_iso_run }}-a1
+          run-id: ${{ github.event.inputs.probe_iso_run }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          path: ${{ runner.temp }}/iso-parts
+      - name: reassemble the ISO
+        run: python3 scripts/retain-iso-artifact.py verify --dir "$RUNNER_TEMP/iso-parts" --output "$RUNNER_TEMP/probe.iso" > "$RUNNER_TEMP/iso-verify.json"
+      - name: run the probe legs
+        env:
+          VARIANTS: ${{ github.event.inputs.probe_variants }}
+        run: scripts/gpu-probe/run.sh "$RUNNER_TEMP/probe.iso" "$VARIANTS"
+      - name: pack probe output
+        if: always()
+        run: |
+          sudo chown -R "$USER" pv-* 2>/dev/null || true
+          find pv-* -type f \( -name '*.qcow2' -o -name '*.iso' -o -name 'UEFI_VARS.fd' \) -delete
+      - name: upload probe output
+        if: always()
+        uses: actions/upload-artifact@v7.0.2
+        with:
+          name: gpu-probe-${{ github.run_id }}
+          path: pv-*
+          retention-days: 14
 
   deploy:
     needs: [e2e, wasm]
