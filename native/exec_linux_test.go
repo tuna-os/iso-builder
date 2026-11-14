@@ -101,7 +101,7 @@ func TestSafeWriteTargets_MissingLsblk(t *testing.T) {
 }
 
 func TestSafeWriteTargets_MalformedJSONIsWrapped(t *testing.T) {
-	fakeBin(t, map[string]string{"lsblk": `echo '{"blockdevices": [`})
+	fakeBin(t, map[string]string{"lsblk": `echo '{"blockdevices": ['`})
 	got, err := SafeWriteTargets()
 	if err == nil || !strings.HasPrefix(err.Error(), "parse lsblk output: ") {
 		t.Fatalf("want a %q-prefixed error, got drives=%+v err=%v", "parse lsblk output: ", got, err)
