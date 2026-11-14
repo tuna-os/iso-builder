@@ -555,6 +555,19 @@ gpu-host-preflight:
     if apt-cache show qemu-system-modules-opengl >/dev/null 2>&1; then
       sudo apt-get install -y --no-install-recommends qemu-system-modules-opengl
     fi
+    # The guest harness resolves the published image ref with mikefarah yq
+    # (scripts/published-image-ref.sh). The GitHub-hosted image ships it; the
+    # karnataka runner image does not, and the apt "yq" is a different tool.
+    # Without it the strict installed boot refuses to start after both installs
+    # have finished (guppy:gnome run 43483932553). Pinned and hash-checked.
+    if ! yq --version 2>/dev/null | grep -q mikefarah; then
+      yq_dir="$(mktemp -d)"
+      curl -fsSL --retry 3 -o "$yq_dir/yq" https://github.com/mikefarah/yq/releases/download/v4.53.3/yq_linux_amd64
+      echo "fa52a4e758c63d38299163fbdd1edfb4c4963247918bf9c1c5d31d84789eded4  $yq_dir/yq" | sha256sum -c -
+      sudo install -m 0755 "$yq_dir/yq" /usr/local/bin/yq
+      rm -rf "$yq_dir"
+    fi
+    yq --version
     fail=0
     for dev in /dev/kvm "$node"; do
       if sudo test -c "$dev"; then
