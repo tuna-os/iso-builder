@@ -436,6 +436,29 @@ def test_gpu_runner_input_defaults_to_hosted_and_preflights_only_on_karnataka():
     assert steps.index(just) == 1 and steps.index(pre) == 2, 'install just, then preflight before any build work'
 
 
+def test_gpu_preflight_provisions_mikefarah_yq_for_the_guest_harness():
+    """The strict installed boot resolves the published image with yq; the karnataka
+    image lacks it (guppy:gnome run 43483932553 died there after both installs).
+
+    Falsification: delete the yq block from gpu-host-preflight and this fails.
+    """
+    text = (ROOT / 'justfile').read_text()
+    recipe = text.split('\ngpu-host-preflight:\n', 1)[1].split('\n\n', 1)[0]
+    assert 'mikefarah/yq/releases/download/' in recipe
+    assert 'sha256sum -c' in recipe
+
+
+def test_strict_reuse_can_run_the_guest_on_karnataka_with_the_gpu_preflight():
+    wf = yaml.safe_load((ROOT / '.github/workflows/strict-reuse.yml').read_text())
+    on = wf.get('on', wf.get(True))
+    runner = on['workflow_dispatch']['inputs']['runner']
+    assert runner['default'] == 'github' and runner['options'] == ['github', 'karnataka-gpu']
+    job = wf['jobs']['strict-reuse']
+    assert 'tuna-iso-gpu' in job['runs-on']
+    names = [step.get('name') for step in job['steps']]
+    assert names.index('install pinned just without apt') < names.index('preflight GPU host (karnataka-gpu only)')
+
+
 def test_karnataka_strict_cell_builds_and_uploads_on_hosted_and_only_tests_on_gpu():
     """karnataka's uplink cannot upload an ISO before the artifact URL expires
     (run 42919271864), so a karnataka-gpu strict cell builds on GitHub-hosted

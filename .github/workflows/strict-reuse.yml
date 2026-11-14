@@ -49,6 +49,13 @@ on:
         description: "Must match the producing run's setting"
         type: boolean
         default: false
+      runner:
+        description: "Where the guest runs. karnataka-gpu: the self-hosted tuna-iso-gpu scale set (ISOs above ~16 GB do not fit a hosted runner's disk)"
+        type: choice
+        options:
+          - github
+          - karnataka-gpu
+        default: github
 
 concurrency:
   group: strict-reuse-${{ github.run_id }}
@@ -83,7 +90,7 @@ jobs:
 
   strict-reuse:
     needs: plan
-    runs-on: ubuntu-24.04
+    runs-on: ${{ github.event.inputs.runner == 'karnataka-gpu' && 'tuna-iso-gpu' || 'ubuntu-24.04' }}
     # 30 download, 30 verify, 25 prepare, 120 guest (both) plus setup and uploads.
     timeout-minutes: 240
     strategy:
@@ -103,6 +110,11 @@ jobs:
       - name: install pinned just without apt
         uses: extractions/setup-just@v4.0.0 # zizmor: ignore[unpinned-tools] takes the latest just as before; pinning a version is a behaviour change
         timeout-minutes: 5
+
+      - name: preflight GPU host (karnataka-gpu only)
+        if: github.event.inputs.runner == 'karnataka-gpu'
+        timeout-minutes: 15
+        run: just gpu-host-preflight
 
       - name: resolve the producing run and its ISO artifact
         id: producer
