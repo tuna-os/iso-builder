@@ -741,7 +741,7 @@ jobs:
         timeout-minutes: 5
         with:
           repository: tuna-os/tunaOS
-          ref: 67dca7f3b555ad3d06404c26b481fc885b2ec604
+          ref: 4e717e2f6c83552fc51cc8d3584e392b5f698ef4
           path: tunaos-e2e
       - name: checkout current tunaOS strict harness (pinned)
         if: github.event.inputs.strict_roundtrip_test == 'true'
@@ -749,7 +749,7 @@ jobs:
         timeout-minutes: 5
         with:
           repository: tuna-os/tunaOS
-          ref: 67dca7f3b555ad3d06404c26b481fc885b2ec604
+          ref: 4e717e2f6c83552fc51cc8d3584e392b5f698ef4
           path: tunaos-e2e-current
 
       - name: verify guest under QEMU (${{ matrix.edition.slug }})
@@ -988,6 +988,9 @@ jobs:
           OUT="luks-verify-${SLUG}"
           [ -d "$OUT" ] || { echo "no $OUT"; exit 0; }
           echo "=====TREE"; find "$OUT" -type f -printf '%TT %s %p\n' | sort | head -400
+          for f in $(find "$OUT" -type f -name '*serial*.log'); do
+            echo "=====DMLOG $f"; grep -aiE 'sddm|kwin|wayland|plasma|greeter|display-manager|drm|seat' "$f" | tail -400
+          done
           for f in $(find "$OUT" -type f \( -name '*.json' -o -name 'evidence*' -o -name '*.txt' \) -size -200k | sort); do
             echo "=====FILE $f"; head -c 60000 "$f"; echo
           done
