@@ -1373,7 +1373,7 @@ jobs:
         run: just gpu-host-preflight
       - name: probe deps
         run: |
-          sudo apt-get install -y --no-install-recommends ovmf socat python3-pil imagemagick tesseract-ocr sshpass jq netpbm python3-pip swtpm swtpm-tools xorriso
+          sudo apt-get install -y --no-install-recommends ovmf socat python3-pil imagemagick tesseract-ocr sshpass jq netpbm python3-pip swtpm swtpm-tools xorriso gdb strace
           sudo python3 -m pip install --break-system-packages --no-cache-dir vncdotool
       - name: checkout probe harness
         uses: actions/checkout@v7.0.1
@@ -1398,7 +1398,8 @@ jobs:
       - name: pack probe output
         if: always()
         run: |
-          sudo chown -R "$USER" pv-* 2>/dev/null || true
+          sudo chown -R "$(id -u):$(id -g)" pv-* || true
+          find pv-* -type s -delete
           find pv-* -type f \( -name '*.qcow2' -o -name '*.iso' -o -name 'UEFI_VARS.fd' \) -delete
       - name: upload probe output
         if: always()

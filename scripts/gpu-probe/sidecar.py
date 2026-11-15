@@ -78,10 +78,41 @@ rc, o = ssh(
     'sudo -n true && echo SUDO_OK')
 say(f'guest identity rc={rc}\n{o}')
 
+def deep(tag):
+    """gdb stacks + strace of QEMU, and the guest's scanout framebuffer id sampled five times."""
+    try:
+        pid = open(pidfile).read().strip()
+    except OSError:
+        return
+    say(f'== deep {tag}: host qemu {pid}')
+    env = dict(os.environ, DEBUGINFOD_URLS='https://debuginfod.ubuntu.com')
+    try:
+        r = subprocess.run(['sudo', 'gdb', '-q', '-batch', '-p', pid, '-ex', 'thread apply all bt 14'],
+                           capture_output=True, text=True, timeout=420, env=env)
+        say('gdb:\n' + (r.stdout + r.stderr)[-9000:])
+    except Exception as exc:
+        say(f'gdb failed: {exc}')
+    try:
+        r = subprocess.run(['sudo', 'timeout', '8', 'strace', '-f', '-tt', '-p', pid, '-o', os.path.join(out, f'strace-{tag}.txt')],
+                           capture_output=True, text=True, timeout=30)
+        say(f'strace rc={r.returncode}')
+        say(subprocess.run(f"awk '{{print $3}}' {out}/strace-{tag}.txt | cut -d'(' -f1 | sort | uniq -c | sort -rn | head -12; "
+                           f"head -c 3000000 {out}/strace-{tag}.txt | gzip > {out}/strace-{tag}.txt.gz; rm -f {out}/strace-{tag}.txt",
+                           shell=True, capture_output=True, text=True).stdout)
+    except Exception as exc:
+        say(f'strace failed: {exc}')
+    rc, o = ssh('for i in 1 2 3 4 5; do sudo sh -c "grep -h -E \'fb=|FB_ID|crtc-0|vblank\' /sys/kernel/debug/dri/*/state | head -6"; echo "-- t$i"; sleep 1; done; '
+                'sudo sh -c "cat /sys/kernel/debug/dri/*/framebuffer 2>/dev/null | head -20"', 60)
+    say(f'guest flips {tag} rc={rc}\n{o}')
+
+
+deep_at = [(500, 'mid'), (1000, 'frozen1'), (1500, 'frozen2')] if variant in ('base', 'legacy') else []
 n = 0
 while time.monotonic() - start < 2600 and not os.path.exists(stop):
     n += 1
     time.sleep(40)
+    if deep_at and time.monotonic() - start >= deep_at[0][0]:
+        deep(deep_at.pop(0)[1])
     sample_host()
     rc, o = ssh(
         'echo "-- env"; sudo tr "\\0" "\\n" < /proc/$(pgrep -x xfwl4 | head -1)/environ 2>/dev/null | grep -E "SMITHAY|EGL|LIBGL|MESA|GALLIUM" ; '

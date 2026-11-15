@@ -20,7 +20,7 @@ for v in "${VS[@]}"; do
 		export TBOX_E2E_SSH_PORT=$((2300 + i)) TBOX_WALKTHROUGH_VNC_PORT=$((5900 + i))
 		python3 "$HERE/sidecar.py" "$v" "$((2300 + i))" "$out" "$out/qemu.pid" &
 		side=$!
-		timeout -k 30 "${LEG_TIMEOUT:-2400}" sudo env \
+		timeout -k 30 "${LEG_TIMEOUT:-1900}" sudo env \
 			VARIANT=yellowfin FLAVOR=xfce PROBE_GPU="$v" PROBE_OUT="$out" QEMU="$HERE/qemu-wrap.sh" \
 			TBOX_E2E_SSH_PORT=$((2300 + i)) TBOX_WALKTHROUGH_VNC_PORT=$((5900 + i)) \
 			TUNAOS_QUAL_EXECUTION_KIND=browser STRICT_PUBLISHED_MEDIA=0 \
@@ -43,3 +43,14 @@ for v in "${VS[@]}"; do
 done
 wait
 for v in "${VS[@]}"; do echo "== $v: $(tail -n 1 "pv-$v/harness.log")"; done
+
+for v in "${VS[@]}"; do
+	echo "::group::$v harness log (filtered)"
+	grep -aE '^(ok|not ok|ERROR|==>|#|offline|installed|strict)' "pv-$v/harness.log" | tail -n 120
+	echo "::endgroup::"
+	echo "::group::$v sidecar"
+	head -c 400000 "pv-$v/sidecar.log"
+	echo "::endgroup::"
+	[[ -f "pv-$v/qemu-trace.log" ]] && { echo "::group::$v qemu trace tail"; tail -n 400 "pv-$v/qemu-trace.log"; echo "::endgroup::"; }
+	for j in "pv-$v"/walkthrough-plain/walkthrough-xfce.json; do [[ -f "$j" ]] && { echo "::group::$v walkthrough json"; head -c 3000 "$j"; echo "::endgroup::"; }; done
+done
