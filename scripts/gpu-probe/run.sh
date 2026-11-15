@@ -14,6 +14,11 @@ IFS=',' read -ra VS <<<"$VARIANTS"
 for v in "${VS[@]}"; do
 	i=$((i + 1))
 	out="$PWD/pv-$v"
+	qbin=/usr/bin/qemu-system-x86_64
+	if [[ "$v" == newqemu* ]]; then
+		qbin=/opt/qemu-new/bin/qemu-system-x86_64
+		[[ -x "$qbin" ]] || { echo "variant $v skipped: $qbin missing"; continue; }
+	fi
 	rm -rf "$out"; mkdir -p "$out"
 	(
 		export PROBE_GPU="$v" PROBE_OUT="$out" QEMU="$HERE/qemu-wrap.sh"
@@ -21,7 +26,7 @@ for v in "${VS[@]}"; do
 		python3 "$HERE/sidecar.py" "$v" "$((2300 + i))" "$out" "$out/qemu.pid" &
 		side=$!
 		timeout -k 30 "${LEG_TIMEOUT:-1900}" sudo env \
-			VARIANT=yellowfin FLAVOR=xfce PROBE_GPU="$v" PROBE_OUT="$out" QEMU="$HERE/qemu-wrap.sh" \
+			VARIANT=yellowfin FLAVOR=xfce PROBE_GPU="$v" PROBE_OUT="$out" QEMU="$HERE/qemu-wrap.sh" PROBE_QEMU_BIN="$qbin" \
 			TBOX_E2E_SSH_PORT=$((2300 + i)) TBOX_WALKTHROUGH_VNC_PORT=$((5900 + i)) \
 			TUNAOS_QUAL_EXECUTION_KIND=browser STRICT_PUBLISHED_MEDIA=0 \
 			TUNAOS_QUAL_SOURCE_DIGEST=sha256:d56b3e8448d9ccb02343ce2c23f515304b26eebecd78c7960f41623a8240d10d \

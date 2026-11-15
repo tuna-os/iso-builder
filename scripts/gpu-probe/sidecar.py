@@ -106,7 +106,7 @@ def deep(tag):
     say(f'guest flips {tag} rc={rc}\n{o}')
 
 
-deep_at = [(500, 'mid'), (1000, 'frozen1'), (1500, 'frozen2')] if variant in ('base', 'legacy') else []
+deep_at = [(500, 'mid'), (1000, 'frozen1'), (1500, 'frozen2')] if variant in ('base', 'legacy', 'newqemu') else []
 n = 0
 while time.monotonic() - start < 2600 and not os.path.exists(stop):
     n += 1

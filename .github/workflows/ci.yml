@@ -118,7 +118,7 @@ on:
         type: string
         default: ""
       probe_variants:
-        description: "PROBE: comma list of variants (base,legacy,egldbg,swgl,trace)"
+        description: "PROBE: comma list of variants (base,legacy,egldbg,swgl,trace,newqemu)"
         type: string
         default: "base,legacy,egldbg,swgl,trace"
   schedule:
@@ -1391,6 +1391,11 @@ jobs:
           path: ${{ runner.temp }}/iso-parts
       - name: reassemble the ISO
         run: python3 scripts/retain-iso-artifact.py verify --dir "$RUNNER_TEMP/iso-parts" --output "$RUNNER_TEMP/probe.iso" > "$RUNNER_TEMP/iso-verify.json"
+      - name: build a current QEMU and virglrenderer (newqemu variant)
+        if: contains(github.event.inputs.probe_variants, 'newqemu')
+        continue-on-error: true
+        timeout-minutes: 60
+        run: scripts/gpu-probe/build-qemu.sh
       - name: run the probe legs
         env:
           VARIANTS: ${{ github.event.inputs.probe_variants }}
