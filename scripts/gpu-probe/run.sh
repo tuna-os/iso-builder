@@ -9,13 +9,24 @@ ls -l /dev/dri; for c in /sys/class/drm/card*/device/driver; do echo "$c -> $(re
 command -v nvidia-smi && nvidia-smi -L
 qemu-system-x86_64 --version | head -1
 MEDIA="sha256:$(sha256sum "$ISO" | cut -d' ' -f1)"
+# Host GPU load while the legs run: is another tenant using the card?
+mkdir -p "$PWD/pv-host"
+(while true; do
+	{
+		date +%T
+		for c in /sys/class/drm/card*/device; do echo "$c busy=$(cat "$c/gpu_busy_percent" 2>/dev/null) vram_busy=$(cat "$c/mem_busy_percent" 2>/dev/null)"; done
+		uptime
+	} >>"$PWD/pv-host/gpu-busy.log" 2>&1
+	sleep 15
+done) &
+SAMPLER=$!
 i=0
 IFS=',' read -ra VS <<<"$VARIANTS"
 for v in "${VS[@]}"; do
 	i=$((i + 1))
 	out="$PWD/pv-$v"
 	qbin=/usr/bin/qemu-system-x86_64
-	if [[ "$v" == newqemu* ]]; then
+	if [[ "$v" == newqemu* || "$v" == hostsw* ]]; then
 		qbin=/opt/qemu-new/bin/qemu-system-x86_64
 		[[ -x "$qbin" ]] || { echo "variant $v skipped: $qbin missing"; continue; }
 	fi
@@ -25,7 +36,7 @@ for v in "${VS[@]}"; do
 		export TBOX_E2E_SSH_PORT=$((2300 + i)) TBOX_WALKTHROUGH_VNC_PORT=$((5900 + i))
 		python3 "$HERE/sidecar.py" "$v" "$((2300 + i))" "$out" "$out/qemu.pid" &
 		side=$!
-		timeout -k 30 "${LEG_TIMEOUT:-1900}" sudo env \
+		timeout -k 30 "${LEG_TIMEOUT:-1700}" sudo env \
 			VARIANT=yellowfin FLAVOR=xfce PROBE_GPU="$v" PROBE_OUT="$out" QEMU="$HERE/qemu-wrap.sh" PROBE_QEMU_BIN="$qbin" \
 			TBOX_E2E_SSH_PORT=$((2300 + i)) TBOX_WALKTHROUGH_VNC_PORT=$((5900 + i)) \
 			TUNAOS_QUAL_EXECUTION_KIND=browser STRICT_PUBLISHED_MEDIA=0 \
@@ -47,6 +58,8 @@ for v in "${VS[@]}"; do
 	sleep 20
 done
 wait
+kill "$SAMPLER" 2>/dev/null
+sudo dmesg 2>&1 | tail -n 80 >"$PWD/pv-host/host-dmesg.txt"
 for v in "${VS[@]}"; do echo "== $v: $(tail -n 1 "pv-$v/harness.log")"; done
 
 for v in "${VS[@]}"; do
