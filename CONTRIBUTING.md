@@ -26,6 +26,20 @@ Run the offline Python and JavaScript checks from the repository root with
 the test filenames to Node: `node --test tests/ worker/` fails with
 `MODULE_NOT_FOUND` on Node 24.19 before it runs the tests.
 
+`just check` runs `python3 -m pytest -q tests` first. CI runs the same suite as
+the `qualification-contract` check. Then it runs the Node suites in
+`tests/*.test.cjs` and the relay suite in `worker/*.test.js`. Before you run it,
+install `just`, Node.js, and Python 3 with the PyPI packages `pytest` and
+`PyYAML`:
+
+```sh
+python3 -m pip install pytest PyYAML
+```
+
+Some of the Python tests run `just`. If `mkfs.erofs` (`erofs-utils`) or
+`mksquashfs` and `unsquashfs` (`squashfs-tools`) are not installed, pytest skips
+the tests that need them. To run only the relay tests, use `cd worker && npm test`.
+
 ### JavaScript unit tests (`tests/*.test.cjs`)
 
 If you change a JavaScript helper (configuration checks, catalog selection or
@@ -86,6 +100,10 @@ Test user actions in the browser. Do not test the exact text in HTML.
 
 1. **Branch Naming & DCO**: Create a feature or bugfix branch. Sign all commits with Developer Certificate of Origin (`git commit -s`).
 2. **Pull Requests**: Open a pull request against the `main` branch. Provide a clear description of the changes and link any related issues.
-3. **CI Pipeline**: All PRs must pass the automated checks — `native-linux`/`native-windows`/`native-macos`
-   (`go vet` + `go test`) and the `e2e` inspect-tier suite. The repository has a golangci-lint config, but CI
-   does not run it yet. Run it locally, as the native step above shows.
+3. **CI Pipeline**: The `main` ruleset needs three checks to pass. They are `qualification-contract`
+   (`python -m pytest -q tests`, the same as `just test`), `native-linux` (`go vet` + `go test -race`)
+   and `wasm` (the engine build). `native-windows`, `native-macos` and the `e2e` inspect tier also run,
+   but they do not block a merge. Make them pass too. Each job runs only when its paths change, so a
+   pull request that changes only Markdown, `docs/`, `examples/` or `desktop/` skips them. The
+   repository has a golangci-lint config, but CI does not run it yet. Run it locally, as the native
+   step above shows.

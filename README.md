@@ -228,7 +228,7 @@ for the drive-management lifecycle and safety model.
 ## Deploy
 
 ```sh
-cd app    && npx wrangler deploy   # Deploys to Pages (iso.tunaos.org)
+cd app    && npx wrangler deploy   # Deploys Workers static assets (iso.tunaos.org)
 cd worker && npx wrangler deploy   # Deploys to Workers (relay.tunaos.org)
 ```
 
