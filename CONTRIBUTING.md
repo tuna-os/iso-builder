@@ -26,6 +26,20 @@ Run the offline Python and JavaScript checks from the repository root with
 the test filenames to Node: `node --test tests/ worker/` fails with
 `MODULE_NOT_FOUND` on Node 24.19 before it runs the tests.
 
+`just check` runs `python3 -m pytest -q tests` first. CI runs the same suite as
+the `qualification-contract` check. Then it runs the Node suites in
+`tests/*.test.cjs` and the relay suite in `worker/*.test.js`. Before you run it,
+install `just`, Node.js, and Python 3 with the PyPI packages `pytest` and
+`PyYAML`:
+
+```sh
+python3 -m pip install pytest PyYAML
+```
+
+Some of the Python tests run `just`. If `mkfs.erofs` (`erofs-utils`) or
+`mksquashfs` and `unsquashfs` (`squashfs-tools`) are not installed, pytest skips
+the tests that need them. To run only the relay tests, use `cd worker && npm test`.
+
 ### JavaScript unit tests (`tests/*.test.cjs`)
 
 If you change a JavaScript helper (configuration checks, catalog selection or
