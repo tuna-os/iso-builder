@@ -31,6 +31,8 @@
   { "ref": "sailfin:cosmic", "slug": "sailfin-cosmic", "base": "openSUSE Tumbleweed", "platform": "linux/amd64", "qualify": true },
   { "ref": "bonito-rawhide:cosmic", "slug": "bonito-rawhide-cosmic", "base": "Fedora Rawhide", "platform": "linux/amd64", "qualify": true },
   { "ref": "wahoo:cosmic", "slug": "wahoo-cosmic", "base": "Fedora ELN", "platform": "linux/amd64", "qualify": true },
+  { "ref": "hummingbird:cosmic", "slug": "hummingbird-cosmic", "base": "Fedora Hummingbird", "platform": "linux/amd64", "qualify": true },
+  { "ref": "hummingbird:gnome", "slug": "hummingbird-gnome", "base": "Fedora Hummingbird", "platform": "linux/amd64", "qualify": true },
   { "ref": "yellowfin:niri", "slug": "yellowfin-niri", "base": "AlmaLinux Kitten 10", "platform": "linux/amd64", "qualify": true },
   { "ref": "albacore:niri", "slug": "albacore-niri", "base": "AlmaLinux 10", "platform": "linux/amd64", "qualify": true },
   { "ref": "skipjack:niri", "slug": "skipjack-niri", "base": "CentOS Stream 10", "platform": "linux/amd64", "qualify": true },
