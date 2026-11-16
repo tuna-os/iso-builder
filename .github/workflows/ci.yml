@@ -1396,6 +1396,13 @@ jobs:
         continue-on-error: true
         timeout-minutes: 60
         run: scripts/gpu-probe/build-qemu.sh
+      - name: guestfs prerequisites (journal extraction needs a kernel for the appliance)
+        continue-on-error: true
+        run: |
+          sudo apt-get install -y --no-install-recommends linux-image-virtual libguestfs-tools python3-guestfs cryptsetup
+          ls -l /boot | head -20
+          sudo chmod a+r /boot/vmlinuz-* || true
+          sudo libguestfs-test-tool 2>&1 | tail -40
       - name: run the probe legs
         env:
           VARIANTS: ${{ github.event.inputs.probe_variants }}
