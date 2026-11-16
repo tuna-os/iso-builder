@@ -1,10 +1,10 @@
 {
   "coverageDigest": "sha256:48030c896910cbcb06782c61842aec810a99bc9b4f3952e1489f712c737cdcf4",
-  "generatedAt": "2026-11-16T13:02:45Z",
+  "generatedAt": "2026-11-16T16:12:56Z",
   "kind": "catalog-snapshot",
-  "producerRevision": "tunaos.toml@2fad67c97c125be4f760c95ae18b04039a837c1b",
+  "producerRevision": "tunaos.toml@78c82ecdf639ecf631ba52a32183438219b523fa",
   "schemaVersion": 1,
-  "snapshotDigest": "sha256:979dabe2503ff0cd9dc05a700dc025d2e1ec680d62cc1312fd0dfd0ec92950c8",
+  "snapshotDigest": "sha256:82917b320570bdaa688663bdfe9f114a6bdbac6af9ec36e64177a781ad1f6d19",
   "targets": [
     {
       "availability": {
@@ -6731,7 +6731,7 @@
     },
     {
       "availability": {
-        "available": false,
+        "available": true,
         "ociPlatform": {
           "architecture": "amd64",
           "os": "linux",
@@ -6739,15 +6739,15 @@
         }
       },
       "facts": {
-        "bootc": false,
-        "compressedSize": 0,
+        "bootc": true,
+        "compressedSize": 1884059716,
         "desktop": "tuna",
-        "digest": null,
+        "digest": "sha256:f3ccb0d3f1de1601c63743a02c74f11c369f16f4056591c8c73a785db70ca6a8",
         "hasSdBoot": false,
         "kernelVer": "",
-        "layerCount": 0,
-        "pkgManager": "",
-        "repoFamily": ""
+        "layerCount": 65,
+        "pkgManager": "apt",
+        "repoFamily": "debian"
       },
       "publication": {
         "ref": "ghcr.io/tuna-os/gurnard:tuna",
@@ -6757,20 +6757,20 @@
       "qualification": {
         "browser": null,
         "qualifiedAt": null,
-        "reason": "missing-platform-descriptor",
+        "reason": "no-qualification-receipt",
         "receiptDigest": null,
         "resources": null,
         "status": "unqualified"
       },
       "required": true,
       "resolvedInputs": {
-        "configDigest": null,
+        "configDigest": "sha256:ddb12df0481de0ddf97c3aa0f1cff05aa71ef8576c856167d1c8b298c698ef36",
         "engineRevision": null,
-        "indexDigest": null,
+        "indexDigest": "sha256:21d913866a75ba583aaad205eee7191ea98bf3545960e2208e234c386be53acc",
         "installerRevision": null,
         "liveOverlayBaseDigest": null,
         "liveOverlayDigest": null,
-        "platformManifestDigest": null
+        "platformManifestDigest": "sha256:f3ccb0d3f1de1601c63743a02c74f11c369f16f4056591c8c73a785db70ca6a8"
       },
       "scheduled": true,
       "target": {
