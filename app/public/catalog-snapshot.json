@@ -1,10 +1,10 @@
 {
-  "coverageDigest": "sha256:e3d46da85d8a4bcd5d934e6872040d37db84e4d8c62f4f7ee008709fde79ce0c",
-  "generatedAt": "2026-11-16T04:36:37Z",
+  "coverageDigest": "sha256:a7edb99ca81f2c46bce53a87a6f675d2f526def332db1f1173223b6aee276efb",
+  "generatedAt": "2026-11-16T05:36:54Z",
   "kind": "catalog-snapshot",
-  "producerRevision": "tunaos.toml@c40ee14bb2765bca376cf5d924fa61ea0b224b02",
+  "producerRevision": "tunaos.toml@41e48a24bec60d8f420281eef641e379082db803",
   "schemaVersion": 1,
-  "snapshotDigest": "sha256:800b525d24506986a2db2b8627e6fc3a55c8246be272206eae17f182e424e3d7",
+  "snapshotDigest": "sha256:2911d34dd1e4e55fb939cc65419cba3d0aef7ea3214386ab68b3714b40fb2f16",
   "targets": [
     {
       "availability": {
@@ -6714,6 +6714,59 @@
         "variant": "gurnard"
       },
       "targetKey": "gurnard:pantheon:linux/arm64"
+    },
+    {
+      "availability": {
+        "available": false,
+        "ociPlatform": {
+          "architecture": "amd64",
+          "os": "linux",
+          "variant": null
+        }
+      },
+      "facts": {
+        "bootc": false,
+        "compressedSize": 0,
+        "desktop": "tuna",
+        "digest": null,
+        "hasSdBoot": false,
+        "kernelVer": "",
+        "layerCount": 0,
+        "pkgManager": "",
+        "repoFamily": ""
+      },
+      "publication": {
+        "ref": "ghcr.io/tuna-os/gurnard:tuna",
+        "repository": "ghcr.io/tuna-os/gurnard",
+        "tag": "tuna"
+      },
+      "qualification": {
+        "browser": null,
+        "qualifiedAt": null,
+        "reason": "missing-platform-descriptor",
+        "receiptDigest": null,
+        "resources": null,
+        "status": "unqualified"
+      },
+      "required": true,
+      "resolvedInputs": {
+        "configDigest": null,
+        "engineRevision": null,
+        "indexDigest": null,
+        "installerRevision": null,
+        "liveOverlayBaseDigest": null,
+        "liveOverlayDigest": null,
+        "platformManifestDigest": null
+      },
+      "scheduled": true,
+      "target": {
+        "cpuBaseline": "x86-64",
+        "flavor": "tuna",
+        "hardwareScope": "generic",
+        "platform": "linux/amd64",
+        "variant": "gurnard"
+      },
+      "targetKey": "gurnard:tuna:linux/amd64"
     },
     {
       "availability": {
