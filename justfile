@@ -555,6 +555,10 @@ gpu-host-preflight:
     if apt-cache show qemu-system-modules-opengl >/dev/null 2>&1; then
       sudo apt-get install -y --no-install-recommends qemu-system-modules-opengl
     fi
+    # The distribution QEMU 8.2 stalls virtio-gpu scanout under egl-headless (the EL10
+    # XFCE guest freezes on the install progress page). The strict harness prefers a
+    # current build in /opt/tunaos-qemu; a failed build leaves the distribution QEMU.
+    scripts/build-gpu-qemu.sh || echo "::warning::current QEMU build failed; the guest uses the distribution QEMU"
     # The guest harness resolves the published image ref with mikefarah yq
     # (scripts/published-image-ref.sh). The GitHub-hosted image ships it; the
     # karnataka runner image does not, and the apt "yq" is a different tool.

@@ -448,6 +448,24 @@ def test_gpu_preflight_provisions_mikefarah_yq_for_the_guest_harness():
     assert 'sha256sum -c' in recipe
 
 
+def test_gpu_preflight_builds_a_pinned_current_qemu_for_the_virtio_gpu_stall():
+    """The karnataka QEMU 8.2 stalls virtio-gpu scanout under egl-headless: the EL10 XFCE guest
+    freezes on the install progress page (yellowfin-xfce run 43633480467). QEMU 10.2.0 with
+    virglrenderer 1.2.0 finished the same install (probe run 43663348488). The build must stay
+    pinned (sources run under sudo) and must never fail the preflight.
+
+    Falsification: drop the build call from gpu-host-preflight, or the checksum/commit pin
+    from the script, and this fails.
+    """
+    text = (ROOT / 'justfile').read_text()
+    recipe = text.split('\ngpu-host-preflight:\n', 1)[1].split('\n\n', 1)[0]
+    assert 'scripts/build-gpu-qemu.sh ||' in recipe
+    script = (ROOT / 'scripts/build-gpu-qemu.sh').read_text()
+    assert 'QEMU_SHA256=' in script and 'sha256sum -c' in script
+    assert 'VIRGL_COMMIT=' in script and 'rev-parse HEAD' in script
+    assert '/opt/tunaos-qemu' in script
+
+
 def test_strict_reuse_can_run_the_guest_on_karnataka_with_the_gpu_preflight():
     wf = yaml.safe_load((ROOT / '.github/workflows/strict-reuse.yml').read_text())
     on = wf.get('on', wf.get(True))
