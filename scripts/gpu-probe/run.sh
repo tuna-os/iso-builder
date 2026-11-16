@@ -59,7 +59,7 @@ for v in "${VS[@]}"; do
 done
 wait
 kill "$SAMPLER" 2>/dev/null
-sudo dmesg 2>&1 | tail -n 80 >"$PWD/pv-host/host-dmesg.txt"
+sudo dmesg -T 2>&1 | grep -iE "amdgpu|drm|gpu|reset|timeout" | tail -n 120 >"$PWD/pv-host/host-dmesg.txt"
 for v in "${VS[@]}"; do echo "== $v: $(tail -n 1 "pv-$v/harness.log")"; done
 
 for v in "${VS[@]}"; do
