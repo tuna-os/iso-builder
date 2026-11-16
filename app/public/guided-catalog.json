@@ -2,8 +2,8 @@
   "schemaVersion": 1,
   "kind": "guided-image-catalog",
   "catalogId": "stock",
-  "generatedAt": "2026-11-16T12:10:31Z",
-  "snapshotDigest": "sha256:1d00a2ebabbbb61e58bdf07ab46e32704a1387c18b4260ed8abc66751b9f111e",
+  "generatedAt": "2026-11-16T13:02:45Z",
+  "snapshotDigest": "sha256:979dabe2503ff0cd9dc05a700dc025d2e1ec680d62cc1312fd0dfd0ec92950c8",
   "leaves": [
     {
       "id": "albacore:base-hwe:linux/amd64",
@@ -3067,6 +3067,31 @@
         ],
         "desktop": [
           "gnome"
+        ],
+        "hardware": [
+          "generic"
+        ],
+        "platform": [
+          "linux/amd64"
+        ],
+        "edition": [
+          "standard"
+        ]
+      },
+      "notices": []
+    },
+    {
+      "id": "hummingbird:tuna:linux/amd64",
+      "source": {
+        "kind": "target",
+        "targetKey": "hummingbird:tuna:linux/amd64"
+      },
+      "facets": {
+        "base": [
+          "hummingbird"
+        ],
+        "desktop": [
+          "tuna"
         ],
         "hardware": [
           "generic"
