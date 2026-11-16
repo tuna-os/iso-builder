@@ -86,6 +86,10 @@ Test user actions in the browser. Do not test the exact text in HTML.
 
 1. **Branch Naming & DCO**: Create a feature or bugfix branch. Sign all commits with Developer Certificate of Origin (`git commit -s`).
 2. **Pull Requests**: Open a pull request against the `main` branch. Provide a clear description of the changes and link any related issues.
-3. **CI Pipeline**: All PRs must pass the automated checks — `native-linux`/`native-windows`/`native-macos`
-   (`go vet` + `go test`) and the `e2e` inspect-tier suite. The repository has a golangci-lint config, but CI
-   does not run it yet. Run it locally, as the native step above shows.
+3. **CI Pipeline**: The `main` ruleset needs three checks to pass. They are `qualification-contract`
+   (`python -m pytest -q tests`, the same as `just test`), `native-linux` (`go vet` + `go test -race`)
+   and `wasm` (the engine build). `native-windows`, `native-macos` and the `e2e` inspect tier also run,
+   but they do not block a merge. Make them pass too. Each job runs only when its paths change, so a
+   pull request that changes only Markdown, `docs/`, `examples/` or `desktop/` skips them. The
+   repository has a golangci-lint config, but CI does not run it yet. Run it locally, as the native
+   step above shows.

@@ -48,15 +48,28 @@ Windows- or macOS-only file merged with fully green CI. Hence `native-linux`,
 `workflow_dispatch`** on purpose: a nine-cell full-matrix sweep used to drag
 ~36 jobs that prove nothing about the engine while competing for the runner
 pool the cells need. Required checks are evaluated from `pull_request` runs
-regardless, so that skip cannot weaken a merge gate. (The workflow also notes
-`main` is not branch-protected — worth knowing before assuming a gate exists.)
+regardless, so that skip cannot weaken a merge gate.
 
-## What the merge gate actually proves
+## Required checks on `main`
+
+The repository ruleset "tier-b: required checks" requires three checks on
+`main`: `qualification-contract` (`python -m pytest -q tests`, the same as
+`just test`), `native-linux` and `wasm`. An organization ruleset also blocks
+deletion and force pushes.
+
+`native-windows`, `native-macos` and `e2e` are not required checks. A red
+result from one of them does not block a merge, so read their results before
+you merge. Each job also runs only when its paths change (the `changes` job),
+and GitHub counts a skipped required check as passed. A pull request that
+changes only Markdown, `docs/`, `examples/` or `desktop/` runs none of them.
+
+## What the e2e tiers prove
 
 The e2e suite is two tiers:
 
-- **`e2e`** — always runs, `--grep-invert @full`. Page load and inspect only,
-  ~2 min, no ISO written. **This is the merge gate.**
+- **`e2e`** — runs on each pull request and push that changes code,
+  `--grep-invert @full`. Page load and inspect only, ~2 min, no ISO written.
+  It is the only browser check on a pull request, but it is not required.
 - **`full-matrix`** — dispatch-only, one cell per base variant, each building
   and validating a multi-GB ISO.
 
@@ -97,7 +110,8 @@ build depends on.
 
 ```bash
 cd native && go vet ./... && go test -race ./...   # needs the GUI toolkit headers
-cd e2e && npx playwright test --grep-invert @full  # the merge gate tier
+just test                                          # the required qualification-contract check
+cd e2e && npx playwright test --grep-invert @full  # the e2e inspect tier
 ```
 
 `native-linux` installs `libgl1-mesa-dev xorg-dev libxxf86vm-dev
