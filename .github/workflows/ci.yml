@@ -225,6 +225,9 @@ jobs:
     if: ${{ !cancelled() && github.event_name != 'workflow_dispatch' && (needs.changes.result != 'success' || needs.changes.outputs.native == 'true') }}
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    permissions:
+      contents: read
+      id-token: write # Codecov OIDC upload
     steps:
       - uses: actions/checkout@v7.0.1
         with:
@@ -258,7 +261,8 @@ jobs:
         uses: codecov/codecov-action@v7.1.1
         with:
           files: native/coverage.out
-          token: ${{ secrets.CODECOV_TOKEN }}
+          # OIDC instead of a stored CODECOV_TOKEN secret; the job grants id-token: write.
+          use_oidc: true
           fail_ci_if_error: false
 
       - name: go build
