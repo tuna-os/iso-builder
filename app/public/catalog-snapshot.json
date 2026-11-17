@@ -1,10 +1,10 @@
 {
   "coverageDigest": "sha256:e052b7f61d09b1ff9f2c320073fab303a23eaa8ee006457ac5af5f6415253213",
-  "generatedAt": "2026-11-17T20:43:19Z",
+  "generatedAt": "2026-11-17T21:35:32Z",
   "kind": "catalog-snapshot",
   "producerRevision": "tunaos.toml@3756407a3ba77c738df8c642a5585b6d469e7c84",
   "schemaVersion": 1,
-  "snapshotDigest": "sha256:0daead2979cc9f5b01571183e2753d6e102f5387f4777b29fb2a5af76ac12206",
+  "snapshotDigest": "sha256:323c239daf03869d4479198b84fc56e23e6ebe83190f618faebdab3c39c39e37",
   "targets": [
     {
       "availability": {
@@ -9283,9 +9283,9 @@
       },
       "facts": {
         "bootc": true,
-        "compressedSize": 2412977621,
+        "compressedSize": 2412883547,
         "desktop": "gnome",
-        "digest": "sha256:abec4e94687080560c8815d01b89ac493d498138e67a706f384d7798412368fa",
+        "digest": "sha256:eef6cd496f8c764b6a0519a1b8a38ebfbf9c02501c235d338de077ab7a465056",
         "hasSdBoot": false,
         "kernelVer": "",
         "layerCount": 65,
@@ -9350,9 +9350,9 @@
       },
       "facts": {
         "bootc": true,
-        "compressedSize": 2412980566,
+        "compressedSize": 2412880881,
         "desktop": "gnome",
-        "digest": "sha256:f9123e3be4fb666bd2a23f6750c0a2d197045a65a124a821535c1aaf974ca44d",
+        "digest": "sha256:65e5f557dea1cec140867d2f822ff21de8d23cc401ba48902d93b1ae52a507f3",
         "hasSdBoot": false,
         "kernelVer": "",
         "layerCount": 65,
@@ -9374,13 +9374,13 @@
       },
       "required": true,
       "resolvedInputs": {
-        "configDigest": "sha256:c4645d055e5460d62a8462bc8accd280e58f4d0047c4442002de0a014fe2ac72",
+        "configDigest": "sha256:551144168db08413c074a66689988fcdd413216eee034ff0a7b413c53b77aaec",
         "engineRevision": null,
-        "indexDigest": "sha256:ff087955bb6b1395a9dcb6895bc1a0c9c1e36fd7e58f8546f0275efe32fae060",
+        "indexDigest": "sha256:503faddb4f6b0e565ab3586139dd25c587bd70f488201f990b42241966132ce6",
         "installerRevision": null,
         "liveOverlayBaseDigest": null,
         "liveOverlayDigest": null,
-        "platformManifestDigest": "sha256:f9123e3be4fb666bd2a23f6750c0a2d197045a65a124a821535c1aaf974ca44d"
+        "platformManifestDigest": "sha256:65e5f557dea1cec140867d2f822ff21de8d23cc401ba48902d93b1ae52a507f3"
       },
       "scheduled": true,
       "target": {
@@ -9562,9 +9562,9 @@
       },
       "facts": {
         "bootc": true,
-        "compressedSize": 3105200829,
+        "compressedSize": 3105170573,
         "desktop": "kde",
-        "digest": "sha256:5604a60eb8ecfe6b1ac8661209c8693f44bb871a7b029e6d40b4b3967cb87508",
+        "digest": "sha256:507f8b14498072732bdb7c2b0cd636445fe6e64420083738161368a3fa4bc13a",
         "hasSdBoot": false,
         "kernelVer": "",
         "layerCount": 65,
@@ -9629,9 +9629,9 @@
       },
       "facts": {
         "bootc": true,
-        "compressedSize": 2972350814,
+        "compressedSize": 2972405286,
         "desktop": "kde",
-        "digest": "sha256:0d01e57397a24b0c3f253350451ef67265f0e997fd75f33fbd01b2e3b2b65dde",
+        "digest": "sha256:e5b6558e23776df10c0d7ead5e76bf912420829f1833a393f5d1a85de4ed32cc",
         "hasSdBoot": false,
         "kernelVer": "",
         "layerCount": 65,
@@ -9653,13 +9653,13 @@
       },
       "required": true,
       "resolvedInputs": {
-        "configDigest": "sha256:47aced2c57daaf7720854892a958d2c05f0f7e1861c8dd790f45d60478feadc9",
+        "configDigest": "sha256:2d08389270d7332f36d468a0d994f7ab66d4d1878da7fdfb153daaa0bea10ba0",
         "engineRevision": null,
-        "indexDigest": "sha256:a9d7014b076f012a19c92d1647ff3ccdcb60ff8336c81a08e2b312ffdacae0dc",
+        "indexDigest": "sha256:9c93a8d9273a77d13b55d5618f389a20d02085431f76bd054cfe209eaab3e079",
         "installerRevision": null,
         "liveOverlayBaseDigest": null,
         "liveOverlayDigest": null,
-        "platformManifestDigest": "sha256:0d01e57397a24b0c3f253350451ef67265f0e997fd75f33fbd01b2e3b2b65dde"
+        "platformManifestDigest": "sha256:e5b6558e23776df10c0d7ead5e76bf912420829f1833a393f5d1a85de4ed32cc"
       },
       "scheduled": true,
       "target": {
