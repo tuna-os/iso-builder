@@ -1,10 +1,10 @@
 {
   "coverageDigest": "sha256:e052b7f61d09b1ff9f2c320073fab303a23eaa8ee006457ac5af5f6415253213",
-  "generatedAt": "2026-11-17T14:56:48Z",
+  "generatedAt": "2026-11-17T18:06:49Z",
   "kind": "catalog-snapshot",
   "producerRevision": "tunaos.toml@98acd5147b2da7ded8a520d1077b692cb3f02d89",
   "schemaVersion": 1,
-  "snapshotDigest": "sha256:4ef08d0af891f457025c1f55f205178d92b1d9bd304f89da18466704f3aed283",
+  "snapshotDigest": "sha256:f437a81268268cf15e6a3377d2d87f0a3fa4a22362ad7c2ba9d17aa254751102",
   "targets": [
     {
       "availability": {
@@ -6316,9 +6316,9 @@
       },
       "facts": {
         "bootc": true,
-        "compressedSize": 2830690402,
+        "compressedSize": 2836745404,
         "desktop": "",
-        "digest": "sha256:129a66a86929a8cd0f6d001e927fd1d4027c19ae6432d6287aadf7238dcc9c87",
+        "digest": "sha256:224244eecafaf19a751f0e87994531c05b469df69dfc46c8e05dd149768fd9b6",
         "hasSdBoot": false,
         "kernelVer": "",
         "layerCount": 65,
@@ -6340,13 +6340,13 @@
       },
       "required": true,
       "resolvedInputs": {
-        "configDigest": "sha256:f3a158d2656c76c4f0fe7a57811026df13582aeedaba43d44dba891764a4bdc8",
+        "configDigest": "sha256:4452738c4ac4cd09aa68a7c05c26fa13bb5638cff8899acf42a5fb39543322f3",
         "engineRevision": null,
-        "indexDigest": "sha256:43037cdfbe923e74e91bf5bf62fcad51a6f20f9da3fdf3437f7b43172951554d",
+        "indexDigest": "sha256:24ce6472334496bb89be09d107c914627b09bcd5116be7eaaf29b01b37533291",
         "installerRevision": null,
         "liveOverlayBaseDigest": null,
         "liveOverlayDigest": null,
-        "platformManifestDigest": "sha256:129a66a86929a8cd0f6d001e927fd1d4027c19ae6432d6287aadf7238dcc9c87"
+        "platformManifestDigest": "sha256:224244eecafaf19a751f0e87994531c05b469df69dfc46c8e05dd149768fd9b6"
       },
       "scheduled": true,
       "target": {
