@@ -15,6 +15,8 @@ github.com/tuna-os/tacklebox v0.1.1-0.20261116164601-19d649266cbd h1:TxXSMrEMIp0
 github.com/tuna-os/tacklebox v0.1.1-0.20261116164601-19d649266cbd/go.mod h1:38UZkLgpQkddTXCeKrBLbN+MBSZYVmQB5Z2haOosSwk=
 github.com/tuna-os/tacklebox v0.1.1-0.20261117010920-26db84ddaf58 h1:p9n6F0J42I5qRILkCQz1omW9+CH0vnbJe+5G0XCPkoI=
 github.com/tuna-os/tacklebox v0.1.1-0.20261117010920-26db84ddaf58/go.mod h1:38UZkLgpQkddTXCeKrBLbN+MBSZYVmQB5Z2haOosSwk=
+github.com/tuna-os/tacklebox v0.1.1-0.20261117173932-fef291ded76a h1:FFukXkpJBwZDDAxq2Tln1oP9zyWf/yqOgf1HSWkL//M=
+github.com/tuna-os/tacklebox v0.1.1-0.20261117173932-fef291ded76a/go.mod h1:38UZkLgpQkddTXCeKrBLbN+MBSZYVmQB5Z2haOosSwk=
 golang.org/x/sys v0.50.0 h1:dkKZEFTEKaLr1sjhs0WiKqoi8Jj5nHbS3Njmx1UoMJs=
 golang.org/x/sys v0.50.0/go.mod h1:hNLxWAXmnKAxqDtdwIYC4bM9oQPEecfsnNMuSxOs3og=
 gopkg.in/check.v1 v0.0.0-20161208181325-20d25e280405/go.mod h1:Co6ibVJAznAaIkqp8huTwlJQCZ016jof/cbN4VW5Yz0=
