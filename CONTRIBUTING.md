@@ -107,3 +107,26 @@ Test user actions in the browser. Do not test the exact text in HTML.
    pull request that changes only Markdown, `docs/`, `examples/` or `desktop/` skips them. The
    repository has a golangci-lint config, but CI does not run it yet. Run it locally, as the native
    step above shows.
+4. **Other checks**: Two more workflows can fail a pull request. They are not in the `main` ruleset.
+   - `actions-security.yml` runs on every pull request. Its `lockfile` job verifies
+     `.github/workflows/actions.lock`, and its `zizmor` job scans the workflows for security
+     problems. If you add a workflow or change a `uses:` line, update `actions.lock` in the same
+     pull request. Install the `gh` extension at the version that CI uses, then run it from the
+     repository root:
+
+     ```sh
+     gh extension install github/gh-actions-lock --pin v0.4.1
+     gh actions-lock
+     ```
+
+   - `ste.yml` (the `Prose` workflow) runs when a pull request changes Markdown. It checks
+     `README.md`, `CONTRIBUTING.md` and the files in `docs/` against Simplified Technical English.
+     The budget in `.ste-budget` is `0`, so one new finding makes the check fail. To run the same
+     linter, you need Node.js and a clone of [tuna-os/.github](https://github.com/tuna-os/.github).
+     From the root of this repository, run:
+
+     ```sh
+     node ../.github/.github/actions/ste-lint/ste-lint.mjs --max 0
+     ```
+
+     Change `../.github` if you cloned tuna-os/.github to a different directory.
