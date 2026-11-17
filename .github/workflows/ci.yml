@@ -156,7 +156,7 @@ jobs:
       code: ${{ steps.sel.outputs.code }}
       catalog: ${{ steps.sel.outputs.catalog }}
     steps:
-      - uses: actions/checkout@v7.0.1
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
           fetch-depth: 0
@@ -203,13 +203,13 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
-      - uses: actions/checkout@v7.0.1
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - uses: actions/setup-python@v7.1.0
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
         with:
           python-version: "3.15"
-      - uses: actions/setup-node@v7.1.0
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: 26
       # The justfile/recipe/cleanup contract tests drive the real `just`;
@@ -226,11 +226,11 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
-      - uses: actions/checkout@v7.0.1
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
 
-      - uses: actions/setup-go@v7.0.0
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version-file: native/go.mod
           cache-dependency-path: native/go.sum
@@ -255,7 +255,7 @@ jobs:
         run: go tool cover -func coverage.out
 
       - name: Upload coverage to Codecov
-        uses: codecov/codecov-action@v7.1.1
+        uses: codecov/codecov-action@303a32d7a59b442fa8d48b6a1cc6825c09c847a5 # v7.1.1
         with:
           files: native/coverage.out
           token: ${{ secrets.CODECOV_TOKEN }}
@@ -285,11 +285,11 @@ jobs:
     # same borderline timeout.
     timeout-minutes: 25
     steps:
-      - uses: actions/checkout@v7.0.1
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
 
-      - uses: actions/setup-go@v7.0.0
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version-file: native/go.mod
           cache-dependency-path: native/go.sum
@@ -332,11 +332,11 @@ jobs:
     runs-on: macos-latest
     timeout-minutes: 15
     steps:
-      - uses: actions/checkout@v7.0.1
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
 
-      - uses: actions/setup-go@v7.0.0
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version-file: native/go.mod
           cache-dependency-path: native/go.sum
@@ -376,17 +376,17 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
-      - uses: actions/checkout@v7.0.1
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
 
-      - uses: actions/setup-go@v7.0.0
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version-file: native/go.mod
           cache-dependency-path: native/go.sum
 
       - name: install just without apt
-        uses: extractions/setup-just@v4.0.0 # zizmor: ignore[unpinned-tools] takes the latest just as before; pinning a version is a behaviour change
+        uses: extractions/setup-just@53165ef7e734c5c07cb06b3c8e7b647c5aa16db3 # v4.0.0 # zizmor: ignore[unpinned-tools] takes the latest just as before; pinning a version is a behaviour change
 
       # Building from native/'s module doesn't work: cmd/tbwasm pulls in
       # packages native/ never imports, so its go.sum has no entries for them.
@@ -400,7 +400,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: just wasm-resolve-pin
 
-      - uses: actions/checkout@v7.0.1
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
           repository: tuna-os/tacklebox
@@ -413,7 +413,7 @@ jobs:
       - name: build tbox.wasm, sync wasm_exec.js, report
         run: just wasm-build
 
-      - uses: actions/upload-artifact@v7.0.2
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: engine
           path: |
@@ -429,25 +429,25 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
-      - uses: actions/checkout@v7.0.1
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
 
       # The engine is not in git; drop the freshly built one into app/public/
       # so the suite tests the current source.
-      - uses: actions/download-artifact@v8.0.2
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           name: engine
           path: app/public/
 
-      - uses: actions/setup-node@v7.1.0
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: 26
           cache: "npm"
           cache-dependency-path: e2e/package-lock.json
 
       - name: Cache Playwright browsers
-        uses: actions/cache@v6.1.0
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         id: playwright-cache
         with:
           path: ~/.cache/ms-playwright
@@ -467,7 +467,7 @@ jobs:
 
       - name: upload screenshots
         if: always()
-        uses: actions/upload-artifact@v7.0.2
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: e2e-screenshots
           path: e2e/screenshots/
@@ -475,7 +475,7 @@ jobs:
 
       - name: upload report
         if: always()
-        uses: actions/upload-artifact@v7.0.2
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: playwright-report
           path: |
@@ -518,7 +518,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v7.0.1
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
 
@@ -556,11 +556,11 @@ jobs:
       editions: ${{ steps.pick.outputs.editions }}
       count: ${{ steps.pick.outputs.count }}
     steps:
-      - uses: actions/checkout@v7.0.1
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
       - name: install just without apt
-        uses: extractions/setup-just@v4.0.0 # zizmor: ignore[unpinned-tools] takes the latest just as before; pinning a version is a behaviour change
+        uses: extractions/setup-just@53165ef7e734c5c07cb06b3c8e7b647c5aa16db3 # v4.0.0 # zizmor: ignore[unpinned-tools] takes the latest just as before; pinning a version is a behaviour change
       - id: pick
         env:
           ONLY: ${{ github.event.inputs.only }}
@@ -605,22 +605,22 @@ jobs:
       iso_sha256: ${{ steps.iso-artifact.outputs.iso_sha256 }}
       artifact_id: ${{ steps.iso-artifact-upload.outputs.artifact-id }}
     steps:
-      - uses: actions/checkout@v7.0.1
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
         timeout-minutes: 5
 
       - name: install pinned just without apt
-        uses: extractions/setup-just@v4.0.0 # zizmor: ignore[unpinned-tools] takes the latest just as before; pinning a version is a behaviour change
+        uses: extractions/setup-just@53165ef7e734c5c07cb06b3c8e7b647c5aa16db3 # v4.0.0 # zizmor: ignore[unpinned-tools] takes the latest just as before; pinning a version is a behaviour change
         timeout-minutes: 5
 
-      - uses: actions/download-artifact@v8.0.2
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         timeout-minutes: 5
         with:
           name: engine
           path: app/public/
 
-      - uses: actions/setup-node@v7.1.0
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         timeout-minutes: 5
         with:
           node-version: 26
@@ -628,7 +628,7 @@ jobs:
           cache-dependency-path: e2e/package-lock.json
 
       - name: Cache Playwright browsers
-        uses: actions/cache@v6.1.0
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         timeout-minutes: 5
         id: playwright-cache
         with:
@@ -680,7 +680,7 @@ jobs:
         id: iso-artifact-upload
         if: ${{ always() && !cancelled() && steps.iso-artifact.outcome == 'success' }}
         timeout-minutes: 30
-        uses: actions/upload-artifact@v7.0.2
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: iso-${{ matrix.edition.slug }}-run${{ github.run_id }}-a${{ github.run_attempt }}
           path: ${{ runner.temp }}/iso-artifact/
@@ -691,7 +691,7 @@ jobs:
       - name: upload ISO manifest (small, fetch without the ISO)
         if: ${{ always() && !cancelled() && steps.iso-artifact.outcome == 'success' }}
         timeout-minutes: 5
-        uses: actions/upload-artifact@v7.0.2
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: iso-${{ matrix.edition.slug }}-run${{ github.run_id }}-a${{ github.run_attempt }}-manifest
           path: e2e/test-results/iso-artifact-manifest/manifest.json
@@ -703,7 +703,7 @@ jobs:
       - name: upload browser evidence (survives guest failure)
         if: ${{ always() && !cancelled() && steps.browser-build.outcome == 'success' }}
         timeout-minutes: 10
-        uses: actions/upload-artifact@v7.0.2
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: browser-evidence-${{ matrix.edition.slug }}-run${{ github.run_id }}-a${{ github.run_attempt }}
           path: e2e/test-results/*.json
@@ -712,7 +712,7 @@ jobs:
       - name: upload build diagnostics
         if: always()
         timeout-minutes: 10
-        uses: actions/upload-artifact@v7.0.2
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: full-${{ matrix.edition.slug }}-build-diag
           path: |
@@ -805,7 +805,7 @@ jobs:
       matrix:
         edition: ${{ fromJSON(needs.full-plan.outputs.editions) }}
     steps:
-      - uses: actions/checkout@v7.0.1
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
         timeout-minutes: 5
@@ -814,7 +814,7 @@ jobs:
       # image has no just (run 42893991042 failed the preflight with
       # "just: command not found", exit 127).
       - name: install pinned just without apt
-        uses: extractions/setup-just@v4.0.0 # zizmor: ignore[unpinned-tools] takes the latest just as before; pinning a version is a behaviour change
+        uses: extractions/setup-just@53165ef7e734c5c07cb06b3c8e7b647c5aa16db3 # v4.0.0 # zizmor: ignore[unpinned-tools] takes the latest just as before; pinning a version is a behaviour change
         timeout-minutes: 5
 
       - name: preflight GPU host (karnataka-gpu only)
@@ -875,14 +875,14 @@ jobs:
       # The whole point of this job is testing the engine, so it must be the
       # one the wasm job built from the pin. These build steps skip when
       # full-gpu-build already built and uploaded this cell's ISO.
-      - uses: actions/download-artifact@v8.0.2
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         if: needs.full-gpu-build.result != 'success'
         timeout-minutes: 5
         with:
           name: engine
           path: app/public/
 
-      - uses: actions/setup-node@v7.1.0
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         if: needs.full-gpu-build.result != 'success'
         timeout-minutes: 5
         with:
@@ -892,7 +892,7 @@ jobs:
 
       - name: Cache Playwright browsers
         if: needs.full-gpu-build.result != 'success'
-        uses: actions/cache@v6.1.0
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         timeout-minutes: 5
         id: playwright-cache
         with:
@@ -967,7 +967,7 @@ jobs:
       # job above uses to pin tacklebox. Bump deliberately through review.
       - name: checkout tunaOS test scripts (pinned)
         if: github.event.inputs.strict_roundtrip_test != 'true' && github.event.inputs.pair != 'true'
-        uses: actions/checkout@v7.0.1
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         timeout-minutes: 5
         with:
           persist-credentials: false
@@ -976,7 +976,7 @@ jobs:
           path: tunaos-e2e
       - name: checkout current tunaOS strict harness (pinned)
         if: github.event.inputs.strict_roundtrip_test == 'true'
-        uses: actions/checkout@v7.0.1
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         timeout-minutes: 5
         with:
           persist-credentials: false
@@ -1055,7 +1055,7 @@ jobs:
         # A karnataka-gpu strict cell uploads from full-gpu-build instead:
         # karnataka's uplink cannot finish before the upload URL expires.
         timeout-minutes: 30
-        uses: actions/upload-artifact@v7.0.2
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: iso-${{ matrix.edition.slug }}-run${{ github.run_id }}-a${{ github.run_attempt }}
           path: ${{ runner.temp }}/iso-artifact/
@@ -1067,7 +1067,7 @@ jobs:
       - name: upload ISO manifest (small, fetch without the ISO)
         if: ${{ always() && !cancelled() && steps.iso-artifact.outcome == 'success' }}
         timeout-minutes: 5
-        uses: actions/upload-artifact@v7.0.2
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: iso-${{ matrix.edition.slug }}-run${{ github.run_id }}-a${{ github.run_attempt }}-manifest
           path: e2e/test-results/iso-artifact-manifest/manifest.json
@@ -1090,7 +1090,7 @@ jobs:
         # karnataka pulled 2.4 GB of registry layers in 449 s (~5.3 MB/s,
         # run 42919271864): a ~10 GB ISO needs ~32 min there.
         timeout-minutes: ${{ github.event.inputs.runner == 'karnataka-gpu' && 90 || 30 }}
-        uses: actions/download-artifact@v8.0.2
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           name: iso-${{ matrix.edition.slug }}-run${{ github.run_id }}-a${{ github.run_attempt }}
           path: ${{ runner.temp }}/iso-roundtrip
@@ -1100,7 +1100,7 @@ jobs:
       - name: download browser evidence from full-gpu-build
         if: ${{ always() && !cancelled() && needs.full-gpu-build.result == 'success' }}
         timeout-minutes: 5
-        uses: actions/download-artifact@v8.0.2
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           name: browser-evidence-${{ matrix.edition.slug }}-run${{ github.run_id }}-a${{ github.run_attempt }}
           path: e2e/test-results
@@ -1247,7 +1247,7 @@ jobs:
         id: attest-receipt
         if: ${{ success() && steps.qualification-receipt.outcome == 'success' }}
         timeout-minutes: 10
-        uses: actions/attest-build-provenance@v4.2.2
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
         with:
           subject-path: ${{ runner.temp }}/qualification-receipt/receipt.json
 
@@ -1262,7 +1262,7 @@ jobs:
       - name: upload qualification receipt
         if: ${{ success() && steps.attest-receipt.outcome == 'success' }}
         timeout-minutes: 10
-        uses: actions/upload-artifact@v7.0.2
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: qualification-receipt-${{ matrix.edition.slug }}-run${{ github.run_id }}-a${{ github.run_attempt }}
           path: |
@@ -1279,7 +1279,7 @@ jobs:
       - name: upload browser evidence (survives guest failure)
         if: ${{ always() && !cancelled() && steps.browser-build.outcome == 'success' }}
         timeout-minutes: 10
-        uses: actions/upload-artifact@v7.0.2
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: browser-evidence-${{ matrix.edition.slug }}-run${{ github.run_id }}-a${{ github.run_attempt }}
           path: e2e/test-results/*.json
@@ -1292,7 +1292,7 @@ jobs:
       - name: upload diagnostics
         if: always()
         timeout-minutes: 10
-        uses: actions/upload-artifact@v7.0.2
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: full-${{ matrix.edition.slug }}-diag
           # luks-verify-*/ is the harness output dir: serial logs and
@@ -1327,7 +1327,7 @@ jobs:
       - name: upload qualification evidence
         if: ${{ success() && github.event.inputs.strict_roundtrip_test != 'true' }}
         timeout-minutes: 10
-        uses: actions/upload-artifact@v7.0.2
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: qual-${{ matrix.edition.slug }}-evidence
           path: e2e/test-results/qual-evidence-${{ matrix.edition.slug }}*.json
@@ -1357,13 +1357,13 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v7.0.1
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
 
       # iso.tunaos.org gets the engine CI just built and tested, never a
       # hand-built binary that has not been run.
-      - uses: actions/download-artifact@v8.0.2
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           name: engine
           path: app/public/
@@ -1378,7 +1378,7 @@ jobs:
         run: python3 scripts/generate-downloads.py --out app/public/downloads.json
 
       - name: deploy app (iso.tunaos.org)
-        uses: cloudflare/wrangler-action@v4.1.3
+        uses: cloudflare/wrangler-action@953926a2e2182532811c01a25e53647d93bf07c0 # v4.1.3
         with:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
@@ -1386,7 +1386,7 @@ jobs:
           wranglerVersion: "4"
 
       - name: deploy relay (relay.tunaos.org)
-        uses: cloudflare/wrangler-action@v4.1.3
+        uses: cloudflare/wrangler-action@953926a2e2182532811c01a25e53647d93bf07c0 # v4.1.3
         with:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
