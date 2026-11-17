@@ -1,10 +1,10 @@
 {
-  "coverageDigest": "sha256:48030c896910cbcb06782c61842aec810a99bc9b4f3952e1489f712c737cdcf4",
-  "generatedAt": "2026-11-16T22:14:13Z",
+  "coverageDigest": "sha256:e052b7f61d09b1ff9f2c320073fab303a23eaa8ee006457ac5af5f6415253213",
+  "generatedAt": "2026-11-17T01:24:43Z",
   "kind": "catalog-snapshot",
-  "producerRevision": "tunaos.toml@fd185814399b24447c1752d902c3459dd9dd150f",
+  "producerRevision": "tunaos.toml@198e9e5bb3ffa61920b39c2a82947a7387982a81",
   "schemaVersion": 1,
-  "snapshotDigest": "sha256:c3d36b910b250072dde47d4b9a290fe73c3ffbcc717d5038a831ff2f48b785c9",
+  "snapshotDigest": "sha256:eb49829ac7407623860b486034b0d53bb2f7829d41db4f1a0397641ea87da918",
   "targets": [
     {
       "availability": {
@@ -6463,6 +6463,59 @@
         "variant": "guppy"
       },
       "targetKey": "guppy:kde:linux/amd64"
+    },
+    {
+      "availability": {
+        "available": false,
+        "ociPlatform": {
+          "architecture": "amd64",
+          "os": "linux",
+          "variant": null
+        }
+      },
+      "facts": {
+        "bootc": false,
+        "compressedSize": 0,
+        "desktop": "tuna",
+        "digest": null,
+        "hasSdBoot": false,
+        "kernelVer": "",
+        "layerCount": 0,
+        "pkgManager": "",
+        "repoFamily": ""
+      },
+      "publication": {
+        "ref": "ghcr.io/tuna-os/guppy:tuna",
+        "repository": "ghcr.io/tuna-os/guppy",
+        "tag": "tuna"
+      },
+      "qualification": {
+        "browser": null,
+        "qualifiedAt": null,
+        "reason": "missing-platform-descriptor",
+        "receiptDigest": null,
+        "resources": null,
+        "status": "unqualified"
+      },
+      "required": true,
+      "resolvedInputs": {
+        "configDigest": null,
+        "engineRevision": null,
+        "indexDigest": null,
+        "installerRevision": null,
+        "liveOverlayBaseDigest": null,
+        "liveOverlayDigest": null,
+        "platformManifestDigest": null
+      },
+      "scheduled": true,
+      "target": {
+        "cpuBaseline": "x86-64",
+        "flavor": "tuna",
+        "hardwareScope": "generic",
+        "platform": "linux/amd64",
+        "variant": "guppy"
+      },
+      "targetKey": "guppy:tuna:linux/amd64"
     },
     {
       "availability": {
