@@ -2,8 +2,8 @@
   "schemaVersion": 1,
   "kind": "guided-image-catalog",
   "catalogId": "stock",
-  "generatedAt": "2026-11-16T22:14:13Z",
-  "snapshotDigest": "sha256:c3d36b910b250072dde47d4b9a290fe73c3ffbcc717d5038a831ff2f48b785c9",
+  "generatedAt": "2026-11-17T01:24:43Z",
+  "snapshotDigest": "sha256:eb49829ac7407623860b486034b0d53bb2f7829d41db4f1a0397641ea87da918",
   "leaves": [
     {
       "id": "albacore:base-hwe:linux/amd64",
@@ -2842,6 +2842,31 @@
         ],
         "desktop": [
           "kde"
+        ],
+        "hardware": [
+          "generic"
+        ],
+        "platform": [
+          "linux/amd64"
+        ],
+        "edition": [
+          "standard"
+        ]
+      },
+      "notices": []
+    },
+    {
+      "id": "guppy:tuna:linux/amd64",
+      "source": {
+        "kind": "target",
+        "targetKey": "guppy:tuna:linux/amd64"
+      },
+      "facets": {
+        "base": [
+          "guppy"
+        ],
+        "desktop": [
+          "tuna"
         ],
         "hardware": [
           "generic"
