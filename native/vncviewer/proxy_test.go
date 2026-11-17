@@ -9,6 +9,7 @@ package vncviewer
 
 import (
 	"bytes"
+	"fmt"
 	"io"
 	"net"
 	"net/url"
@@ -205,5 +206,49 @@ func TestProxyToVNC_ClosesClientWhenVNCUnreachable(t *testing.T) {
 	ws.SetReadDeadline(time.Now().Add(5 * time.Second))
 	if _, err := io.ReadAll(ws); err != nil && err != io.EOF {
 		t.Errorf("client read against unreachable VNC = %v, want EOF", err)
+	}
+}
+
+// A browser lets a page from any site open a WebSocket to a loopback port,
+// so the proxy itself must refuse every origin but the viewer's own. The
+// accepted case is every other test in this file: dialWebsockify sends the
+// viewer's origin.
+func TestWebsockify_RefusesOtherOrigins(t *testing.T) {
+	vncAddr, accepted := fakeVNCServer(t)
+
+	viewerURL, stop, err := Serve(vncAddr)
+	if err != nil {
+		t.Fatalf("Serve: %v", err)
+	}
+	defer stop()
+
+	u, err := url.Parse(viewerURL)
+	if err != nil {
+		t.Fatalf("parse %q: %v", viewerURL, err)
+	}
+	wsURL := "ws://" + u.Host + "/websockify"
+
+	for _, origin := range []string{
+		"http://example.com",
+		"https://" + u.Host,                   // same host and port, other scheme
+		"http://localhost:" + u.Port(),        // same port, other host name
+		fmt.Sprintf("http://127.0.0.1:%d", 1), // same host, other port
+		"http://" + u.Host + ".example.com",   // viewer origin as a prefix
+		"http://" + u.Host + "/",              // not an origin: carries a path
+	} {
+		ws, err := websocket.Dial(wsURL, "", origin)
+		if err == nil {
+			ws.Close()
+			t.Errorf("origin %q opened the proxy, want the handshake refused", origin)
+		}
+	}
+
+	select {
+	case conn := <-accepted:
+		if conn != nil {
+			conn.Close()
+			t.Error("the proxy dialled the VNC server for a refused origin")
+		}
+	case <-time.After(300 * time.Millisecond):
 	}
 }

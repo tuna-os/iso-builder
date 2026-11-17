@@ -46,23 +46,49 @@ func Serve(vncAddr string) (viewerURL string, stop func(), err error) {
 		return "", nil, err
 	}
 
-	mux := http.NewServeMux()
-	mux.Handle("/", http.FileServer(http.FS(assets)))
-	mux.Handle("/websockify", websocket.Handler(func(ws *websocket.Conn) {
-		proxyToVNC(ws, vncAddr)
-	}))
-
 	ln, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
 		return "", nil, err
 	}
+	port := ln.Addr().(*net.TCPAddr).Port
+	origin := fmt.Sprintf("http://127.0.0.1:%d", port)
+
+	mux := http.NewServeMux()
+	mux.Handle("/", http.FileServer(http.FS(assets)))
+	mux.Handle("/websockify", websocket.Server{
+		Handshake: ownOriginOnly(origin),
+		Handler: func(ws *websocket.Conn) {
+			proxyToVNC(ws, vncAddr)
+		},
+	})
+
 	srv := &http.Server{Handler: mux}
 	go srv.Serve(ln)
 
-	port := ln.Addr().(*net.TCPAddr).Port
-	viewerURL = fmt.Sprintf("http://127.0.0.1:%d/vnc_lite.html", port)
+	viewerURL = origin + "/vnc_lite.html"
 	stop = func() { srv.Close() }
 	return viewerURL, stop, nil
+}
+
+// ownOriginOnly accepts a WebSocket handshake only from the page this server
+// serves. A browser lets a page from any site open a WebSocket to a loopback
+// port and leaves the decision to the server, which learns the page's origin
+// from the Origin header. websocket.Handler accepts every origin that parses
+// as a URL, so without this any page open on the machine could reach the
+// VM's console through the proxy. The comparison is exact, which also
+// refuses a page that reaches this port through a host name it controls.
+func ownOriginOnly(origin string) func(*websocket.Config, *http.Request) error {
+	return func(config *websocket.Config, req *http.Request) error {
+		if got := req.Header.Get("Origin"); got != origin {
+			return fmt.Errorf("websocket origin %q is not %q", got, origin)
+		}
+		parsed, err := websocket.Origin(config, req)
+		if err != nil {
+			return err
+		}
+		config.Origin = parsed
+		return nil
+	}
 }
 
 // proxyToVNC dials the real VNC server and shuttles raw bytes between it
