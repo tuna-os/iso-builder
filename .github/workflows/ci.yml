@@ -254,6 +254,13 @@ jobs:
         working-directory: native
         run: go tool cover -func coverage.out
 
+      - name: Upload coverage to Codecov
+        uses: codecov/codecov-action@v7.1.1
+        with:
+          files: native/coverage.out
+          token: ${{ secrets.CODECOV_TOKEN }}
+          fail_ci_if_error: false
+
       - name: go build
         working-directory: native
         run: go build -o tacklebox-app .
