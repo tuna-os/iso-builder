@@ -44,7 +44,7 @@ jobs:
       image: ghcr.io/flathub-infra/flatpak-github-actions:gnome-51
       options: --privileged
     steps:
-      - uses: actions/checkout@v4.4.0
+      - uses: actions/checkout@v7.0.1
         with:
           persist-credentials: false
       - uses: flatpak/flatpak-github-actions/flatpak-builder@v6
@@ -87,7 +87,7 @@ jobs:
       BUNDLE: TunaOS-Media-Writer-Linux-${{ matrix.arch }}.flatpak
       APP: org.tunaos.MediaWriter
     steps:
-      - uses: actions/checkout@v4.4.0
+      - uses: actions/checkout@v7.0.1
         with:
           persist-credentials: false
       - uses: actions/download-artifact@v4.3.0
