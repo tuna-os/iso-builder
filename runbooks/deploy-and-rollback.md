@@ -10,7 +10,14 @@ when a deploy makes either of them worse.
 
 Both are deployed by the `deploy` job in `.github/workflows/ci.yml`, which runs
 only on a push to `main` and only after the `wasm` and `e2e` jobs pass. Both can
-also be deployed by hand with `npx wrangler deploy` from `app/` or `worker/`.
+also be deployed by hand with `npm ci && npx --no-install wrangler deploy` from
+`app/` or `worker/`.
+
+Run `npm ci` first in that directory for every wrangler command in this runbook,
+and call wrangler as `npx --no-install wrangler`. `npm ci` installs the wrangler
+version locked in the directory's `package-lock.json`. A bare `npx wrangler`
+with no `node_modules` downloads the newest wrangler from the npm registry and
+runs it with your Cloudflare token.
 
 ## What the deploy gate does and does not prove
 
@@ -60,7 +67,7 @@ If any of these come back wrong, the relay's own logs say which upstream is at
 fault. `cors-shim.js` emits one JSON line per failed relay — `{"level","route",
 "upstream_status", …}`, where `route` is one of `token`, `manifests`, `blobs`,
 `healthz`, `flathub`, `pkgsearch`, `ddi`, `denied` — and Workers Logs retains
-them (dashboard: Workers & Pages -> `ghcr-shim` -> Logs, or `npx wrangler tail
+them (dashboard: Workers & Pages -> `ghcr-shim` -> Logs, or `npx --no-install wrangler tail
 --name ghcr-shim` for a live view). Successful relays are not logged there; the
 platform's own invocation records cover those. Note this distinguishes an
 upstream failure from a bad deploy, which the four checks above cannot: a 429
@@ -94,12 +101,12 @@ name, not the hostname.
 
 ```sh
 # What is live now, and what was live before.
-npx wrangler deployments list --name ghcr-shim
-npx wrangler versions list    --name ghcr-shim
+npx --no-install wrangler deployments list --name ghcr-shim
+npx --no-install wrangler versions list    --name ghcr-shim
 
 # Roll back to the previous version (omit the id) or to a named one.
-npx wrangler rollback --name ghcr-shim --message "relay 5xx after <sha>"
-npx wrangler rollback <VERSION_ID> --name ghcr-shim --message "…"
+npx --no-install wrangler rollback --name ghcr-shim --message "relay 5xx after <sha>"
+npx --no-install wrangler rollback <VERSION_ID> --name ghcr-shim --message "…"
 ```
 
 Substitute `--name tunaos-iso-builder` for the app. A rollback creates a new
