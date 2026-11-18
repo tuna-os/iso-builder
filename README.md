@@ -228,9 +228,11 @@ for the drive-management lifecycle and safety model.
 ## Deploy
 
 ```sh
-cd app    && npx wrangler deploy   # Deploys Workers static assets (iso.tunaos.org)
-cd worker && npx wrangler deploy   # Deploys to Workers (relay.tunaos.org)
+(cd app    && npm ci && npx --no-install wrangler deploy)   # Deploys Workers static assets (iso.tunaos.org)
+(cd worker && npm ci && npx --no-install wrangler deploy)   # Deploys to Workers (relay.tunaos.org)
 ```
+
+`npm ci` installs the wrangler version locked in that directory's `package-lock.json`. Without it, `npx` downloads the newest wrangler from the npm registry and runs it with your Cloudflare token.
 
 *Note: You need `CLOUDFLARE_API_TOKEN` in your environment, with the Workers and Pages deployment scope.*
 
