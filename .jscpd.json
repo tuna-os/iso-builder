@@ -1,0 +1,17 @@
+{
+  "minLines": 8,
+  "minTokens": 60,
+  "format": ["go", "javascript", "typescript", "python", "csharp", "swift", "bash"],
+  "ignore": [
+    "**/node_modules/**",
+    "native/vncviewer/assets/**",
+    "app/public/builder-config-data.js",
+    "app/public/experience-data.js",
+    "app/public/guided-catalog-data.js",
+    "tests/fixtures/**",
+    "**/bin/**",
+    "**/obj/**"
+  ],
+  "gitignore": true,
+  "absolute": false
+}
