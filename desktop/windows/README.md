@@ -1,6 +1,6 @@
 # TunaOS Media Writer — Windows
 
-WinUI 3 (Windows App SDK 1.8, .NET 10, C#) app that walks a non-technical user
+WinUI 3 (Windows App SDK 2.x, .NET 10, C#) app that walks a non-technical user
 through the four steps of the shared flow (`../PROTOCOL.md`, contract in the PR):
 **Choose** a desktop + base → **Destination** (a USB stick, or "Save ISO file only…")
 → **Progress** → **Done**. It drives the bundled Go helper
