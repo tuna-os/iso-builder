@@ -1,10 +1,10 @@
 {
   "coverageDigest": "sha256:e052b7f61d09b1ff9f2c320073fab303a23eaa8ee006457ac5af5f6415253213",
-  "generatedAt": "2026-11-18T22:40:00Z",
+  "generatedAt": "2026-11-18T23:52:20Z",
   "kind": "catalog-snapshot",
-  "producerRevision": "tunaos.toml@3c5dea794bb529cadc6aa0c07c9706e0130048d1",
+  "producerRevision": "tunaos.toml@3fee1fffb907443dffffacbe52cfaeb82171e555",
   "schemaVersion": 1,
-  "snapshotDigest": "sha256:f010549853d4a7ab05b51f99b5c6a655e7774fb50d0d8d780eb4306f62ad94e5",
+  "snapshotDigest": "sha256:e80a9cb77c97dd55e86f7ff20907dea8a5869f5397b2a18a7e7dcfccbeda1c8c",
   "targets": [
     {
       "availability": {
@@ -6196,9 +6196,9 @@
       },
       "facts": {
         "bootc": true,
-        "compressedSize": 1819214091,
+        "compressedSize": 1819215983,
         "desktop": "xfce",
-        "digest": "sha256:89bae58a287d0ccf66128665c4210bd25cb6fe6381ada2018d36744c2202a129",
+        "digest": "sha256:c16f633509ed80c85e7e960b570ce5ed52135076083538b176bc49fd93c85ec7",
         "hasSdBoot": false,
         "kernelVer": "",
         "layerCount": 65,
@@ -6263,9 +6263,9 @@
       },
       "facts": {
         "bootc": true,
-        "compressedSize": 1813640091,
+        "compressedSize": 1813643235,
         "desktop": "xfce",
-        "digest": "sha256:f144062c9013efd54cd060eab92ae727c15a029e7d7c1b69c33008b965d09335",
+        "digest": "sha256:6e6a5a8edcdeb2418ed438128d42f54db2d5922240a196831fe737621fed3ed8",
         "hasSdBoot": false,
         "kernelVer": "",
         "layerCount": 65,
@@ -6287,13 +6287,13 @@
       },
       "required": true,
       "resolvedInputs": {
-        "configDigest": "sha256:8540e20b6934f1280aa9706271773e01359f27e38b2f136709517e0dd5c6c3ed",
+        "configDigest": "sha256:c631b117382af8a7ea5cc9e6576d190c62d36cd55a46f07c67845f8280903db0",
         "engineRevision": null,
-        "indexDigest": "sha256:e72b11be46982774c637df471eb97ce783f34c095abede06433a1ef9e2d48099",
+        "indexDigest": "sha256:fa442c18d21b4e8439c208be83e017ad044d029a3e01489ce17bda95a8ded332",
         "installerRevision": null,
         "liveOverlayBaseDigest": null,
         "liveOverlayDigest": null,
-        "platformManifestDigest": "sha256:f144062c9013efd54cd060eab92ae727c15a029e7d7c1b69c33008b965d09335"
+        "platformManifestDigest": "sha256:6e6a5a8edcdeb2418ed438128d42f54db2d5922240a196831fe737621fed3ed8"
       },
       "scheduled": true,
       "target": {
@@ -9028,9 +9028,9 @@
       },
       "facts": {
         "bootc": true,
-        "compressedSize": 1949655971,
+        "compressedSize": 1950644907,
         "desktop": "cosmic",
-        "digest": "sha256:1b628622dbe68ed84e005dc19c5a17155d65b7d3506315ea199121cc0988ac28",
+        "digest": "sha256:65b4f006a8b19d9bd7f0cd729c97ae75249c141c6a139940532388cd7ddfe2de",
         "hasSdBoot": false,
         "kernelVer": "",
         "layerCount": 65,
@@ -9283,9 +9283,9 @@
       },
       "facts": {
         "bootc": true,
-        "compressedSize": 2412883547,
+        "compressedSize": 2413815794,
         "desktop": "gnome",
-        "digest": "sha256:eef6cd496f8c764b6a0519a1b8a38ebfbf9c02501c235d338de077ab7a465056",
+        "digest": "sha256:de3f7dfd98cebb4b95c5abf6f08a0f7cb467a20b101d9c48fafa5f7f61eaa5f7",
         "hasSdBoot": false,
         "kernelVer": "",
         "layerCount": 65,
@@ -9350,9 +9350,9 @@
       },
       "facts": {
         "bootc": true,
-        "compressedSize": 2412880881,
+        "compressedSize": 2413818185,
         "desktop": "gnome",
-        "digest": "sha256:65e5f557dea1cec140867d2f822ff21de8d23cc401ba48902d93b1ae52a507f3",
+        "digest": "sha256:aae255abc75690ebacfd5828d5e7a825ceb28eeb2076bcf27a84d6f39a977d82",
         "hasSdBoot": false,
         "kernelVer": "",
         "layerCount": 65,
@@ -9374,13 +9374,13 @@
       },
       "required": true,
       "resolvedInputs": {
-        "configDigest": "sha256:551144168db08413c074a66689988fcdd413216eee034ff0a7b413c53b77aaec",
+        "configDigest": "sha256:006dedeeb7216e342d8a40bcb5c6de06ff1f56f78240c03c97e2ece0aa1d67c0",
         "engineRevision": null,
-        "indexDigest": "sha256:503faddb4f6b0e565ab3586139dd25c587bd70f488201f990b42241966132ce6",
+        "indexDigest": "sha256:798c6414491b9274b4a56fd61a12fe8256b0c8e1be71f9dfd90fb6b612532161",
         "installerRevision": null,
         "liveOverlayBaseDigest": null,
         "liveOverlayDigest": null,
-        "platformManifestDigest": "sha256:65e5f557dea1cec140867d2f822ff21de8d23cc401ba48902d93b1ae52a507f3"
+        "platformManifestDigest": "sha256:aae255abc75690ebacfd5828d5e7a825ceb28eeb2076bcf27a84d6f39a977d82"
       },
       "scheduled": true,
       "target": {
@@ -9562,9 +9562,9 @@
       },
       "facts": {
         "bootc": true,
-        "compressedSize": 3105170573,
+        "compressedSize": 3106017448,
         "desktop": "kde",
-        "digest": "sha256:507f8b14498072732bdb7c2b0cd636445fe6e64420083738161368a3fa4bc13a",
+        "digest": "sha256:2fd8d64a8fd5131999dc800f578e77d8e3767509d3046db8c5c2dc5b2fdf80d8",
         "hasSdBoot": false,
         "kernelVer": "",
         "layerCount": 65,
@@ -9629,9 +9629,9 @@
       },
       "facts": {
         "bootc": true,
-        "compressedSize": 2972405286,
+        "compressedSize": 2973675917,
         "desktop": "kde",
-        "digest": "sha256:e5b6558e23776df10c0d7ead5e76bf912420829f1833a393f5d1a85de4ed32cc",
+        "digest": "sha256:5368879320532000f9092eee29b12bf79af4d9861ef133671f4db0709758d0c3",
         "hasSdBoot": false,
         "kernelVer": "",
         "layerCount": 65,
@@ -9653,13 +9653,13 @@
       },
       "required": true,
       "resolvedInputs": {
-        "configDigest": "sha256:2d08389270d7332f36d468a0d994f7ab66d4d1878da7fdfb153daaa0bea10ba0",
+        "configDigest": "sha256:4d6fe14fdfa2cf9d7e637e52486e269a978478fddc5fbe796e43b6e17153380f",
         "engineRevision": null,
-        "indexDigest": "sha256:9c93a8d9273a77d13b55d5618f389a20d02085431f76bd054cfe209eaab3e079",
+        "indexDigest": "sha256:7ca309cc48e5e173da4cbd673900e98ccb36611bb63694df4e68fbd8fbb4b873",
         "installerRevision": null,
         "liveOverlayBaseDigest": null,
         "liveOverlayDigest": null,
-        "platformManifestDigest": "sha256:e5b6558e23776df10c0d7ead5e76bf912420829f1833a393f5d1a85de4ed32cc"
+        "platformManifestDigest": "sha256:5368879320532000f9092eee29b12bf79af4d9861ef133671f4db0709758d0c3"
       },
       "scheduled": true,
       "target": {
@@ -9841,9 +9841,9 @@
       },
       "facts": {
         "bootc": true,
-        "compressedSize": 1816568354,
+        "compressedSize": 1817561866,
         "desktop": "niri",
-        "digest": "sha256:ea89cf230ce5d3fab68dd8415f56929c4c8e55d471c1bae938e171b2e56b186d",
+        "digest": "sha256:f6ce1c9789cd87aab9eebe039cd2cbeaad336881e14e64804ffb90a29c2daf75",
         "hasSdBoot": false,
         "kernelVer": "",
         "layerCount": 65,
@@ -9865,13 +9865,13 @@
       },
       "required": true,
       "resolvedInputs": {
-        "configDigest": "sha256:8803a7a312ef6adbc84da4fff7bef43499b0445adb7ec201d53be32a78c21f52",
+        "configDigest": "sha256:94713466f22aa2469a594cc970d1cb7dc43bf777b2e24bf19159c8fe5ba4d626",
         "engineRevision": null,
-        "indexDigest": "sha256:055bec42d693a836277a66ba41400b021aa3f99caf46d7895be91bb7ef0a54c8",
+        "indexDigest": "sha256:76d119598149d9c6a5540f913f49f572bd7fd5cebf1d3f7b915c5687555812e7",
         "installerRevision": null,
         "liveOverlayBaseDigest": null,
         "liveOverlayDigest": null,
-        "platformManifestDigest": "sha256:ea89cf230ce5d3fab68dd8415f56929c4c8e55d471c1bae938e171b2e56b186d"
+        "platformManifestDigest": "sha256:f6ce1c9789cd87aab9eebe039cd2cbeaad336881e14e64804ffb90a29c2daf75"
       },
       "scheduled": true,
       "target": {
@@ -9894,9 +9894,9 @@
       },
       "facts": {
         "bootc": true,
-        "compressedSize": 1702183823,
+        "compressedSize": 1703542364,
         "desktop": "niri",
-        "digest": "sha256:2d0ecca43f5c196d054a8bc631bb270712787bda8443b50d83f2ea1e00d1dde7",
+        "digest": "sha256:1314d3c648d415ff1d71b7379ba2dc9370d3ece19dd9f358ba64951338210e63",
         "hasSdBoot": false,
         "kernelVer": "",
         "layerCount": 65,
@@ -9918,13 +9918,13 @@
       },
       "required": true,
       "resolvedInputs": {
-        "configDigest": "sha256:f29951a11b178e65e9e09da65c1be9f382c402534799397344f9c68360c06cb7",
+        "configDigest": "sha256:642bd90be68cc95a69cfa3a18d8ac7cda5a9978b6558d4e47ed53c5c6d2571ed",
         "engineRevision": null,
-        "indexDigest": "sha256:055bec42d693a836277a66ba41400b021aa3f99caf46d7895be91bb7ef0a54c8",
+        "indexDigest": "sha256:76d119598149d9c6a5540f913f49f572bd7fd5cebf1d3f7b915c5687555812e7",
         "installerRevision": null,
         "liveOverlayBaseDigest": null,
         "liveOverlayDigest": null,
-        "platformManifestDigest": "sha256:2d0ecca43f5c196d054a8bc631bb270712787bda8443b50d83f2ea1e00d1dde7"
+        "platformManifestDigest": "sha256:1314d3c648d415ff1d71b7379ba2dc9370d3ece19dd9f358ba64951338210e63"
       },
       "scheduled": true,
       "target": {
@@ -9947,9 +9947,9 @@
       },
       "facts": {
         "bootc": true,
-        "compressedSize": 1755868003,
+        "compressedSize": 1756882155,
         "desktop": "tuna",
-        "digest": "sha256:1430307ca1612898b408b56bc877a2a7f1f608e5e2c1f1c055a70fd0ca55d269",
+        "digest": "sha256:3d2c3f76a681d780f7271916a2a9f8df093478d9aee2749a4d291805e3d4da90",
         "hasSdBoot": false,
         "kernelVer": "",
         "layerCount": 65,
@@ -9971,13 +9971,13 @@
       },
       "required": true,
       "resolvedInputs": {
-        "configDigest": "sha256:4b6ea42c2de347230ff7901ad8b8887bc17b3b7a3edffba376356aa89690cba9",
+        "configDigest": "sha256:e39603ca8a7911c01cb139aee40eb3471dd1e25587917ed1a50f011635865a2a",
         "engineRevision": null,
-        "indexDigest": "sha256:8dec5e5595efbc6887817d2012e41964182f691e54b794c999bcdbb33c0da746",
+        "indexDigest": "sha256:f09ebea58112100cc21da945a9ac2f9274df4e8bb09cb03ad7f5c746f17b893a",
         "installerRevision": null,
         "liveOverlayBaseDigest": null,
         "liveOverlayDigest": null,
-        "platformManifestDigest": "sha256:1430307ca1612898b408b56bc877a2a7f1f608e5e2c1f1c055a70fd0ca55d269"
+        "platformManifestDigest": "sha256:3d2c3f76a681d780f7271916a2a9f8df093478d9aee2749a4d291805e3d4da90"
       },
       "scheduled": true,
       "target": {
