@@ -433,7 +433,9 @@ def test_gpu_runner_input_defaults_to_hosted_and_preflights_only_on_karnataka():
     assert pre['run'] == 'just gpu-host-preflight'
     just = next(step for step in steps if step.get('name') == 'install pinned just without apt')
     # The preflight is a just recipe, and the karnataka runner image has no just.
-    assert steps.index(just) == 1 and steps.index(pre) == 2, 'install just, then preflight before any build work'
+    mirror = next(step for step in steps if step.get('name') == 'use a reachable Ubuntu mirror (karnataka-gpu only)')
+    # just first, then the apt mirror fallback, then the preflight, all before any build work.
+    assert [steps.index(just), steps.index(mirror), steps.index(pre)] == [1, 2, 3], 'install just, fix mirror, then preflight before any build work'
 
 
 def test_gpu_preflight_provisions_mikefarah_yq_for_the_guest_harness():
