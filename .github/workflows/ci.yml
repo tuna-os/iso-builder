@@ -821,6 +821,25 @@ jobs:
         uses: extractions/setup-just@v4.0.0 # zizmor: ignore[unpinned-tools] takes the latest just as before; pinning a version is a behaviour change
         timeout-minutes: 5
 
+      # The karnataka runner image points apt at archive.ubuntu.com and
+      # security.ubuntu.com. On 2026-11-19 both were unreachable from
+      # karnataka (connect timeout) while azure.archive.ubuntu.com answered;
+      # yellowfin-xfce run 44514027484 then died in full-strict-inputs with
+      # apt exit 100. GitHub-hosted runners already use the Azure mirror, so
+      # switching only when the default does not answer changes no package.
+      - name: use a reachable Ubuntu mirror (karnataka-gpu only)
+        if: github.event.inputs.runner == 'karnataka-gpu'
+        timeout-minutes: 2
+        run: |
+          if curl -fsS -m 10 -o /dev/null http://archive.ubuntu.com/ubuntu/dists/noble/Release; then
+            echo "archive.ubuntu.com answers; keeping the default mirror"
+            exit 0
+          fi
+          echo "::warning::archive.ubuntu.com does not answer; switching apt to azure.archive.ubuntu.com"
+          sudo find /etc/apt -name '*.list' -o -name '*.sources' | while read -r f; do
+            sudo sed -i -E 's#https?://(archive|security)\.ubuntu\.com/ubuntu#http://azure.archive.ubuntu.com/ubuntu#g' "$f"
+          done
+
       - name: preflight GPU host (karnataka-gpu only)
         if: github.event.inputs.runner == 'karnataka-gpu'
         timeout-minutes: 15
