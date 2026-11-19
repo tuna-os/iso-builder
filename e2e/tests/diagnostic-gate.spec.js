@@ -500,9 +500,18 @@ test.describe("production code and CI wiring", () => {
 
   test("a refused full-build cell fails within seconds with the gate reason, not after the 5 min stall watchdog", async () => {
     test.setTimeout(180_000);
-    // A cell the catalog still refuses; the GNOME cells with receipts are
-    // qualified, so this uses one without (bonito:kde-nvidia: no-qualification-receipt).
-    const refused = "tuna-os/bonito:kde-nvidia";
+    // A cell the catalog still refuses with no-qualification-receipt. Chosen
+    // from the committed snapshot rather than hardcoded: catalog syncs qualify
+    // cells over time, and a fixed name starts a real build once it does.
+    const snapshot = JSON.parse(fs.readFileSync(path.join(ROOT, "app/public/catalog-snapshot.json"), "utf8"));
+    const cell = snapshot.targets.find((t) =>
+      t.availability.available && t.availability.ociPlatform.architecture === "amd64" &&
+      t.qualification.status === "unqualified" && t.qualification.reason === "no-qualification-receipt" &&
+      // Not a renamed target: its identity must equal its published ref.
+      t.targetKey === `${t.publication.ref.replace(/^ghcr\.io\/tuna-os\//, "")}:linux/amd64`);
+    expect(cell, "catalog has no amd64 cell refused with no-qualification-receipt").toBeTruthy();
+    const refused = cell.publication.ref.replace(/^ghcr\.io\//, "");
+    const slug = refused.replace(/^tuna-os\//, "").replace(":", "-");
     const env = { ...process.env, TBOX_E2E_FULL: "1", TBOX_E2E_IMAGE: refused, TBOX_E2E_PLATFORM: PLATFORM };
     for (const k of ["DIAGNOSTIC_ALLOW_UNQUALIFIED", "DIAGNOSTIC_TARGET"]) delete env[k];
     const summary = path.join(require("os").tmpdir(), `gate-summary-${process.pid}.md`);
@@ -511,7 +520,7 @@ test.describe("production code and CI wiring", () => {
     env.TBOX_E2E_SAMPLE = "1";
     env.TBOX_E2E_CACHE_MODE = "cold";
     env.TBOX_E2E_PAIR_STATE = path.join(failureRoot, "pair-inputs.json");
-    env.TBOX_E2E_EVIDENCE = path.join(failureRoot, "qual-evidence-bonito-kde-nvidia-s1.json");
+    env.TBOX_E2E_EVIDENCE = path.join(failureRoot, `qual-evidence-${slug}-s1.json`);
     fs.rmSync(summary, { force: true });
     env.GITHUB_STEP_SUMMARY = summary;
     const started = Date.now();
@@ -528,7 +537,7 @@ test.describe("production code and CI wiring", () => {
     expect(elapsed).toBeLessThan(100);
     const md = fs.readFileSync(summary, "utf8");
     expect(md).toContain("no-qualification-receipt");
-    const failed = JSON.parse(fs.readFileSync(path.join(failureRoot, "failed-build-qual-evidence-bonito-kde-nvidia-s1.json"), "utf8"));
+    const failed = JSON.parse(fs.readFileSync(path.join(failureRoot, `failed-build-qual-evidence-${slug}-s1.json`), "utf8"));
     expect(failed.kind).toBe("failed-browser-build-measurements");
     expect(failed.run.outcome).toBe("failed");
     expect(failed.phase).toBe("inspect");
