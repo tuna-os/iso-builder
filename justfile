@@ -50,6 +50,13 @@ test-node:
 # Everything that runs offline.
 check: test test-node
 
+# List jscpd code clones that touch files changed since BASE_SHA (every clone
+# when BASE_SHA is unset). Report only: it exits 0 whatever it finds (#553).
+# Env: BASE_SHA, HEAD_SHA (HEAD), JSCPD_REPORT (read instead of running jscpd).
+# Report code clones that touch this change (never fails).
+clone-report:
+    python3 scripts/clone-report.py
+
 # Import a CatalogSnapshot made by tunaOS scripts/generate-catalog-snapshot.py
 # into the web, native and app.js copies, and regenerate the guided catalog.
 # Import a tunaOS-generated catalog snapshot.
