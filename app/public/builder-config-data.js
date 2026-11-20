@@ -1,7 +1,7 @@
 // Generated from builder-config.json; do not edit.
 globalThis.TBOX_BUILDER_CONFIG = {
   "brand": {
-    "documentation_url": "https://tunaos.org/docs/iso-builder",
+    "documentation_url": "https://tunaos.org/download",
     "favicon_url": "/favicon-32.png",
     "homepage_url": "https://tunaos.org",
     "logo_url": "/wordmark.svg",
