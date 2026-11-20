@@ -20,10 +20,6 @@ QEMU_SHA256=9e30ad1b8b9f7b4463001582d1ab297f39cfccea5d08540c0ca6d6672785883a
 VIRGL_TAG=1.2.0
 VIRGL_COMMIT=500b41d5c8638f9b80dd558f4044f3301c7457a4
 
-if [[ -x "$PREFIX/bin/qemu-system-x86_64" ]]; then
-	echo "ok - $PREFIX already holds $("$PREFIX/bin/qemu-system-x86_64" --version | head -1)"
-	exit 0
-fi
 
 sudo apt-get install -y --no-install-recommends build-essential git ca-certificates ninja-build meson \
 	pkg-config python3-venv python3-yaml libglib2.0-dev libpixman-1-dev libepoxy-dev libgbm-dev \
@@ -47,6 +43,8 @@ curl -fsSL --retry 3 -o "$work/qemu.txz" "https://download.qemu.org/qemu-${QEMU_
 echo "${QEMU_SHA256}  $work/qemu.txz" | sha256sum -c -
 mkdir "$work/qemu"
 tar xJf "$work/qemu.txz" -C "$work/qemu" --strip-components=1
+# DIAGNOSTIC (tunaOS#4768): log which thread binds QEMU's EGL contexts.
+(cd "$work/qemu" && git apply "$(dirname "$(readlink -f "$0")")/diag-qemu-egl.patch")
 export PKG_CONFIG_PATH="$PREFIX/lib/pkgconfig"
 (cd "$work/qemu" &&
 	./configure --prefix="$PREFIX" --target-list=x86_64-softmmu --enable-kvm --enable-opengl \

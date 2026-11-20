@@ -1,0 +1,79 @@
+diff --git a/ui/egl-context.c b/ui/egl-context.c
+index aed3e3b..bd7295b 100644
+--- a/ui/egl-context.c
++++ b/ui/egl-context.c
+@@ -1,6 +1,43 @@
+ #include "qemu/osdep.h"
+ #include "qemu/error-report.h"
+ #include "ui/egl-context.h"
++#include <execinfo.h>
++
++/*
++ * DIAGNOSTIC (tunaOS#4768): which thread binds GL contexts, and what the
++ * EGL state is when eglMakeCurrent fails with EGL_BAD_ACCESS mid-run.
++ */
++static int diag_main_tid;
++
++static void diag_report(const char *what, void *ctx)
++{
++    static int reports;
++    char name[32] = "";
++    void *bt[48];
++    int n;
++
++    if (reports++ >= 40) {
++        return;
++    }
++    pthread_getname_np(pthread_self(), name, sizeof(name));
++    error_report("egl-diag: %s ctx %p current %p tid %d (%s) main %d", what,
++                 ctx, eglGetCurrentContext(), qemu_get_thread_id(), name,
++                 diag_main_tid);
++    n = backtrace(bt, 48);
++    backtrace_symbols_fd(bt, n, 2);
++}
++
++static void diag_check_thread(const char *what, void *ctx)
++{
++    int tid = qemu_get_thread_id();
++
++    if (!diag_main_tid) {
++        diag_main_tid = tid;
++    }
++    if (tid != diag_main_tid) {
++        diag_report(what, ctx);
++    }
++}
+ 
+ QEMUGLContext qemu_egl_create_context(DisplayGLCtx *dgc,
+                                       QEMUGLParams *params)
+@@ -19,23 +56,30 @@ QEMUGLContext qemu_egl_create_context(DisplayGLCtx *dgc,
+    };
+    bool gles = (qemu_egl_mode == DISPLAY_GL_MODE_ES);
+ 
++   diag_check_thread("create", NULL);
+    ctx = eglCreateContext(qemu_egl_display, qemu_egl_config,
+                           eglGetCurrentContext(),
+                           gles ? ctx_att_gles : ctx_att_core);
++   error_report("egl-diag: created ctx %p", ctx);
+    return ctx;
+ }
+ 
+ void qemu_egl_destroy_context(DisplayGLCtx *dgc, QEMUGLContext ctx)
+ {
++    diag_check_thread("destroy", ctx);
++    error_report("egl-diag: destroy ctx %p (current %p)", ctx,
++                 eglGetCurrentContext());
+     eglDestroyContext(qemu_egl_display, ctx);
+ }
+ 
+ int qemu_egl_make_context_current(DisplayGLCtx *dgc,
+                                   QEMUGLContext ctx)
+ {
++   diag_check_thread("make_current", ctx);
+    if (!eglMakeCurrent(qemu_egl_display,
+                        EGL_NO_SURFACE, EGL_NO_SURFACE, ctx)) {
+         error_report("egl: eglMakeCurrent failed: %s", qemu_egl_get_error_string());
++        diag_report("make_current-failed", ctx);
+         return -1;
+    }
+ 
