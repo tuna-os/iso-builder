@@ -36,6 +36,9 @@ class Stage(enum.Enum):
 
 class Notice(enum.Enum):
     CANCELLED = "cancelled"
+    LINK_INVALID = "link-invalid"
+    LINK_UNKNOWN_TARGET = "link-unknown-target"
+    LINK_BUSY = "link-busy"
 
 
 class InvalidTransition(RuntimeError):
@@ -122,6 +125,7 @@ class Flow:
         self.error: protocol.Error | None = None
         self.result: protocol.Done | None = None
         self._notice: Notice | None = None
+        self.pending_target: str | None = None  # a link that arrived before the catalog
         self._listeners: list[Callable[["Flow"], None]] = []
 
     # -- observation -------------------------------------------------
@@ -156,6 +160,39 @@ class Flow:
         self._require(Step.LOADING)
         self.catalog = catalog
         self.step = Step.CHOOSE
+        self._changed()
+        if self.pending_target is not None:
+            target_id, self.pending_target = self.pending_target, None
+            self.open_target(target_id)
+
+    def open_target(self, target_id: str) -> None:
+        """A link (`--target ID` or tunaos-media-writer://build?target=ID):
+        select that catalog target exactly like picking it on step 1 and
+        pressing Continue, then wait on step 2 for the user to choose where
+        it goes. Never starts a job. Unknown target: notice, nothing selected."""
+        if self.step is Step.PROGRESS:
+            self._notify(Notice.LINK_BUSY)
+            return
+        if self.catalog is None:
+            self.pending_target = target_id  # applied by catalog_loaded
+            return
+        target = self.catalog.target(target_id)
+        if target is None:
+            self._notify(Notice.LINK_UNKNOWN_TARGET)
+            return
+        self.source = Source.from_target(self.catalog, target)
+        self.destination = None
+        self.error = None
+        self.result = None
+        self.step = Step.DESTINATION
+        self._changed()
+
+    def link_rejected(self) -> None:
+        """A link or --target value that is not one (see launch.py)."""
+        self._notify(Notice.LINK_INVALID)
+
+    def _notify(self, notice: Notice) -> None:
+        self._notice = notice
         self._changed()
 
     def choose(self, source: Source) -> None:

@@ -28,6 +28,7 @@ internal sealed class SmokeDriver(MainWindow window, MediaWriterFlow flow, AppOp
                 "write" => WriteAsync(),
                 "error" => ErrorAsync(),
                 "save" => SaveAsync(),
+                "link" => LinkAsync(),
                 "launch" => LaunchAsync(),
                 _ => throw new ArgumentException($"unknown scenario {options.SmokeScenario}"),
             });
@@ -120,6 +121,31 @@ internal sealed class SmokeDriver(MainWindow window, MediaWriterFlow flow, AppOp
         await Task.Delay(TimeSpan.FromSeconds(5)); // let at least one real `drives` poll land
         Log($"drives: {flow.Drives.Count}");
         await CaptureAsync("launch-2-destination");
+    }
+
+    /// <summary>
+    /// Started with a <c>tunaos-media-writer://</c> link argument, as the MSI's URL protocol
+    /// starts the app (smoke/run-ui-smoke.ps1): the linked system is picked and the app waits
+    /// on step 2 without running anything; Back shows it on step 1; an unknown target is
+    /// refused visibly and changes nothing.
+    /// </summary>
+    private async Task LinkAsync()
+    {
+        Expect(options.Link is not null, "started with a link");
+        await CatalogLoadedAsync();
+        await WaitForAsync(() => flow.Step == FlowStep.Destination && flow.Drives.Count > 0 && DestinationPage.Current is not null, "link opened step 2");
+        Expect(flow.SelectedTarget?.Id == "yellowfin:kde:linux/amd64", "the linked system is selected");
+        await CaptureAsync("link-2-destination");
+        await Task.Delay(TimeSpan.FromSeconds(2));
+        Expect(flow.Step == FlowStep.Destination, "nothing started without the user");
+
+        flow.Back();
+        await WaitForAsync(() => flow.Step == FlowStep.Choose, "back on step 1");
+        Expect(flow.DesktopId == "kde" && flow.BaseId == "yellowfin", "step 1 shows the linked system");
+        flow.OpenLink("tunaos-media-writer://build?target=yellowfin%3Ano-such-desktop%3Alinux%2Famd64");
+        Expect(flow.LinkError == Strings.LinkUnknownTarget, "an unknown target is refused");
+        Expect(flow.Step == FlowStep.Choose && flow.DesktopId == "kde" && flow.LinkedTarget is null, "nothing selected");
+        await CaptureAsync("link-1-unknown");
     }
 
     private async Task CatalogLoadedAsync()

@@ -24,6 +24,7 @@
     <Feature Id="Main" Title="TunaOS Media Writer">
       <ComponentGroupRef Id="AppFiles" />
       <ComponentRef Id="StartMenuShortcut" />
+      <ComponentRef Id="UrlProtocol" />
     </Feature>
 
     <ui:WixUI Id="WixUI_Minimal" />
@@ -39,6 +40,19 @@
     <ComponentGroup Id="AppFiles" Directory="INSTALLFOLDER">
       <Files Include="$(var.AppDir)\**" />
     </ComponentGroup>
+
+    <!--
+      tunaos-media-writer://build?target=ID links from iso.tunaos.org (desktop/PROTOCOL.md).
+      Per-machine, so HKCR here is HKLM\Software\Classes; removed on uninstall.
+    -->
+    <Component Id="UrlProtocol" Directory="INSTALLFOLDER" Guid="6352f3b6-33e9-4a50-a691-cbec3735a12a">
+      <RegistryKey Root="HKCR" Key="tunaos-media-writer">
+        <RegistryValue Type="string" Value="URL:TunaOS Media Writer" KeyPath="yes" />
+        <RegistryValue Name="URL Protocol" Type="string" Value="" />
+        <RegistryValue Key="DefaultIcon" Type="string" Value="&quot;[INSTALLFOLDER]TunaOSMediaWriter.exe&quot;,0" />
+        <RegistryValue Key="shell\open\command" Type="string" Value="&quot;[INSTALLFOLDER]TunaOSMediaWriter.exe&quot; &quot;%1&quot;" />
+      </RegistryKey>
+    </Component>
 
     <StandardDirectory Id="ProgramMenuFolder">
       <Component Id="StartMenuShortcut" Guid="3f6b1d2e-8c4a-4b7e-a9d5-2e1c0f7b6a48">

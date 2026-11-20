@@ -137,3 +137,7 @@ class Catalog:
 
     def base(self, base_id: str) -> Base | None:
         return next((b for b in self.bases if b.id == base_id), None)
+
+    def target(self, target_id: str) -> Target | None:
+        """Any offered target, not only the host-platform defaults step 1 shows."""
+        return next((t for t in self.targets if t.id == target_id), None)

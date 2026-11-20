@@ -15,7 +15,7 @@ spawns it and reads its JSON Lines events.
 | `Sources/TunaOSMediaWriter/` | SwiftUI views, app entry, `--ui-smoke` driver |
 | `Tests/MediaWriterCoreTests/` | XCTest: parser, helper client, state machine, end-to-end flow against the fake helper |
 | `Fixtures/fake-helper.sh` | Protocol-1 stand-in used by tests and the UI smoke; never touches a disk |
-| `Resources/Info.plist` | Bundle metadata (version filled in by `build-app.sh`) |
+| `Resources/Info.plist` | Bundle metadata (version filled in by `build-app.sh`); registers the `tunaos-media-writer://` URL scheme |
 | `scripts/` | `build-helper.sh` (helper + engine, both arches, `lipo`), `build-app.sh` (bundle, icon, signing), `make-dmg.sh`, `ui-smoke.sh` |
 
 ## Build
@@ -28,21 +28,30 @@ swift test                                   # unit tests, fake helper only
 scripts/build-helper.sh                      # build/helper/{tunaos-media-helper,tunaos-media-engine}
 scripts/build-app.sh                         # build/TunaOS Media Writer.app (ad-hoc signed)
 scripts/make-dmg.sh                          # build/TunaOS-Media-Writer-macOS.dmg
-scripts/ui-smoke.sh                          # build/ui-smoke/{usb,iso,fail}/*.png
+scripts/ui-smoke.sh                          # build/ui-smoke/{usb,iso,fail,link}/*.png
 ```
 
 The helper runs tacklebox's `cmd/purebuild` as a sibling binary
 (`tunaos-media-engine`), so both are bundled in `Contents/MacOS/`.
+
+Links from iso.tunaos.org: `tunaos-media-writer://build?target=ID` (through
+`onOpenURL`, also while the app runs) and `--target ID` open the app on that
+catalog target and wait on the USB-stick step; see
+[`../PROTOCOL.md`](../PROTOCOL.md#opening-the-app-on-a-target). Parsing lives
+in `MediaWriterCore/LaunchLink.swift`, the selection in `FlowState`
+(`.openTarget`).
 
 Development switches (ignored unless passed on the command line):
 
 - `--fake-helper PATH` — use `Fixtures/fake-helper.sh` instead of the bundled
   helper. Writes then go through the same `--events`/`--cancel-file` path as
   the elevated write, but unprivileged and without a password prompt.
-- `--ui-smoke DIR [--ui-smoke-scenario usb|iso|fail]` — the app walks its own
+- `--ui-smoke DIR [--ui-smoke-scenario usb|iso|fail|link]` — the app walks its own
   window through the flow and saves per step `NN-step.png` (`screencapture -l`),
   `-screen.png` (whole screen, shows the erase sheet), `-view.png` (in-process
-  render) and `NN-step.json` (state), then exits 0/1.
+  render) and `NN-step.json` (state), then exits 0/1. `link` expects
+  `--target yellowfin:gnome:linux/amd64` and opens two more links through
+  Launch Services (`ui-smoke.sh` registers the bundle with `lsregister` first).
 - `--catalog-base-url URL` — forwarded to `helper catalog --base-url`.
 
 ## Decisions

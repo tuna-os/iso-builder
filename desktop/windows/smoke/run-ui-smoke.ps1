@@ -4,7 +4,7 @@
 param(
     [Parameter(Mandatory)] [string] $App,
     [Parameter(Mandatory)] [string] $Out,
-    [ValidateSet('write', 'error', 'save', 'launch')] [string] $Scenario = 'write',
+    [ValidateSet('write', 'error', 'save', 'link', 'launch')] [string] $Scenario = 'write',
     [string] $FakeHelper,
     [switch] $NoElevate,
     [int] $TimeoutSeconds = 240
@@ -16,6 +16,8 @@ New-Item -ItemType Directory -Force -Path $dir | Out-Null
 $argv = @('--smoke', $dir, '--smoke-scenario', $Scenario, '--smoke-timeout', [string]($TimeoutSeconds - 30))
 if ($FakeHelper) { $argv += @('--fake-helper', (Resolve-Path $FakeHelper).Path) }
 if ($NoElevate) { $argv += '--no-elevate' }
+# As the MSI's URL protocol starts the app: "TunaOSMediaWriter.exe" "%1".
+if ($Scenario -eq 'link') { $argv += 'tunaos-media-writer://build?target=yellowfin%3Akde%3Alinux%2Famd64' }
 
 Write-Host "> $App $($argv -join ' ')"
 $p = Start-Process -FilePath $App -ArgumentList ($argv | ForEach-Object { '"' + $_ + '"' }) -PassThru

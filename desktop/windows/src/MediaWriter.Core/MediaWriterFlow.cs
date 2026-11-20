@@ -52,6 +52,7 @@ public sealed class MediaWriterFlow
     private bool _catalogFailed;
     private string? _cachedIso;
     private string? _cachedFor;
+    private string? _pendingTarget;
 
     public MediaWriterFlow(IHelperRunner runner, FlowOptions options, SynchronizationContext? uiContext)
     {
@@ -85,7 +86,16 @@ public sealed class MediaWriterFlow
     /// <summary>A build-request.json exported from iso.tunaos.org; overrides the desktop/base choice.</summary>
     public string? BuildRequestPath { get; private set; }
 
-    public CatalogTarget? SelectedTarget => Catalog?.Resolve(DesktopId, BaseId);
+    /// <summary>
+    /// The exact catalog target a link opened (editions and other platforms included); overrides
+    /// the desktop/base choice until the user goes Back or picks something else.
+    /// </summary>
+    public CatalogTarget? LinkedTarget { get; private set; }
+
+    /// <summary>Why the last link could not be opened; shown on step 1 until dismissed.</summary>
+    public string? LinkError { get; private set; }
+
+    public CatalogTarget? SelectedTarget => LinkedTarget ?? Catalog?.Resolve(DesktopId, BaseId);
 
     public bool CanContinue => BuildRequestPath is not null || SelectedTarget is not null;
 
@@ -161,6 +171,12 @@ public sealed class MediaWriterFlow
         DesktopId = view.DefaultDesktop;
         BaseId = DesktopId is null ? null : view.DefaultBaseFor(DesktopId);
         Raise();
+
+        if (_pendingTarget is { } pending)
+        {
+            _pendingTarget = null;
+            OpenTarget(pending);
+        }
     }
 
     public void SelectDesktop(string desktopId)
@@ -171,6 +187,7 @@ public sealed class MediaWriterFlow
         }
 
         DesktopId = desktopId;
+        LinkedTarget = null;
         if (!Catalog.BasesFor(desktopId).Any(b => b.Id == BaseId))
         {
             BaseId = Catalog.DefaultBaseFor(desktopId);
@@ -187,12 +204,14 @@ public sealed class MediaWriterFlow
         }
 
         BaseId = baseId;
+        LinkedTarget = null;
         Raise();
     }
 
     public void UseBuildRequest(string? path)
     {
         BuildRequestPath = path;
+        LinkedTarget = null;
         Raise();
     }
 
@@ -215,6 +234,65 @@ public sealed class MediaWriterFlow
         }
 
         Step = FlowStep.Choose;
+        LinkedTarget = null;
+        Raise();
+    }
+
+    /// <summary>A <c>tunaos-media-writer://build?target=ID</c> link (the URL protocol's argument).</summary>
+    public void OpenLink(string link) => Open(() => LaunchLink.TargetIdFromUri(link));
+
+    /// <summary>The <c>--target ID</c> launch argument.</summary>
+    public void OpenTargetArgument(string value) => Open(() => LaunchLink.TargetId(value));
+
+    /// <summary>
+    /// Selects a catalog target exactly as picking it on step 1 and pressing Continue would, then
+    /// waits on step 2 for the user to choose a drive and confirm; never starts a job. Before the
+    /// catalog has loaded the id is kept and opened once it has. Unknown id: <see cref="LinkError"/>,
+    /// nothing selected.
+    /// </summary>
+    public void OpenTarget(string targetId)
+    {
+        if (Step == FlowStep.Progress)
+        {
+            LinkError = Strings.LinkBusy;
+            Raise();
+            return;
+        }
+
+        if (Catalog is null)
+        {
+            _pendingTarget = targetId;
+            return;
+        }
+
+        var target = Catalog.Find(targetId);
+        if (target is null)
+        {
+            LinkError = Strings.LinkUnknownTarget;
+            Raise();
+            return;
+        }
+
+        if (Catalog.Resolve(target.Desktop, target.Base) is not null)
+        {
+            // Offered on step 1 too: show it selected there after Back.
+            DesktopId = target.Desktop;
+            BaseId = target.Base;
+        }
+
+        LinkedTarget = target;
+        BuildRequestPath = null;
+        LinkError = null;
+        ErrorMessage = null;
+        TargetDrive = null;
+        SavedIsoPath = null;
+        Step = FlowStep.Destination;
+        Raise();
+    }
+
+    public void DismissLinkError()
+    {
+        LinkError = null;
         Raise();
     }
 
@@ -368,6 +446,7 @@ public sealed class MediaWriterFlow
         TargetDrive = null;
         SavedIsoPath = null;
         Step = FlowStep.Choose;
+        LinkedTarget = null;
         Raise();
     }
 
@@ -469,6 +548,24 @@ public sealed class MediaWriterFlow
         }
 
         return Strings.ErrorGeneric;
+    }
+
+    private void Open(Func<string> parse)
+    {
+        string targetId;
+        try
+        {
+            targetId = parse();
+        }
+        catch (LaunchLinkException ex)
+        {
+            AppendDetail($"link refused: {ex.Message}");
+            LinkError = Strings.LinkInvalid;
+            Raise();
+            return;
+        }
+
+        OpenTarget(targetId);
     }
 
     private void Fail(string message)

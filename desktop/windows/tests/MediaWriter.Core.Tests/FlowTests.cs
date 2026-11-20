@@ -355,4 +355,88 @@ public sealed class FlowTests : IDisposable
         Assert.Equal(1, raised);
         Assert.Empty(_flow.Drives);
     }
+
+    [Fact]
+    public async Task LinkBeforeTheCatalogOpensTheDestinationOnceLoaded()
+    {
+        _flow.OpenLink("tunaos-media-writer://build?target=yellowfin%3Akde%3Alinux%2Famd64");
+        Assert.Equal(FlowStep.Choose, _flow.Step);
+        Assert.Null(_flow.LinkError);
+
+        await _flow.LoadCatalogAsync();
+        Assert.Equal(FlowStep.Destination, _flow.Step);
+        Assert.Equal("yellowfin:kde:linux/amd64", _flow.SelectedTarget!.Id);
+        Assert.Equal("KDE Plasma (AlmaLinux Kitten 10 (flagship))", _flow.SelectionLabel);
+        Assert.Equal(["catalog"], _runner.Subcommands); // waits for the user: nothing built or written
+
+        _flow.Back();
+        Assert.Equal(FlowStep.Choose, _flow.Step);
+        Assert.Null(_flow.LinkedTarget);
+        Assert.Equal(("kde", "yellowfin"), (_flow.DesktopId, _flow.BaseId)); // step 1 shows what the link picked
+    }
+
+    [Fact]
+    public async Task LinkBuildsTheExactTarget()
+    {
+        await _flow.LoadCatalogAsync();
+        _flow.OpenTarget("yellowfin:kde:linux/amd64:nvidia"); // not what step 1 would resolve to
+        Assert.Equal("yellowfin:kde:linux/amd64:nvidia", _flow.SelectedTarget!.Id);
+        await _flow.RefreshDrivesAsync();
+        await _flow.WriteToDriveAsync(Stick);
+        var build = _runner.Requests.Single(r => r.Args[0] == "build");
+        Assert.Equal("yellowfin:kde:linux/amd64:nvidia", build.Args[build.Args.ToList().IndexOf("--target") + 1]);
+        Assert.Equal(FlowStep.Done, _flow.Step);
+
+        _flow.OpenTargetArgument("yellowfin:gnome:linux/arm64"); // from Done; another platform than step 1's
+        Assert.Equal(FlowStep.Destination, _flow.Step);
+        Assert.Equal("yellowfin:gnome:linux/arm64", _flow.SelectedTarget!.Id);
+        Assert.Null(_flow.TargetDrive);
+    }
+
+    [Fact]
+    public async Task UnknownOrUnreadableLinksSelectNothing()
+    {
+        await _flow.LoadCatalogAsync();
+        _flow.OpenLink("tunaos-media-writer://build?target=yellowfin%3Acosmic%3Alinux%2Famd64");
+        Assert.Equal(Strings.LinkUnknownTarget, _flow.LinkError);
+        Assert.Equal(FlowStep.Choose, _flow.Step);
+        Assert.Null(_flow.LinkedTarget);
+        Assert.Equal("yellowfin:gnome:linux/amd64", _flow.SelectedTarget!.Id);
+
+        _flow.DismissLinkError();
+        Assert.Null(_flow.LinkError);
+        _flow.OpenLink("https://iso.tunaos.org/?image=yellowfin");
+        Assert.Equal(Strings.LinkInvalid, _flow.LinkError);
+        _flow.OpenTargetArgument("");
+        Assert.Equal(Strings.LinkInvalid, _flow.LinkError);
+        Assert.Equal(FlowStep.Choose, _flow.Step);
+        Assert.Equal(["catalog"], _runner.Subcommands);
+    }
+
+    [Fact]
+    public async Task LinkNeverInterruptsAJob()
+    {
+        var started = new TaskCompletionSource();
+        var release = new TaskCompletionSource();
+        var inner = _runner.Replies["build"];
+        _runner.Replies["build"] = async (req, emit, ct) =>
+        {
+            started.SetResult();
+            await release.Task;
+            return await inner(req, emit, ct);
+        };
+        await AtDestinationAsync();
+        Directory.CreateDirectory(_cache);
+        var job = _flow.SaveIsoAsync(Path.Combine(_cache, "out.iso"));
+        await started.Task;
+
+        _flow.OpenTarget("yellowfin:kde:linux/amd64");
+        Assert.Equal(FlowStep.Progress, _flow.Step);
+        Assert.Equal(Strings.LinkBusy, _flow.LinkError);
+        Assert.Equal("yellowfin:gnome:linux/amd64", _flow.SelectedTarget!.Id);
+
+        release.SetResult();
+        await job;
+        Assert.Equal(FlowStep.Done, _flow.Step);
+    }
 }

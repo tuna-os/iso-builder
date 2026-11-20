@@ -61,6 +61,9 @@ public sealed class CatalogView
     public CatalogTarget? Resolve(string? desktopId, string? baseId) =>
         _targets.FirstOrDefault(t => t.Desktop == desktopId && t.Base == baseId);
 
+    /// <summary>Any offered target by id, not only the ones step 1 shows (a link may name an edition or another platform).</summary>
+    public CatalogTarget? Find(string targetId) => _catalog.Targets.FirstOrDefault(t => t.Id == targetId);
+
     public string LabelFor(CatalogTarget target)
     {
         var desktop = _catalog.Desktops.FirstOrDefault(d => d.Id == target.Desktop)?.Label ?? target.Desktop;

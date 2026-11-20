@@ -85,6 +85,11 @@ public enum FlowAction: Equatable, Sendable {
     case selectBase(String)
     case selectPlatform(String)
     case openRequest(BuildSource)
+    /// `--target ID` or tunaos-media-writer://build?target=ID (see LaunchLink).
+    case openTarget(String)
+    /// A link or `--target` value LaunchLink refused.
+    case linkRejected
+    case dismissLinkError
     case continueToDestination
     case back
     case drivesUpdated([Drive])
@@ -152,7 +157,13 @@ public struct FlowState: Equatable, Sendable {
     public var platform: String
     public var desktopID: String?
     public var baseID: String?
+    /// Overrides the desktop/base/platform choice: a build-request.json, or
+    /// the exact catalog target a link opened (editions included).
     public var request: BuildSource?
+    /// A link that arrived before the catalog; opened once it loads.
+    public var pendingTargetID: String?
+    /// Shown as an alert on any step.
+    public var linkError: String?
 
     // 2. Destination
     public var drives: [Drive] = []
@@ -283,6 +294,10 @@ public struct FlowState: Equatable, Sendable {
             catalogError = nil
             catalog = loaded
             resolveSelection()
+            if let id = pendingTargetID {
+                pendingTargetID = nil
+                return reduce(.openTarget(id))
+            }
 
         case .catalogFailed(let failure):
             loadingCatalog = false
@@ -312,6 +327,38 @@ public struct FlowState: Equatable, Sendable {
             guard step == .choose, source != nil else { return nil }
             step = .destination
             notice = nil
+
+        case .openTarget(let id):
+            // Exactly like picking the target on step 1 and pressing
+            // Continue; never starts a job: the user still picks a drive
+            // and confirms the erase.
+            guard step != .progress else {
+                linkError = Strings.linkBusy
+                return nil
+            }
+            guard let catalog else {
+                pendingTargetID = id
+                return nil
+            }
+            guard let target = catalog.targets.first(where: { $0.id == id }) else {
+                linkError = Strings.linkUnknownTarget
+                return nil
+            }
+            platform = target.platform
+            desktopID = target.desktop
+            baseID = target.base
+            request = .target(target)
+            pendingErase = nil
+            outcome = nil
+            job = nil
+            notice = nil
+            step = .destination
+
+        case .linkRejected:
+            linkError = Strings.linkInvalid
+
+        case .dismissLinkError:
+            linkError = nil
 
         case .back:
             switch step {

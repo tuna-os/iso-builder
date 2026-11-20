@@ -161,6 +161,8 @@ jobs:
           if ($env:SMOKE_ELEVATE) { $extra.NoElevate = $true }
           ./smoke/run-ui-smoke.ps1 -App build/app/TunaOSMediaWriter.exe -Out build/ui-smoke -Scenario write -FakeHelper smoke/fake-helper.ps1 @extra
           ./smoke/run-ui-smoke.ps1 -App build/app/TunaOSMediaWriter.exe -Out build/ui-smoke -Scenario save -FakeHelper smoke/fake-helper.ps1 @extra
+          ./smoke/run-ui-smoke.ps1 -App build/app/TunaOSMediaWriter.exe -Out build/ui-smoke -Scenario link -FakeHelper smoke/fake-helper.ps1 @extra
+          if ($LASTEXITCODE) { throw 'link smoke failed' }
           $env:FAKE_HELPER_FAIL = 'build'
           ./smoke/run-ui-smoke.ps1 -App build/app/TunaOSMediaWriter.exe -Out build/ui-smoke -Scenario error -FakeHelper smoke/fake-helper.ps1 @extra
           Remove-Item env:FAKE_HELPER_FAIL
@@ -206,16 +208,26 @@ jobs:
           $target = (New-Object -ComObject WScript.Shell).CreateShortcut($lnk).TargetPath
           "shortcut -> $target"
           if ($target -ne (Join-Path $dir 'TunaOSMediaWriter.exe')) { throw "shortcut points at $target" }
+          # tunaos-media-writer:// URL protocol (desktop/PROTOCOL.md).
+          $protocol = 'Registry::HKEY_CLASSES_ROOT\tunaos-media-writer'
+          if ($null -eq (Get-ItemProperty $protocol -Name 'URL Protocol' -ErrorAction SilentlyContinue)) { throw 'URL protocol not registered' }
+          $command = (Get-Item "$protocol\shell\open\command").GetValue('')
+          "tunaos-media-writer:// -> $command"
+          if ($command -ne ('"{0}" "%1"' -f (Join-Path $dir 'TunaOSMediaWriter.exe'))) { throw "protocol command is $command" }
 
           ./smoke/run-ui-smoke.ps1 -App (Join-Path $dir 'TunaOSMediaWriter.exe') -Out build/ui-smoke-installed -Scenario launch
           $extra = @{}
           if ($env:SMOKE_ELEVATE) { $extra.NoElevate = $true }
           ./smoke/run-ui-smoke.ps1 -App (Join-Path $dir 'TunaOSMediaWriter.exe') -Out build/ui-smoke-installed -Scenario write -FakeHelper smoke/fake-helper.ps1 @extra
+          # The argument the registered protocol command passes ("%1"), plus the smoke switches.
+          ./smoke/run-ui-smoke.ps1 -App (Join-Path $dir 'TunaOSMediaWriter.exe') -Out build/ui-smoke-installed -Scenario link -FakeHelper smoke/fake-helper.ps1 @extra
+          if ($LASTEXITCODE) { throw 'installed link smoke failed' }
 
           $p = Start-Process msiexec.exe -ArgumentList '/x', "`"$msi`"", '/qn', '/norestart', '/l*v', "`"$pwd\build\msi-uninstall.log`"" -Wait -PassThru
           if ($p.ExitCode -ne 0) { throw "msiexec /x exited $($p.ExitCode)" }
           if (Test-Path (Join-Path $dir 'TunaOSMediaWriter.exe')) { throw 'uninstall left the app behind' }
           if (Test-Path $lnk) { throw 'uninstall left the shortcut behind' }
+          if (Test-Path $protocol) { throw 'uninstall left the URL protocol behind' }
           Select-String -Path build/msi-install.log, build/msi-uninstall.log -Pattern 'success or error status' -ErrorAction SilentlyContinue |
             ForEach-Object { $_.Line.Trim() }
           'install / launch / uninstall OK'

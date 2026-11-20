@@ -23,6 +23,12 @@ public static class Strings
     public static string UsingBuildRequest(string fileName) => $"Using the settings from {fileName}.";
     public const string ClearBuildRequest = "Use the list instead";
 
+    // Links from iso.tunaos.org (--target / tunaos-media-writer://build?target=)
+    public const string LinkErrorTitle = "Couldn't open that link";
+    public const string LinkInvalid = "That link could not be read.";
+    public const string LinkUnknownTarget = "The system in that link is not available.";
+    public const string LinkBusy = "Finish or cancel the current job, then open the link again.";
+
     // Step 2 — Destination
     public const string DestinationTitle = "Choose your USB stick";
     public const string DestinationSubtitle = "Plug in a USB stick. Everything on it will be erased.";

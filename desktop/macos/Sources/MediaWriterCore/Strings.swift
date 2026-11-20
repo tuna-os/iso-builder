@@ -27,6 +27,12 @@ public enum Strings {
     public static let requestUnreadable = "That file is not a TunaOS build request."
     public static let fromRequestLabel = "From build request"
 
+    // Links from iso.tunaos.org (--target / tunaos-media-writer://build?target=)
+    public static let linkErrorTitle = "Couldn't open that link"
+    public static let linkInvalid = "That link could not be read."
+    public static let linkUnknownTarget = "The system in that link is not available."
+    public static let linkBusy = "Finish or cancel the current job, then open the link again."
+
     public static func platformLabel(_ platform: String) -> String {
         switch platform {
         case "linux/amd64", "linux/amd64/v2": return "Intel or AMD PC"

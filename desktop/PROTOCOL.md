@@ -83,6 +83,40 @@ helper polls it every second).
    `Block.OpenDevice("w")` with polkit and passes it). Emits
    `{"event":"done","device":"...","bytes":N,"verified":true}`.
 
+## Opening the app on a target
+
+The website opens a Media Writer on the image the visitor picked. That is a
+GUI contract, not a helper subcommand; all three apps implement it the same
+way.
+
+```
+tunaos-media-writer://build?target=yellowfin%3Agnome%3Alinux%2Famd64
+<app> --target yellowfin:gnome:linux/amd64
+```
+
+- `target` is a catalog target id (the `id` of a `catalog` event target, the
+  value `build --target` takes), URL-encoded in the link. An unencoded id is
+  accepted too, and so are a slash before `?` (`build/?target=`) and any
+  case in the scheme and action.
+- Opening one selects that target exactly as if the user had picked it on
+  step 1 and pressed Continue: the app shows step 2 (choose a USB stick or
+  "Save ISO file only") and waits. It never starts a build or a write; the
+  user still picks the drive and confirms the erase. Back returns to step 1
+  with that desktop and base selected when step 1 offers them. Any catalog
+  target is accepted, including other editions and platforms than step 1
+  shows; the app builds exactly the linked id.
+- A link that arrives before the catalog has loaded is opened once it has.
+- Refused, with a visible message and nothing selected: anything that is not
+  `tunaos-media-writer://build` with exactly one `target`; an id not shaped
+  `base:desktop:os/arch[/variant]` (lower-case `a-z 0-9 . _ -`); an id the
+  catalog does not offer; any link while a build or write is running.
+
+| | Scheme registration | A link while the app runs |
+|---|---|---|
+| Linux | `MimeType=x-scheme-handler/tunaos-media-writer;` and `Exec=tunaos-media-writer %u` in the desktop file (Flatpak exports it) | `GApplication` is unique: the second launch forwards its command line to the running window and exits |
+| macOS | `CFBundleURLTypes` in `Info.plist`; SwiftUI `onOpenURL` | Launch Services delivers it to the running app's one window |
+| Windows | The MSI writes `HKCR\tunaos-media-writer` (`URL Protocol`, `shell\open\command` = `"…\TunaOSMediaWriter.exe" "%1"`), removed on uninstall | A new instance (the app has no single-instance mode) |
+
 ## Release assets
 
 `media-writer-release.yml` publishes, under stable names the website links as

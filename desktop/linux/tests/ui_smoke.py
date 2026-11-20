@@ -4,6 +4,9 @@ of the window at each one. Needs a display (CI: xvfb-run + dbus-run-session).
 
     python3 tests/ui_smoke.py --out screenshots/
 
+The app starts with `--target` (a link from iso.tunaos.org) and ends with
+two more launches of the app that must forward their links to this instance.
+
 Run inside the Flatpak to test the installed code instead of the checkout:
     flatpak run --filesystem=$PWD --env=PYTHONPATH=/app/share/tunaos-media-writer \
         --command=python3 org.tunaos.MediaWriter tests/ui_smoke.py --out $PWD/screenshots
@@ -11,9 +14,11 @@ Run inside the Flatpak to test the installed code instead of the checkout:
 
 import argparse
 import os
+import subprocess
 import sys
 import tempfile
 import time
+from urllib.parse import quote
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 # Appended, so an installed copy on PYTHONPATH wins over the checkout.
@@ -26,6 +31,7 @@ os.environ["FAKE_HELPER_DIR"] = tempfile.mkdtemp(prefix="mw-smoke-drives-")
 os.environ.pop("FAKE_HELPER_FAIL", None)
 
 import tunaos_media_writer  # noqa: E402
+from tunaos_media_writer import strings  # noqa: E402
 from tunaos_media_writer.app import Application  # noqa: E402
 from tunaos_media_writer.flow import Stage, Step  # noqa: E402
 from tunaos_media_writer.window import Gtk  # noqa: E402
@@ -33,6 +39,15 @@ from tunaos_media_writer.window import Gtk  # noqa: E402
 from gi.repository import GLib, Graphene  # noqa: E402
 
 TIMEOUT = 60
+LAUNCH_TARGET = "yellowfin:gnome:linux/amd64"  # the catalog default: step 1 looks as without a link
+LINK_TARGET = "yellowfin:kde:linux/amd64"
+
+
+def launch_again(*args: str) -> subprocess.Popen:
+    """A second `tunaos-media-writer ARGS`, as a browser opening a link does."""
+    root = os.path.dirname(os.path.dirname(os.path.abspath(tunaos_media_writer.__file__)))
+    env = dict(os.environ, PYTHONPATH=root)
+    return subprocess.Popen([sys.executable, "-m", "tunaos_media_writer", *args], env=env)
 
 
 def capture(window: Gtk.Window, path: str) -> None:
@@ -59,6 +74,15 @@ def scenario(app: Application, out: str):
     win = app.window
     flow = win.flow
     shot = lambda name: capture(win, os.path.join(out, name + ".png"))  # noqa: E731
+    toasts = []
+    add_toast = win.toasts.add_toast
+    win.toasts.add_toast = lambda toast: (toasts.append(toast.get_title()), add_toast(toast))
+
+    # Started with --target: the linked system is picked; step 2 waits for the user.
+    yield lambda: flow.step is Step.DESTINATION
+    assert flow.source.target_id == LAUNCH_TARGET and flow.destination is None, flow.source
+    shot("0-link-destination")
+    flow.back()
 
     yield lambda: flow.step is Step.CHOOSE
     assert win.selected_desktop() == "gnome", win.selected_desktop()
@@ -111,6 +135,24 @@ def scenario(app: Application, out: str):
     yield lambda: flow.step is Step.DONE
     assert os.path.getsize(iso) == 8 * 1024 * 1024
     shot("4-done-file")
+
+    # A second launch with a link forwards it to this instance (GApplication
+    # uniqueness) and exits; this window shows the linked system on step 2.
+    second = launch_again(f"tunaos-media-writer://build?target={quote(LINK_TARGET, safe='')}")
+    yield lambda: second.poll() is not None and flow.step is Step.DESTINATION
+    assert second.returncode == 0, second.returncode
+    assert flow.source.target_id == LINK_TARGET and flow.destination is None, flow.source
+    if win.platform == "linux/amd64":  # step 1 offers it, so it is selected there too
+        assert win.selected_desktop() == "kde", win.selected_desktop()
+    shot("6-link-forwarded")
+
+    # Unknown target and a malformed link: a visible notice, nothing selected.
+    second = launch_again("--target", "yellowfin:no-such-desktop:linux/amd64")
+    yield lambda: second.poll() is not None and strings.LINK_UNKNOWN_TARGET in toasts
+    third = launch_again("https://iso.tunaos.org/?image=yellowfin")
+    yield lambda: third.poll() is not None and strings.LINK_INVALID in toasts
+    assert flow.step is Step.DESTINATION and flow.source.target_id == LINK_TARGET
+    shot("6-link-rejected")
     app.quit()
 
 
@@ -158,12 +200,12 @@ def main() -> int:
 
     GLib.timeout_add(50, tick)
     helper = os.path.join(HERE, "fake_helper.py")
-    status = app.run([sys.argv[0], "--fake-helper", helper])
+    status = app.run([sys.argv[0], "--fake-helper", helper, "--target", LAUNCH_TARGET])
     if state["failed"] is not None:
         return 1
-    expected = {"1-choose", "2-destination", "2-confirm-erase", "3-progress-building", "3-quit-confirm",
-                "3-progress-writing",
-                "4-done-usb", "5-error", "5-error-details", "4-done-file"}
+    expected = {"0-link-destination", "1-choose", "2-destination", "2-confirm-erase", "3-progress-building",
+                "3-quit-confirm", "3-progress-writing",
+                "4-done-usb", "5-error", "5-error-details", "4-done-file", "6-link-forwarded", "6-link-rejected"}
     missing = expected - {os.path.splitext(f)[0] for f in os.listdir(out)}
     if missing:
         print(f"missing screenshots: {sorted(missing)}", file=sys.stderr)
