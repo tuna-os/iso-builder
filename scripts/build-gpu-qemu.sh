@@ -45,7 +45,7 @@ mkdir "$work/qemu"
 tar xJf "$work/qemu.txz" -C "$work/qemu" --strip-components=1
 # DIAGNOSTIC (tunaOS#4768): log which thread binds QEMU's EGL contexts.
 diag_patch="$(cd "$(dirname "$0")" && pwd)/diag-qemu-egl.patch"
-(cd "$work/qemu" && git apply "$diag_patch")
+(cd "$work/qemu" && git apply "$diag_patch" && git apply "$(dirname "$diag_patch")/virtio-gpu-main-loop-bh.patch")
 export PKG_CONFIG_PATH="$PREFIX/lib/pkgconfig"
 (cd "$work/qemu" &&
 	./configure --prefix="$PREFIX" --target-list=x86_64-softmmu --enable-kvm --enable-opengl \
