@@ -33,17 +33,20 @@ const WRITER = { version: "1.0.0", assets: {
   "linux-x86_64": { url: "https://github.com/tuna-os/iso-builder/releases/download/media-writer-v1.0.0/TunaOS-Media-Writer-Linux-x86_64.flatpak" },
 } };
 
-async function open(page, { prebuilt = PREBUILT, mediaWriter = null, deviceMemory = 16, freeGB = 100, url = "/", platform = "Linux", catalog = "unqualified" } = {}) {
+async function open(page, { prebuilt = PREBUILT, mediaWriter = null, deviceMemory = 16, freeGB = 100, url = "/", platform = "Linux", architecture = null, catalog = "unqualified" } = {}) {
   if (catalog === "unqualified") await unqualifiedCatalog(page);
   await page.route("**/wasm_exec.js", route => route.fulfill({ contentType: "text/javascript", body: "" }));
   await page.route("**/tbox.wasm", route => route.abort());
   await page.route("https://**/*", route => route.abort());
   await page.route("**/downloads.json", route => route.fulfill({ json: { schemaVersion: 1, prebuilt, mediaWriter } }));
-  await page.addInitScript(({ deviceMemory, freeGB, platform }) => {
+  await page.addInitScript(({ deviceMemory, freeGB, platform, architecture }) => {
     Object.defineProperty(navigator, "deviceMemory", { value: deviceMemory, configurable: true });
     navigator.storage.estimate = async () => ({ quota: freeGB * 1e9, usage: 0 });
-    Object.defineProperty(navigator, "userAgentData", { value: { platform, mobile: false }, configurable: true });
-  }, { deviceMemory, freeGB, platform });
+    const uaData = { platform, mobile: false };
+    // Chromium's high-entropy hint; other browsers have none.
+    if (architecture !== null) uaData.getHighEntropyValues = async () => ({ architecture });
+    Object.defineProperty(navigator, "userAgentData", { value: uaData, configurable: true });
+  }, { deviceMemory, freeGB, platform, architecture });
   await page.goto(url);
 }
 const route = page => page.evaluate(() => window.tboxQuickRoute());
@@ -186,4 +189,129 @@ test("the first-launch hint follows the release's recorded signing, per OS", asy
   await open(page, { prebuilt: {}, mediaWriter: signed, platform: "Windows" });
   await settled(page);
   await expect(page.locator("#quick-app-hint")).toHaveText("If Windows SmartScreen warns you, choose More info, then Run anyway.");
+});
+
+test("macOS: the unsigned app opens from Privacy & Security, and Apple Silicon is told the stick is for a PC", async ({ page }) => {
+  const appleSilicon = page.locator("#quick-app-arm");
+  await open(page, { mediaWriter: WRITER, platform: "macOS" });
+  await settled(page);
+  await expect(page.locator("#quick-app-hint")).toHaveText("First launch: if macOS blocks the app, choose Open Anyway in System Settings → Privacy & Security.");
+  // No architecture hint (Safari, Firefox): every Mac is told.
+  await expect(appleSilicon).toBeVisible();
+  await expect(appleSilicon.locator("a")).toHaveAttribute("href", "https://tunaos.org/docs/bootc-installer-asahi/DESIGN");
+  await open(page, { mediaWriter: WRITER, platform: "macOS", architecture: "arm" });
+  await settled(page);
+  await expect(appleSilicon).toBeVisible();
+  await open(page, { mediaWriter: WRITER, platform: "macOS", architecture: "x86" });
+  await settled(page);
+  await expect(page.locator("#quick-app")).toBeVisible();
+  await expect(appleSilicon).toBeHidden();
+  await open(page, { mediaWriter: WRITER, platform: "Windows" });
+  await settled(page);
+  await expect(appleSilicon).toBeHidden();
+});
+
+test.describe("TunaOS Media Writer beside every route", () => {
+  test.describe.configure({ timeout: 60_000 });
+  const app = page => page.locator("#quick-app");
+
+  test("a browser build keeps the app as the second action, opening on this image", async ({ page }) => {
+    await open(page, { mediaWriter: WRITER });
+    await settled(page);
+    await page.locator("#quick-base").selectOption("bonito");
+    expect((await route(page)).kind).toBe("browser");
+    await expect(page.locator("#quick-download")).toBeVisible();
+    await expect(app(page)).toBeVisible();
+    await expect(app(page)).toHaveClass(/is-secondary/);
+    await expect(page.locator("#quick-app-title")).toHaveText("Write it to a USB stick with TunaOS Media Writer");
+    await expect(page.locator("#quick-app-reason")).toBeHidden();
+    await expect(page.locator("#quick-app-download")).toHaveAttribute("href", WRITER.assets["linux-x86_64"].url);
+    await expect(page.locator("#quick-app-open")).toHaveAttribute("href", "tunaos-media-writer://build?target=bonito%3Agnome%3Alinux%2Famd64");
+    await expect(app(page)).toContainText("Already installed? Open in Media Writer. Otherwise install it, then choose Open build request…");
+    // The primary route's note stays under the primary button.
+    expect(await page.evaluate(() => document.getElementById("quick-meta").nextElementSibling.id)).toBe("quick-app");
+  });
+
+  test("a ready-made ISO keeps the app as the second action, and the deep link follows the chosen image", async ({ page }) => {
+    await open(page, { mediaWriter: WRITER });
+    await settled(page);
+    expect((await route(page)).kind).toBe("prebuilt");
+    await expect(page.locator("#quick-prebuilt")).toBeVisible();
+    await expect(app(page)).toBeVisible();
+    await expect(page.locator("#quick-app-open")).toHaveAttribute("href", "tunaos-media-writer://build?target=yellowfin%3Agnome%3Alinux%2Famd64");
+    await page.getByText("KDE Plasma", { exact: true }).click();
+    await expect(page.locator("#quick-app-open")).toHaveAttribute("href", "tunaos-media-writer://build?target=yellowfin%3Akde%3Alinux%2Famd64");
+  });
+
+  test("without a release for this OS there is no app action", async ({ page }) => {
+    await open(page, { mediaWriter: null });
+    await settled(page);
+    await expect(page.locator("#quick-prebuilt")).toBeVisible();
+    await expect(app(page)).toBeHidden();
+  });
+
+  test("on the app route the app is the action itself", async ({ page }) => {
+    await open(page, { prebuilt: {}, mediaWriter: WRITER });
+    await settled(page);
+    expect((await route(page)).kind).toBe("app");
+    await expect(app(page)).not.toHaveClass(/is-secondary/);
+    await expect(page.locator("#quick-app-title")).toBeHidden();
+    await expect(page.locator("#quick-app-reason")).toBeVisible();
+    expect(await page.evaluate(() => document.getElementById("quick-app").nextElementSibling.id)).toBe("quick-meta");
+  });
+
+  test("the build request is this image with its desktop's default apps", async ({ page }) => {
+    await open(page, { mediaWriter: WRITER });
+    await settled(page);
+    await page.getByText("KDE Plasma", { exact: true }).click();
+    const [download] = await Promise.all([page.waitForEvent("download"), page.locator("#quick-app-request").click()]);
+    expect(download.suggestedFilename()).toBe("build-request.json");
+    const request = JSON.parse(require("fs").readFileSync(await download.path(), "utf8"));
+    expect(request).toMatchObject({ kind: "build-request", image: "ghcr.io/tuna-os/yellowfin:kde",
+      target: { variant: "yellowfin", flavor: "kde", platform: "linux/amd64" } });
+    expect(request.options.flatpaks).toEqual(DEFAULT_APPS.kde);
+    await expect(page.locator("#quick-app-error")).toBeHidden();
+  });
+});
+
+test.describe("a tunaos.org ?image= link", () => {
+  test.describe.configure({ timeout: 60_000 });
+  const checked = page => page.locator("#quick-desktops input:checked");
+
+  for (const query of [
+    `image=${encodeURIComponent("tuna-os/bonito:kde")}`,
+    `image=${encodeURIComponent("ghcr.io/tuna-os/bonito:kde")}`,
+    `image=${encodeURIComponent("tuna-os/bonito:kde")}&platform=${encodeURIComponent("linux/amd64")}`,
+  ]) {
+    test(`?${query} opens the one-click view on that desktop and base`, async ({ page }) => {
+      await open(page, { mediaWriter: WRITER, url: `/?${query}` });
+      await settled(page);
+      await expect(page.locator("#quick")).toBeVisible();
+      await expect(page.locator("#introspect")).toBeHidden();
+      expect(await route(page)).toMatchObject({ desktop: "kde", base: "bonito" });
+      await expect(checked(page)).toHaveValue("kde");
+      await expect(page.locator("#quick-base")).toHaveValue("bonito");
+      await expect(page.locator("#quick-app-open")).toHaveAttribute("href", "tunaos-media-writer://build?target=bonito%3Akde%3Alinux%2Famd64");
+      // The link stays shareable; Customize starts the full builder from it.
+      expect(new URL(page.url()).search).toBe(`?${query}`);
+      await page.locator("#quick-customize").click();
+      await expect(page.locator("#introspect")).toBeVisible();
+      await expect(page.locator("#image")).toHaveValue("ghcr.io/tuna-os/bonito:kde");
+      expect(new URL(page.url()).search).toBe("?customize=1");
+    });
+  }
+
+  for (const [why, query] of [
+    ["an image the view does not offer", `image=${encodeURIComponent("tuna-os/yellowfin:gnome-hwe")}`],
+    ["another platform", `image=${encodeURIComponent("tuna-os/bonito:kde")}&platform=${encodeURIComponent("linux/arm64")}`],
+    ["another parameter", `image=${encodeURIComponent("tuna-os/bonito:kde")}&label=DEMO`],
+  ]) {
+    test(`${why} opens the full builder with the link applied`, async ({ page }) => {
+      await open(page, { url: `/?${query}` });
+      await expect(page.locator("#introspect")).toBeVisible();
+      await expect(page.locator("#quick")).toBeHidden();
+      await expect(page.locator("#image")).toHaveValue(new URLSearchParams(query).get("image"));
+      expect(new URL(page.url()).search).toBe(`?${query}`);
+    });
+  }
 });

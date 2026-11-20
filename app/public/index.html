@@ -6,11 +6,25 @@
 <title>ISO Builder</title>
 <link rel="icon" type="image/png" href="data:,">
 <script>
-  // The bare URL opens the one-click download view; any query parameter (a
-  // share link, ?customize=1, a preset) opens the full builder. Set before
-  // first paint so the full builder never flashes. quick-start.js removes
-  // the class when this deployment cannot offer the quick view.
-  if (!location.search) document.documentElement.classList.add("quick");
+  // The bare URL opens the one-click download view, and so does a link that
+  // names only a TunaOS image (?image=tuna-os/<variant>:<flavor>, optionally
+  // with the amd64 ?platform=), as tunaos.org sends: the view opens on that
+  // desktop and base (TBOX_QUICK_IMAGE, read by app.js and quick-start.js).
+  // Any other query parameter (a share link, ?customize=1, a preset) opens
+  // the full builder. Set before first paint so the full builder never
+  // flashes. quick-start.js removes the class when this deployment cannot
+  // offer the quick view or does not offer that image in it.
+  (function () {
+    const q = new URLSearchParams(location.search);
+    const keys = [...q.keys()];
+    const amd64 = (p) => p === "linux/amd64" || p === "x86_64";
+    if (keys.length && keys.every((k) => k === "image" || k === "platform") && q.getAll("image").length === 1 &&
+        q.getAll("platform").length <= 1 && (!q.has("platform") || amd64(q.get("platform")))) {
+      const m = /^(?:(?:ghcr\.io\/)?tuna-os\/)?([a-z0-9-]+):([a-z0-9-]+)$/.exec(q.get("image").trim());
+      if (m) globalThis.TBOX_QUICK_IMAGE = { variant: m[1], flavor: m[2] };
+    }
+    if (!location.search || globalThis.TBOX_QUICK_IMAGE) document.documentElement.classList.add("quick");
+  })();
 </script>
 <style>
   /* Palette and type shared with tunaos.org (src/css/custom.css and
@@ -241,10 +255,10 @@
   /* One-click download view (quick-start.js). Fits one screen: no scrolling. */
   #quick, html.quick main > :not(#quick) { display: none; }
   html.quick #quick { display: block; }
-  html.quick main { max-width: 760px; padding-top: 2rem; padding-bottom: 2rem; }
+  html.quick main { max-width: 760px; padding-top: 2rem; padding-bottom: 1rem; }
   #quick [hidden] { display: none !important; }
   #quick h1 { margin-bottom: .3rem; }
-  .quick-sub { color: var(--dim); margin: 0 0 1.4rem; }
+  .quick-sub { color: var(--dim); margin: 0 0 1.1rem; }
   .quick-desktops { display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: .6rem; }
   .quick-desktop { position: relative; display: flex; flex-direction: column; gap: .3rem; margin: 0; padding: .9rem 1rem;
     min-height: 104px; border: 2px solid var(--border); border-radius: 12px; background: var(--panel); cursor: pointer; }
@@ -258,13 +272,23 @@
   .quick-base label { margin: 0; color: var(--dim); font-weight: 400; }
   .quick-base select { min-height: 40px; padding: .4rem .6rem; border-radius: 8px; border: 1px solid var(--border);
     background: var(--panel); color: var(--fg); font: inherit; font-size: .92rem; max-width: 100%; }
-  .quick-action { margin-top: 1.5rem; }
+  .quick-action { margin-top: 1.3rem; }
   #quick .button, #quick-download { display: inline-flex; align-items: center; justify-content: center; min-height: 52px;
     padding: .7rem 2rem; border-radius: 10px; border: none; background: var(--accent); color: var(--accent-ink, #1d1f21);
     font: inherit; font-weight: 700; font-size: 1.05rem; text-decoration: none; cursor: pointer; }
   #quick .button:hover, #quick-download:hover:not(:disabled) { filter: brightness(1.12); }
   .quick-fine { color: var(--dim); font-size: .85rem; margin: .55rem 0 0; }
-  #quick-app-reason { margin: 0 0 .7rem; }
+  #quick-app-reason, #quick-app-title { margin: 0 0 .6rem; }
+  #quick-app-title { font-weight: 600; }
+  /* Beside another primary route the app is the second action: a rule above
+     it and an outlined button, so the primary button stays the one to press. */
+  #quick-app.is-secondary { margin-top: .8rem; padding-top: .8rem; border-top: 1px solid var(--border); }
+  #quick-app.is-secondary .button { min-height: 40px; padding: .4rem 1.2rem; font-size: .95rem; background: none;
+    color: var(--accent-soft); border: 1px solid var(--accent); }
+  .quick-app-row { display: flex; flex-wrap: wrap; align-items: center; gap: .5rem 1.2rem; }
+  .quick-app-links { font-size: .92rem; }
+  .quick-app-links a, .quick-app-links .linklike { color: var(--accent-soft); }
+  #quick-app .quick-fine { margin-top: .3rem; }
   #quick-progress progress { height: 10px; margin-top: .5rem; }
   #quick-stage { margin: 0; font-weight: 600; }
   #quick-result { margin-top: 1.2rem; padding: 1rem 1.2rem; border-radius: 12px; background: var(--panel); }
@@ -274,7 +298,7 @@
   #quick-failed-actions { display: flex; gap: 1rem; flex-wrap: wrap; align-items: center; }
   .linklike { background: none; border: none; padding: 0; color: var(--accent-soft); font: inherit; font-weight: 400;
     text-decoration: underline; text-underline-offset: 3px; cursor: pointer; }
-  .quick-more { margin: 1.6rem 0 0; font-size: .9rem; }
+  .quick-more { margin: 1.2rem 0 0; font-size: .9rem; }
   #quick-back { display: inline-block; margin-bottom: 1rem; font-size: .9rem; }
   #quick.is-busy .quick-desktop { cursor: default; opacity: .6; }
   @media (max-width: 600px) { html.quick main { padding-top: 1.2rem; } .quick-desktops { grid-template-columns: 1fr 1fr; }
@@ -297,13 +321,20 @@
     <div class="quick-action" id="quick-action">
       <button id="quick-download" type="button">Download ISO</button>
       <a id="quick-prebuilt" class="button" hidden>Download ISO</a>
+      <p id="quick-meta" class="quick-fine"></p>
       <div id="quick-app" hidden>
         <p id="quick-app-reason"></p>
-        <a id="quick-app-download" class="button">Get the app</a>
+        <p id="quick-app-title">Write it to a USB stick with TunaOS Media Writer</p>
+        <div class="quick-app-row">
+          <a id="quick-app-download" class="button">Get the app</a>
+          <span id="quick-app-links" class="quick-app-links"><a id="quick-app-open">Open in Media Writer</a> · <button type="button" id="quick-app-request" class="linklike">Download this image’s build request</button></span>
+        </div>
+        <p class="quick-fine">Already installed? Open in Media Writer. Otherwise install it, then choose Open build request…</p>
         <p class="quick-fine" id="quick-app-other"></p>
         <p class="quick-fine" id="quick-app-hint" hidden></p>
+        <p class="quick-fine" id="quick-app-arm" hidden>Writing a USB stick for a PC. Apple Silicon Macs can’t boot it; see <a href="https://tunaos.org/docs/bootc-installer-asahi/DESIGN" target="_blank" rel="noopener">TunaOS for Apple Silicon (preview)</a>.</p>
+        <p class="quick-fine" id="quick-app-error" role="alert" hidden></p>
       </div>
-      <p id="quick-meta" class="quick-fine"></p>
     </div>
     <div id="quick-progress" hidden>
       <p id="quick-stage" role="status" aria-live="polite"></p>

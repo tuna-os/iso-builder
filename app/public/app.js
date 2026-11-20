@@ -7,6 +7,10 @@
  *   ?packages=<comma-separated pkgs>    system packages via remora
  *   ?label=<VOLID>                      volume label
  *
+ * A link carrying only a TunaOS ?image= (and optionally the amd64 platform),
+ * as tunaos.org sends, opens the one-click view on that desktop and base
+ * instead (index.html, quick-start.js).
+ *
  * ?shim= and ?initrd= are NOT accepted from URLs (iso-builder#114): they
  * would let a shared link swap the registry every layer is pulled from and
  * the embedded initramfs, so a link could build a weaponized "official"
@@ -1161,8 +1165,7 @@ globalThis.tboxGetBuildRequest = () => {
   return currentOp.request;
 };
 
-globalThis.tboxExportBuildRequestJSON = () => {
-  const request=globalThis.tboxGetBuildRequest();
+globalThis.tboxExportBuildRequestJSON = (request = globalThis.tboxGetBuildRequest()) => {
   globalThis.TboxSetupSafety.assertPortable(request);
   return JSON.stringify(request, null, 2);
 };
@@ -1795,17 +1798,22 @@ $("copyshare").onclick = async () => {
   $("copyshare").textContent = "Copied!";
   setTimeout(() => ($("copyshare").textContent = "Copy"), 1500);
 };
+// Saves build-request.json (by default the selected image's request); throws
+// when it cannot be exported. Also used by the one-click view
+// (quick-start.js).
+globalThis.tboxSaveBuildRequest = (request = globalThis.tboxGetBuildRequest()) => {
+  const json = globalThis.tboxExportBuildRequestJSON(request);
+  const blob = new Blob([json + "\n"], { type: "application/json" });
+  const url = URL.createObjectURL(blob);
+  const a = Object.assign(document.createElement("a"), { href: url, download: "build-request.json" });
+  a.click();
+  setTimeout(() => URL.revokeObjectURL(url), 30_000);
+};
 if ($("downloadrequest")) {
   $("downloadrequest").onclick = () => {
-    let json;
-    try { json=globalThis.tboxExportBuildRequestJSON(); }
+    try { globalThis.tboxSaveBuildRequest(); }
     catch(error) { $("export-error").textContent=error.message; return; }
     $("export-error").textContent="";
-    const blob = new Blob([json + "\n"], { type: "application/json" });
-    const url = URL.createObjectURL(blob);
-    const a = Object.assign(document.createElement("a"), { href: url, download: "build-request.json" });
-    a.click();
-    setTimeout(() => URL.revokeObjectURL(url), 30_000);
   };
 }
 if ($("copyfallback")) {
@@ -2080,8 +2088,7 @@ const SUPPLY_CHAIN_PARAMS = ["shim", "initrd"];
 const URL_PACKAGE_NAME = /^[A-Za-z0-9][A-Za-z0-9._+-]*$/;
 
 // Apply URL params.
-{
-  const q = new URLSearchParams(location.search);
+function applyUrlParams(q) {
   const configured = BUILDER_CONFIG.default_selection;
   if (GUIDED) {
     // The validated guided default was already resolved; URL intent below is explicit.
@@ -2169,6 +2176,13 @@ const URL_PACKAGE_NAME = /^[A-Za-z0-9][A-Za-z0-9._+-]*$/;
     if (autorunAllowed) buildDdi(dch);
   }
 }
+// A plain ?image= link opens the one-click view on that image
+// (index.html's TBOX_QUICK_IMAGE, quick-start.js) instead of this form;
+// quick-start.js applies the parameters here when the image is not one it
+// offers.
+const QUICK_PRESELECT = GUIDED && !BUILDER_CONFIG.preview_only ? globalThis.TBOX_QUICK_IMAGE || null : null;
+applyUrlParams(new URLSearchParams(QUICK_PRESELECT ? "" : location.search));
+globalThis.tboxApplyUrlParams = () => applyUrlParams(new URLSearchParams(location.search));
 
 loadCatalogSnapshot();
 
