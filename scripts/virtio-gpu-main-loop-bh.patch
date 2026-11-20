@@ -1,0 +1,39 @@
+diff --git a/hw/display/virtio-gpu-virgl.c b/hw/display/virtio-gpu-virgl.c
+index 07f6355..3aee460 100644
+--- a/hw/display/virtio-gpu-virgl.c
++++ b/hw/display/virtio-gpu-virgl.c
+@@ -1179,7 +1179,7 @@ int virtio_gpu_virgl_init(VirtIOGPU *g)
+     }
+ 
+ #if VIRGL_VERSION_MAJOR >= 1
+-    gl->cmdq_resume_bh = aio_bh_new(qemu_get_aio_context(),
++    gl->cmdq_resume_bh = aio_bh_new(iohandler_get_aio_context(),
+                                     virtio_gpu_virgl_resume_cmdq_bh,
+                                     g);
+ #endif
+diff --git a/hw/display/virtio-gpu.c b/hw/display/virtio-gpu.c
+index 43e88a4..b387d1a 100644
+--- a/hw/display/virtio-gpu.c
++++ b/hw/display/virtio-gpu.c
+@@ -1526,8 +1526,19 @@ void virtio_gpu_device_realize(DeviceState *qdev, Error **errp)
+ 
+     g->ctrl_vq = virtio_get_queue(vdev, 0);
+     g->cursor_vq = virtio_get_queue(vdev, 1);
+-    g->ctrl_bh = virtio_bh_new_guarded(qdev, virtio_gpu_ctrl_bh, g);
+-    g->cursor_bh = virtio_bh_new_guarded(qdev, virtio_gpu_cursor_bh, g);
++    /*
++     * Main-loop-only context: these BHs end up in virglrenderer, whose GL
++     * contexts belong to the main thread. A BH in qemu_aio_context also runs
++     * from aio_poll() on a vCPU thread (e.g. a synchronous pflash write while
++     * the guest updates EFI variables), and eglMakeCurrent() there fails with
++     * EGL_BAD_ACCESS, after which virglrenderer disables the guest context.
++     */
++    g->ctrl_bh = aio_bh_new_full(iohandler_get_aio_context(), virtio_gpu_ctrl_bh, g,
++                                 "virtio_gpu_ctrl_bh",
++                                 &qdev_get_parent_bus(qdev)->parent->mem_reentrancy_guard);
++    g->cursor_bh = aio_bh_new_full(iohandler_get_aio_context(), virtio_gpu_cursor_bh, g,
++                                   "virtio_gpu_cursor_bh",
++                                   &qdev_get_parent_bus(qdev)->parent->mem_reentrancy_guard);
+     g->reset_bh = qemu_bh_new(virtio_gpu_reset_bh, g);
+     qemu_cond_init(&g->reset_cond);
+     QTAILQ_INIT(&g->reslist);

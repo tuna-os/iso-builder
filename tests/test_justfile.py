@@ -468,6 +468,22 @@ def test_gpu_preflight_builds_a_pinned_current_qemu_for_the_virtio_gpu_stall():
     assert '/opt/tunaos-qemu' in script
 
 
+def test_gpu_qemu_runs_virtio_gpu_bhs_on_the_main_loop_only():
+    """tunaOS#4768: a vCPU thread polled qemu_aio_context during synchronous pflash I/O and ran
+    virtio-gpu's BHs; virglrenderer's eglMakeCurrent failed there (EGL_BAD_ACCESS) and the
+    niri / EL10 XFCE display froze. yellowfin-xfce run 44760338726 with the patch: 0 errors.
+
+    Falsification: drop the patch step, leave a BH in qemu_get_aio_context(), or skip the
+    build when an unpatched QEMU is cached without a matching stamp, and this fails.
+    """
+    script = (ROOT / 'scripts/build-gpu-qemu.sh').read_text()
+    assert 'patch -p1 --forward <"$patch"' in script
+    assert '.build-stamp' in script and 'sha256sum "$patch"' in script
+    patch = (ROOT / 'scripts/virtio-gpu-main-loop-bh.patch').read_text()
+    added = [l for l in patch.splitlines() if l.startswith('+') and 'aio_bh_new' in l]
+    assert len(added) == 3 and all('iohandler_get_aio_context()' in l for l in added)
+
+
 def test_strict_reuse_can_run_the_guest_on_karnataka_with_the_gpu_preflight():
     wf = yaml.safe_load((ROOT / '.github/workflows/strict-reuse.yml').read_text())
     on = wf.get('on', wf.get(True))
