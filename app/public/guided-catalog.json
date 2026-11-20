@@ -2,8 +2,8 @@
   "schemaVersion": 1,
   "kind": "guided-image-catalog",
   "catalogId": "stock",
-  "generatedAt": "2026-11-20T18:35:24Z",
-  "snapshotDigest": "sha256:c4848a40ccd8755ec01de61cce8399135eb35f69b9d36871cb79963e54877c2e",
+  "generatedAt": "2026-11-20T20:12:46Z",
+  "snapshotDigest": "sha256:c2e00b476d6597b7e09b14bcb9e496ac232fdfd57b8bb7065fa58f3c0708366c",
   "leaves": [
     {
       "id": "albacore:base-hwe:linux/amd64",
@@ -1776,6 +1776,31 @@
         ],
         "edition": [
           "t2"
+        ]
+      },
+      "notices": []
+    },
+    {
+      "id": "bonito:gnome-x13s:linux/arm64",
+      "source": {
+        "kind": "target",
+        "targetKey": "bonito:gnome-x13s:linux/arm64"
+      },
+      "facets": {
+        "base": [
+          "bonito"
+        ],
+        "desktop": [
+          "gnome"
+        ],
+        "hardware": [
+          "generic"
+        ],
+        "platform": [
+          "linux/arm64"
+        ],
+        "edition": [
+          "x13s"
         ]
       },
       "notices": []
