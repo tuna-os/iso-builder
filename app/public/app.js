@@ -64,6 +64,7 @@ function applyBuilderBranding() {
     guide.href="https://docs.projectbluefin.io/installation/";
     document.querySelector("#writer-policy").textContent="Bluefin recommends Fedora Media Writer; Ventoy is unsupported. This experience is a preview and does not create Bluefin installation media.";
   }
+  document.querySelector("#postcard-guide").href=guide.href;
   const disclaimer=document.querySelector("#builder-disclaimer");
   disclaimer.textContent=brand.disclaimer || ""; disclaimer.hidden=!brand.disclaimer;
   document.querySelector("#label").value=config.output.volume_label;
@@ -1092,7 +1093,6 @@ function syncOperationOptions() {
   if (!$("fallbackcard")?.classList.contains("hidden")) {
     renderFallbackCard(currentOp);
   }
-  updatePostcardFilename(currentOp.request.options.outputFilename);
   return currentOp;
 }
 
@@ -1146,15 +1146,6 @@ function renderFallbackCard(op = currentOp, reasonText = "") {
       : `Build this exact target locally, without browser memory or storage limits. ${PUREBUILD_STEPS}`;
   }
   card.classList.remove("hidden");
-}
-
-function updatePostcardFilename(filename) {
-  const ddTab = $("tab-dd");
-  if (!ddTab || !filename) return;
-  const code = ddTab.querySelector("pre code");
-  if (code) {
-    code.textContent = `sudo dd if=path/to/${filename} of=/dev/sdX bs=4M status=progress oflag=sync`;
-  }
 }
 
 globalThis.tboxGetBuildRequest = () => {
@@ -1551,7 +1542,6 @@ async function buildDdi(ch) {
     const t0 = performance.now();
     const bytes = await tboxBuildDdiIso({ base, stem: ch.stem, label, sdboot }, (u8) => s.w.write(u8));
     const outputDelivery = await finishIsoSink(s, name);
-    updatePostcardFilename(name);
     const dt = ((performance.now() - t0) / 1000).toFixed(1);
     showDeliveryStatus(outputDelivery, bytes, dt);
     log(`iso written: ${bytes} bytes`);
@@ -1688,7 +1678,6 @@ async function build(presetSink = null) {
     if (currentOp !== op || resultRevision !== buildResultRevision || !operationMatchesForm(op)) {
       throw new Error("build selection changed before save completed");
     }
-    updatePostcardFilename(name);
     op.state = "completed";
     op.buildResult = pendingResult;
     op.outputDelivery = deepFreeze(outputDelivery);
@@ -2219,16 +2208,6 @@ $("clearcache").onclick = async () => {
   }
 };
 showCacheSize();
-
-globalThis.switchTab = (e, id) => {
-  const container = e.target.closest(".card");
-  for (const btn of container.querySelectorAll(".tab-btn")) {
-    btn.classList.toggle("active", btn === e.target);
-  }
-  for (const content of container.querySelectorAll(".tab-content")) {
-    content.classList.toggle("hidden", content.id !== `tab-${id}`);
-  }
-};
 
 // Deliberate, tab-local recovery; never save arbitrary form values on change.
 if (document.querySelector) {

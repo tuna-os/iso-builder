@@ -368,3 +368,14 @@ test.describe("the USB path, in plain words", () => {
     expect(hrefs.filter(h => /docs\/iso-builder|bootc-installer-asahi|fedoraproject/.test(h))).toEqual([]);
   });
 });
+
+test("developer documentation is linked from the full builder only", async ({ page }) => {
+  test.setTimeout(60_000);
+  const link = page.getByRole("link", { name: "How this builder works (developer documentation)" });
+  await open(page);
+  await settled(page);
+  await expect(link).toBeHidden();
+  await page.locator("#quick-customize").click();
+  await expect(link).toBeVisible();
+  await expect(link).toHaveAttribute("href", "https://tunaos.org/docs/iso-builder");
+});

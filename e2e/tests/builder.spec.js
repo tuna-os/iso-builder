@@ -341,10 +341,11 @@ test.describe("iso builder", () => {
 
     await expect(page.locator("#stage")).toContainText(/ISO saved|download started/);
     await expect(page.locator("#postcard")).toBeVisible();
-    await expect(page.locator("#tab-etcher")).toContainText("USB");
-    await page.getByRole("button", { name: "Terminal (dd)", exact: true }).click();
-    await expect(page.locator("#tab-dd pre code")).toContainText("tunaos-sailfin-gnome-amd64.iso");
-    await expect(page.locator("#tab-dd")).toContainText("of=/dev/sdX");
+    // One next step, not four writers: balenaEtcher, then the brand's own guide.
+    await expect(page.locator("#postcard-next")).toContainText("USB stick of 16 GB or larger with balenaEtcher");
+    const docs = await page.locator(".site-header nav a", { hasText: "Docs" }).getAttribute("href");
+    await expect(page.locator("#postcard-guide")).toHaveAttribute("href", docs);
+    await expect(page.locator("#postcard")).not.toContainText(/Ventoy|Rufus|sudo dd/);
 
     const result = await page.evaluate(() => ({
       suggestedName: window.__suggestedName,
