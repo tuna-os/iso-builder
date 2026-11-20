@@ -38,6 +38,12 @@ final class UISmoke {
             self.exit()
         }
 
+        if scenario == "link" {
+            await runLinks()
+            exit()
+            return
+        }
+
         await expect("catalog loaded") { self.state.catalog != nil }
         await capture("choose")
 
@@ -84,6 +90,41 @@ final class UISmoke {
         }
         await capture("done")
         exit()
+    }
+
+    /// `--ui-smoke-scenario link`, launched with `--target yellowfin:gnome:linux/amd64`
+    /// (scripts/ui-smoke.sh): that target is picked and the app waits on step 2;
+    /// a link opened through Launch Services (CFBundleURLTypes → onOpenURL)
+    /// reaches this running instance and switches to its target; an unknown
+    /// target shows an alert and changes nothing. No job may start.
+    private func runLinks() async {
+        await expect("--target opened step 2") {
+            self.state.step == .destination && self.linkedID == "yellowfin:gnome:linux/amd64"
+        }
+        await expect("drives listed") { !self.state.drives.isEmpty }
+        await capture("link-destination")
+
+        NSWorkspace.shared.open(URL(string: "tunaos-media-writer://build?target=yellowfin%3Akde%3Alinux%2Famd64")!)
+        await expect("link delivered to this instance", timeout: 60) {
+            self.state.step == .destination && self.linkedID == "yellowfin:kde:linux/amd64"
+        }
+        await capture("link-opened")
+
+        NSWorkspace.shared.open(URL(string: "tunaos-media-writer://build?target=yellowfin%3Acosmic%3Alinux%2Famd64")!)
+        await expect("unknown target refused", timeout: 60) { self.state.linkError == Strings.linkUnknownTarget }
+        if linkedID != "yellowfin:kde:linux/amd64" {
+            fail("unknown target changed the selection to \(linkedID ?? "nothing")")
+        }
+        await capture("link-unknown")
+        controller.send(.dismissLinkError)
+        if state.job != nil || state.step != .destination {
+            fail("a link started a job")
+        }
+    }
+
+    private var linkedID: String? {
+        if case .target(let target)? = state.request { return target.id }
+        return nil
     }
 
     private var state: FlowState { controller.state }
@@ -150,6 +191,8 @@ final class UISmoke {
             "selectedDrive": state.selectedDriveID ?? "",
             "pendingErase": state.pendingErase?.name ?? "",
             "outcome": state.outcome.map { "\($0)" } ?? "",
+            "linkedTarget": linkedID ?? "",
+            "linkError": state.linkError ?? "",
             "windowSheet": window.attachedSheet != nil,
         ]
         if let json = try? JSONSerialization.data(withJSONObject: snapshot, options: [.prettyPrinted, .sortedKeys]) {

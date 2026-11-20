@@ -277,4 +277,64 @@ final class FlowStateTests: XCTestCase {
         XCTAssertFalse(Format.bytes(0).contains("Zero"), Format.bytes(0))
         XCTAssertTrue(Format.bytes(32_010_928_128).contains("32"), Format.bytes(32_010_928_128))
     }
+
+    // MARK: Links (--target / tunaos-media-writer://)
+
+    func testLinkBeforeCatalogOpensOnDestinationOnceLoaded() throws {
+        var state = FlowState()
+        state.reduce(.reloadCatalog)
+        XCTAssertNil(state.reduce(.openTarget("yellowfin:kde:linux/amd64")))
+        XCTAssertEqual(state.step, .choose)
+        XCTAssertEqual(state.pendingTargetID, "yellowfin:kde:linux/amd64")
+        XCTAssertNil(state.reduce(.catalogLoaded(try Fixture.catalog)), "a link never starts a job")
+        XCTAssertNil(state.pendingTargetID)
+        XCTAssertEqual(state.step, .destination)
+        XCTAssertEqual(state.source, .target(try XCTUnwrap(state.catalog?.targets.first { $0.id == "yellowfin:kde:linux/amd64" })))
+        XCTAssertEqual(state.desktopID, "kde")
+        XCTAssertEqual(state.baseID, "yellowfin")
+        XCTAssertNil(state.job)
+        state.reduce(.back)
+        XCTAssertEqual(state.step, .choose)
+        XCTAssertEqual(state.selectedTarget?.id, "yellowfin:kde:linux/amd64", "step 1 shows what the link picked")
+    }
+
+    func testLinkKeepsTheExactTarget() throws {
+        var state = try loaded()
+        state.reduce(.openTarget("yellowfin:gnome-nvidia:linux/amd64"))
+        XCTAssertEqual(state.step, .destination)
+        guard case .target(let target)? = state.source else { return XCTFail("no target source") }
+        XCTAssertEqual(target.id, "yellowfin:gnome-nvidia:linux/amd64", "not the standard/generic sibling")
+        state.reduce(.openTarget("yellowfin:gnome:linux/arm64"))
+        XCTAssertEqual(state.platform, "linux/arm64")
+        guard case .target(let arm)? = state.source else { return XCTFail("no target source") }
+        XCTAssertEqual(arm.id, "yellowfin:gnome:linux/arm64")
+    }
+
+    func testUnknownOrInvalidLinkSelectsNothing() throws {
+        var state = try loaded()
+        state.reduce(.openTarget("yellowfin:cosmic:linux/amd64"))
+        XCTAssertEqual(state.step, .choose)
+        XCTAssertNil(state.request)
+        XCTAssertEqual(state.linkError, Strings.linkUnknownTarget)
+        state.reduce(.dismissLinkError)
+        XCTAssertNil(state.linkError)
+        state.reduce(.linkRejected)
+        XCTAssertEqual(state.linkError, Strings.linkInvalid)
+        XCTAssertEqual(state.step, .choose)
+        XCTAssertEqual(state.selectedTarget?.id, "yellowfin:gnome:linux/amd64")
+    }
+
+    func testLinkNeverInterruptsAJob() throws {
+        var state = try atDestination()
+        state.reduce(.saveISO(URL(fileURLWithPath: "/tmp/x.iso")))
+        XCTAssertEqual(state.step, .progress)
+        state.reduce(.openTarget("yellowfin:kde:linux/amd64"))
+        XCTAssertEqual(state.step, .progress)
+        XCTAssertEqual(state.linkError, Strings.linkBusy)
+        XCTAssertEqual(state.job?.buildArguments(output: "o").dropFirst(2).first, "yellowfin:gnome:linux/amd64")
+        state.reduce(.finished(.savedISO(URL(fileURLWithPath: "/tmp/x.iso"))))
+        state.reduce(.openTarget("yellowfin:kde:linux/amd64"))
+        XCTAssertEqual(state.step, .destination, "from Done straight to the linked system")
+        XCTAssertNil(state.outcome)
+    }
 }

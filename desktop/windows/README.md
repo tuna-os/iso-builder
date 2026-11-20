@@ -63,22 +63,33 @@ dotnet publish src/MediaWriter.App -c Release -r win-x64 -p:Platform=x64 -p:Help
 dotnet build installer/MediaWriter.Installer.wixproj -c Release -p:AppDir=$pwd/build/app -p:ProductVersion=0.1.0
 ```
 
+## Links from iso.tunaos.org
+
+`tunaos-media-writer://build?target=ID` and `--target ID` open the app on that catalog
+target and wait on the USB-stick step ([`../PROTOCOL.md`](../PROTOCOL.md#opening-the-app-on-a-target)).
+The MSI registers the URL protocol (`HKCR\tunaos-media-writer`, command
+`"…\TunaOSMediaWriter.exe" "%1"`); the link arrives as the only argument. The app has no
+single-instance mode, so each link opens its own window. Parsing: `MediaWriter.Core/LaunchLink.cs`;
+selection: `MediaWriterFlow.OpenTarget`.
+
 ## Test / smoke switches
 
-These exist for CI and development; a normal launch has no arguments.
+These exist for CI and development.
 
 * `--fake-helper smoke\fake-helper.ps1` — use the fake helper (PowerShell) instead of
   the bundled one. `FAKE_HELPER_FAIL=catalog|build|write` makes that step fail.
 * `--no-elevate` — start the write step without the `runas` verb (still via the events file).
-* `--smoke DIR [--smoke-scenario write|error|save|launch]` — the app walks the flow on
+* `--smoke DIR [--smoke-scenario write|error|save|link|launch]` — the app walks the flow on
   its own, saves window screenshots (`PrintWindow` with `PW_RENDERFULLCONTENT`, screen copy
   as fallback) and `smoke.log` to `DIR`, and exits 0/1. Every scenario except `launch`
   refuses to start without `--fake-helper`, so a smoke run can never write to a real disk;
-  `launch` (used against the installed MSI) only loads the catalog and lists drives.
+  `launch` (used against the installed MSI) only loads the catalog and lists drives;
+  `link` is started with a `tunaos-media-writer://` argument (`run-ui-smoke.ps1` adds it).
 
 CI: `.github/workflows/media-writer-windows.yml` on `windows-latest` runs the tests,
-builds helper + engine + app + MSI, runs the four smoke scenarios against the publish
-folder, installs the MSI (`msiexec /i … /qn`), runs `launch` (real helper) and `write`
+builds helper + engine + app + MSI, runs the `write`, `save`, `link` and `error` smoke
+scenarios against the publish folder, installs the MSI (`msiexec /i … /qn`), checks the
+shortcut and the URL protocol command, runs `launch` (real helper), `write` and `link`
 (fake helper) from Program Files, uninstalls it and checks nothing is left. Screenshots
 and logs: artifact `windows-ui-smoke`. It is also a `workflow_call` target for the
 release workflow (input `version`, optional secrets below).

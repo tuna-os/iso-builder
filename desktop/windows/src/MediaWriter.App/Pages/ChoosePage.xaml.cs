@@ -22,6 +22,7 @@ public sealed partial class ChoosePage : Page
         ContinueButton.Content = Strings.Continue;
         OpenRequestButton.Content = Strings.OpenBuildRequest;
         ClearRequestButton.Content = Strings.ClearBuildRequest;
+        LinkInfo.Title = Strings.LinkErrorTitle;
     }
 
     protected override void OnNavigatedTo(NavigationEventArgs e)
@@ -70,6 +71,8 @@ public sealed partial class ChoosePage : Page
             DesktopList.IsEnabled = request is null;
             BaseBox.IsEnabled = request is null;
             ContinueButton.IsEnabled = flow.CanContinue && !flow.IsLoadingCatalog;
+            LinkInfo.IsOpen = flow.LinkError is not null;
+            LinkInfo.Message = flow.LinkError ?? "";
         }
         finally
         {
@@ -96,6 +99,8 @@ public sealed partial class ChoosePage : Page
     private void OnContinue(object sender, RoutedEventArgs e) => App.Flow.Continue();
 
     private void OnClearRequest(object sender, RoutedEventArgs e) => App.Flow.UseBuildRequest(null);
+
+    private void OnDismissLinkError(InfoBar sender, object args) => App.Flow.DismissLinkError();
 
     private async void OnOpenRequest(object sender, RoutedEventArgs e)
     {

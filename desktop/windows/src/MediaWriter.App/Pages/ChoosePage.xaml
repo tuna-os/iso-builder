@@ -68,16 +68,24 @@
             </ComboBox.ItemTemplate>
         </ComboBox>
 
-        <InfoBar
-            x:Name="RequestInfo"
-            Grid.Row="4"
-            IsClosable="False"
-            Severity="Informational"
-            IsOpen="False">
-            <InfoBar.ActionButton>
-                <Button x:Name="ClearRequestButton" Click="OnClearRequest" />
-            </InfoBar.ActionButton>
-        </InfoBar>
+        <StackPanel Grid.Row="4" Spacing="8">
+            <!-- A link (target argument or tunaos-media-writer:// URL) that could not be opened. -->
+            <InfoBar
+                x:Name="LinkInfo"
+                IsClosable="True"
+                Severity="Error"
+                IsOpen="False"
+                CloseButtonClick="OnDismissLinkError" />
+            <InfoBar
+                x:Name="RequestInfo"
+                IsClosable="False"
+                Severity="Informational"
+                IsOpen="False">
+                <InfoBar.ActionButton>
+                    <Button x:Name="ClearRequestButton" Click="OnClearRequest" />
+                </InfoBar.ActionButton>
+            </InfoBar>
+        </StackPanel>
 
         <Grid Grid.Row="5" Margin="0,8,0,0">
             <Button x:Name="OpenRequestButton" HorizontalAlignment="Left" Click="OnOpenRequest" />

@@ -33,6 +33,19 @@ public partial class App : Application
 
         Shell = new MainWindow();
         Shell.Activate();
+
+        // Before the catalog loads, so a link is kept and opened as soon as it has. Every
+        // launch is its own instance: a second link opens a second window.
+        if (Options.Target is { } target)
+        {
+            Flow.OpenTargetArgument(target);
+        }
+
+        if (Options.Link is { } link)
+        {
+            Flow.OpenLink(link);
+        }
+
         _ = Flow.LoadCatalogAsync();
 
         if (Options.SmokeDirectory is not null)

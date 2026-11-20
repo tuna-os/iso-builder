@@ -2,8 +2,9 @@ import AppKit
 import MediaWriterCore
 import SwiftUI
 
-/// Command-line switches. Only CI and development use them; a user
-/// double-clicking the app gets the bundled helper and the password prompt.
+/// Command-line switches. Apart from `--target`, only CI and development use
+/// them; a user double-clicking the app gets the bundled helper and the
+/// password prompt.
 struct LaunchOptions {
     /// `--fake-helper PATH`: use a protocol-speaking stand-in (Fixtures/
     /// fake-helper.sh). Writes then run unprivileged through the events-file
@@ -15,6 +16,9 @@ struct LaunchOptions {
     var smokeScenario = "usb"
     /// `--catalog-base-url URL` passed to `helper catalog --base-url`.
     var catalogBaseURL: String?
+    /// `--target ID`: open on that catalog target, as a
+    /// tunaos-media-writer://build?target=ID link does (PROTOCOL.md).
+    var target: String?
 
     static func parse(_ arguments: [String]) -> LaunchOptions {
         var options = LaunchOptions()
@@ -29,6 +33,8 @@ struct LaunchOptions {
                 options.smokeScenario = iterator.next() ?? options.smokeScenario
             case "--catalog-base-url":
                 options.catalogBaseURL = iterator.next()
+            case "--target":
+                options.target = iterator.next() ?? "" // missing value: rejected, visibly
             default:
                 break // AppKit's own -NSDocumentRevisionsDebugMode etc.
             }
@@ -88,8 +94,14 @@ struct MediaWriterApp: App {
                 .environmentObject(controller)
                 .environmentObject(uiState)
                 .frame(minWidth: 760, idealWidth: 820, minHeight: 560, idealHeight: 600)
+                // CFBundleURLTypes registers the scheme; a link opened while
+                // the app runs arrives here too (one window, one instance).
+                .onOpenURL { controller.open(link: $0) }
                 .task {
                     controller.start()
+                    if let target = options.target {
+                        controller.open(targetArgument: target)
+                    }
                     if let directory = options.smokeDirectory {
                         let smoke = UISmoke(
                             controller: controller, uiState: uiState,

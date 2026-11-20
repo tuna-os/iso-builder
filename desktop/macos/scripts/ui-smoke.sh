@@ -5,7 +5,9 @@
 #   scripts/ui-smoke.sh [APP] [OUT_DIR]
 #
 # Scenarios: usb (pick drive → erase confirmation → write → done),
-# iso (Save ISO file only → done), fail (write fails → error + details).
+# iso (Save ISO file only → done), fail (write fails → error + details),
+# link (--target launch, then tunaos-media-writer:// links opened through
+# Launch Services reach the running app; see UISmoke.runLinks).
 set -euo pipefail
 
 here="$(cd "$(dirname "$0")/.." && pwd)"
@@ -18,16 +20,21 @@ rm -rf "$out"
 mkdir -p "$out"
 out="$(cd "$out" && pwd)"
 status=0
-for scenario in usb iso fail; do
+# Register this bundle for tunaos-media-writer:// (CFBundleURLTypes) so the
+# link scenario's NSWorkspace.open reaches it.
+/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister -f "$app"
+for scenario in usb iso fail link; do
   dir="$out/$scenario"
   mkdir -p "$dir"
   fail_env=""
   [[ $scenario == fail ]] && fail_env=write
+  extra=()
+  [[ $scenario == link ]] && extra=(--target yellowfin:gnome:linux/amd64)
   echo "::group::ui-smoke $scenario"
   # The app has its own 240 s watchdog; it exits 0 only if every step's
   # expectation held.
   if FAKE_HELPER_DELAY=0.15 FAKE_HELPER_FAIL="$fail_env" \
-    "$exe" --fake-helper "$fake" --ui-smoke "$dir" --ui-smoke-scenario "$scenario" \
+    "$exe" --fake-helper "$fake" --ui-smoke "$dir" --ui-smoke-scenario "$scenario" ${extra[@]+"${extra[@]}"} \
     >"$dir/app.log" 2>&1; then
     echo "ui-smoke $scenario: passed"
   else

@@ -145,3 +145,53 @@ def test_source_from_target_and_request(tmp_path):
     for bad in ({}, [], {"schemaVersion": 2, "image": "x"}, {"schemaVersion": 1, "image": ""}):
         with pytest.raises(ValueError):
             Source.from_request(path, bad)
+
+
+def test_open_target_before_catalog_waits_then_selects(catalog_event):
+    flow = Flow()
+    flow.open_target("yellowfin:kde:linux/amd64")
+    assert flow.step is Step.LOADING and flow.source is None
+    flow.catalog_loaded(Catalog.from_event(catalog_event))
+    assert flow.step is Step.DESTINATION and flow.pending_target is None
+    assert flow.source.build_args() == ["--target", "yellowfin:kde:linux/amd64"]
+    assert flow.destination is None  # waits for the user; nothing started
+    flow.back()
+    assert flow.step is Step.CHOOSE
+
+
+def test_open_target_any_catalog_target(catalog_event):
+    flow = Flow()
+    flow.catalog_loaded(Catalog.from_event(catalog_event))
+    flow.open_target("albacore:gnome-hwe:linux/amd64/v2")
+    assert flow.step is Step.DESTINATION and flow.source.target_id == "albacore:gnome-hwe:linux/amd64/v2"
+
+
+def test_open_unknown_target_selects_nothing(catalog_event):
+    flow = Flow()
+    flow.catalog_loaded(Catalog.from_event(catalog_event))
+    flow.open_target("yellowfin:nope:linux/amd64")
+    assert flow.step is Step.CHOOSE and flow.source is None
+    assert flow.take_notice() is Notice.LINK_UNKNOWN_TARGET
+
+
+def test_link_rejected_is_a_notice():
+    flow = at_destination()
+    flow.link_rejected()
+    assert flow.step is Step.DESTINATION and flow.source is SOURCE
+    assert flow.take_notice() is Notice.LINK_INVALID
+
+
+def test_open_target_replaces_choice_but_never_interrupts_a_job(catalog_event):
+    flow = Flow()
+    flow.catalog_loaded(Catalog.from_event(catalog_event))
+    flow.open_target("yellowfin:kde:linux/amd64")
+    flow.open_target("yellowfin:gnome:linux/amd64")
+    assert flow.source.target_id == "yellowfin:gnome:linux/amd64"
+    flow.start(FileDestination("/x.iso"))
+    flow.open_target("yellowfin:kde:linux/amd64")
+    assert flow.step is Step.PROGRESS and flow.source.target_id == "yellowfin:gnome:linux/amd64"
+    assert flow.take_notice() is Notice.LINK_BUSY
+    flow.build_done(protocol.Done(path="/x.iso"))
+    flow.open_target("yellowfin:kde:linux/amd64")  # from Done: straight to the new system
+    assert flow.step is Step.DESTINATION and flow.result is None
+    assert flow.source.target_id == "yellowfin:kde:linux/amd64"

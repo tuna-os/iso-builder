@@ -7,7 +7,7 @@ import sys
 
 from gi.repository import Gio, GLib
 
-from . import APP_ID, VERSION, strings
+from . import APP_ID, VERSION, launch, strings
 from .controller import Controller
 from .flow import Flow
 from .helper import HelperMissing, find_helper
@@ -23,7 +23,10 @@ def work_dir() -> str:
 
 class Application(Adw.Application):
     def __init__(self) -> None:
-        super().__init__(application_id=APP_ID, flags=Gio.ApplicationFlags.DEFAULT_FLAGS)
+        # Unique (the GApplication default): launching again while the app
+        # runs, e.g. a second link from the browser, forwards that command
+        # line to the running instance's do_command_line.
+        super().__init__(application_id=APP_ID, flags=Gio.ApplicationFlags.HANDLES_COMMAND_LINE)
         GLib.set_application_name(strings.APP_NAME)
         self.add_main_option(
             "fake-helper", 0, GLib.OptionFlags.NONE, GLib.OptionArg.FILENAME,
@@ -33,8 +36,17 @@ class Application(Adw.Application):
             "base-url", 0, GLib.OptionFlags.NONE, GLib.OptionArg.STRING,
             "Catalog base URL passed to the helper (default: the helper's)", "URL",
         )
+        self.add_main_option(
+            "target", 0, GLib.OptionFlags.NONE, GLib.OptionArg.STRING,
+            "Open on this catalog target, e.g. yellowfin:gnome:linux/amd64", "ID",
+        )
+        self.add_main_option(
+            GLib.OPTION_REMAINING, 0, GLib.OptionFlags.NONE, GLib.OptionArg.STRING_ARRAY,
+            "", f"[{launch.SCHEME}://{launch.ACTION}?target=ID]",
+        )
         self.fake_helper: str | None = None
         self.base_url: str | None = None
+        self.flow: Flow | None = None
         self.window: MainWindow | None = None
         self.controller: Controller | None = None
 
@@ -46,6 +58,26 @@ class Application(Adw.Application):
         if base is not None:
             self.base_url = base.get_string()
         return -1
+
+    def do_command_line(self, command_line: Gio.ApplicationCommandLine) -> int:
+        options = command_line.get_options_dict()
+        self.activate()
+        target = options.lookup_value("target", None)
+        if target is not None:
+            self.open_link(target.get_string(), launch.target_id)
+        uris = options.lookup_value(GLib.OPTION_REMAINING, None)
+        for uri in uris.unpack() if uris is not None else []:
+            self.open_link(uri, launch.target_from_uri)
+        return 0
+
+    def open_link(self, value: str, parse) -> None:
+        try:
+            target_id = parse(value)
+        except launch.LinkError as exc:
+            self.controller.details.append(str(exc))
+            self.flow.link_rejected()
+            return
+        self.flow.open_target(target_id)
 
     def do_startup(self) -> None:
         Adw.Application.do_startup(self)
@@ -62,7 +94,7 @@ class Application(Adw.Application):
         if self.window is not None:
             self.window.present()
             return
-        flow = Flow()
+        self.flow = flow = Flow()
         if self.fake_helper:
             argv, udisks = [self.fake_helper], None
         else:

@@ -23,6 +23,14 @@ struct RootView: View {
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
+        .alert(Strings.linkErrorTitle, isPresented: Binding(
+            get: { controller.state.linkError != nil },
+            set: { if !$0 { controller.send(.dismissLinkError) } })
+        ) {
+            Button("OK", role: .cancel) {}
+        } message: {
+            Text(controller.state.linkError ?? "")
+        }
     }
 }
 

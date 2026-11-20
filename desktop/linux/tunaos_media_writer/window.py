@@ -43,6 +43,13 @@ _STEP_PAGES = {
     Step.ERROR: ["error"],
 }
 
+_NOTICES = {
+    Notice.CANCELLED: strings.CANCELLED,
+    Notice.LINK_INVALID: strings.LINK_INVALID,
+    Notice.LINK_UNKNOWN_TARGET: strings.LINK_UNKNOWN_TARGET,
+    Notice.LINK_BUSY: strings.LINK_BUSY,
+}
+
 
 def install_css() -> None:
     provider = Gtk.CssProvider()
@@ -94,6 +101,7 @@ class MainWindow(Adw.ApplicationWindow):
         self.controller = controller
         self.platform = host_platform()
         self._rendered_step: Step | None = None
+        self._rendered_source: Source | None = None
         self._desktop_ids: list[str] = []
         self._base_ids: list[str] = []
         self._drive_rows: list[Gtk.Widget] = []
@@ -265,6 +273,14 @@ class MainWindow(Adw.ApplicationWindow):
             self._fill_choose()
         elif step is Step.DESTINATION:
             self.destination_title.set_subtitle(flow.source.label if flow.source else "")
+            if flow.source != self._rendered_source:
+                self._rendered_source = flow.source
+                self._show_on_choose(flow.source)
+                if self.confirm_dialog is not None:
+                    # A link changed the system under an open "Erase?": that
+                    # answer was for the previous one.
+                    self.confirm_dialog.force_close()
+                    self.confirm_dialog = None
         elif step is Step.PROGRESS:
             self._render_progress()
         elif step is Step.DONE and entering:
@@ -274,8 +290,21 @@ class MainWindow(Adw.ApplicationWindow):
         self._set_pulsing(step is Step.PROGRESS and flow.fraction is None)
         self._navigate(_STEP_PAGES[step])
 
-        if flow.take_notice() is Notice.CANCELLED:
-            self.toasts.add_toast(Adw.Toast(title=strings.CANCELLED))
+        notice = flow.take_notice()
+        if notice is not None:
+            self.toasts.add_toast(Adw.Toast(title=_NOTICES[notice]))
+
+    def _show_on_choose(self, source: Source | None) -> None:
+        """Mirror a linked target on step 1, so Back shows what was picked
+        (when step 1 offers it: a host-platform standard/generic target)."""
+        catalog = self.flow.catalog
+        target = catalog.target(source.target_id) if catalog and source and source.target_id else None
+        if target is None or target.desktop not in self._desktop_ids:
+            return
+        if catalog.target_for(target.base, target.desktop, self.platform) != target:
+            return
+        self.select_desktop(target.desktop)
+        self.base_row.set_selected(self._base_ids.index(target.base))
 
     def _fill_choose(self) -> None:
         catalog = self.flow.catalog

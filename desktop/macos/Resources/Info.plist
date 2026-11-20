@@ -31,5 +31,19 @@
 	<false/>
 	<key>NSHumanReadableCopyright</key>
 	<string>TunaOS contributors. Apache-2.0.</string>
+	<!-- tunaos-media-writer://build?target=ID links from iso.tunaos.org (desktop/PROTOCOL.md). -->
+	<key>CFBundleURLTypes</key>
+	<array>
+		<dict>
+			<key>CFBundleURLName</key>
+			<string>org.tunaos.MediaWriter.link</string>
+			<key>CFBundleTypeRole</key>
+			<string>Viewer</string>
+			<key>CFBundleURLSchemes</key>
+			<array>
+				<string>tunaos-media-writer</string>
+			</array>
+		</dict>
+	</array>
 </dict>
 </plist>

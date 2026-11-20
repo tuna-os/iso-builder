@@ -24,6 +24,11 @@ REQUEST_FILTER = _("Build requests")
 REQUEST_UNREADABLE = _("That file is not a build request from iso.tunaos.org.")
 NO_TARGETS_FOR_HOST = _("No systems are available for this computer.")
 
+# Links from iso.tunaos.org (--target / tunaos-media-writer://build?target=)
+LINK_INVALID = _("That link could not be read.")
+LINK_UNKNOWN_TARGET = _("The system in that link is not available.")
+LINK_BUSY = _("Finish or cancel the current job, then open the link again.")
+
 # Step 2: destination
 DESTINATION_TITLE = _("Choose a USB stick")
 DRIVES_GROUP = _("USB sticks")

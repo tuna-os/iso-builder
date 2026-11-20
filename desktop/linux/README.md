@@ -12,13 +12,14 @@ which the Flatpak bundles together with its sibling engine `tunaos-media-engine`
 | `tunaos_media_writer/protocol.py` | JSONL event parser (protocol v1) |
 | `tunaos_media_writer/catalog.py` | `catalog` event model, host-arch standard/generic defaults |
 | `tunaos_media_writer/flow.py` | the four-step flow as a pure state machine |
+| `tunaos_media_writer/launch.py` | `--target ID` / `tunaos-media-writer://build?target=ID` parsing |
 | `tunaos_media_writer/helper.py` | `Gio.Subprocess` wrapper: events from stdout, stderr kept for "Show details" |
 | `tunaos_media_writer/udisks.py` | udisks2 over GDBus: hotplug, unmount/lock, `Block.OpenDevice` |
 | `tunaos_media_writer/controller.py` | runs helper subcommands and udisks2 calls, feeds the flow |
 | `tunaos_media_writer/window.py` | `AdwApplicationWindow` + `AdwNavigationView`, one page per step |
 | `tunaos_media_writer/strings.py` | every user-visible string (gettext-ready) |
 | `org.tunaos.MediaWriter.yml` | Flatpak manifest (GNOME 51 runtime, Go SDK extension for the helper) |
-| `data/` | desktop file, AppStream metainfo, icon |
+| `data/` | desktop file (also the `x-scheme-handler/tunaos-media-writer` handler), AppStream metainfo, icon |
 | `tests/` | pytest suite, `fake_helper.py`, UI smoke, loop-device write test |
 
 ## How writing works (no `/dev` access in the sandbox)
@@ -56,6 +57,20 @@ Needs GTK ≥ 4.10 and libadwaita ≥ 1.5 (Ubuntu 24.04 works; the Flatpak ships
 GNOME 51). `--fake-helper PATH` runs that executable instead of the helper
 and skips udisks2; the fake helper's "drives" are image files under
 `$FAKE_HELPER_DIR`.
+
+## Links from iso.tunaos.org
+
+`tunaos-media-writer://build?target=ID` (the desktop file registers the
+scheme; `Exec=tunaos-media-writer %u`) and `--target ID` open the app on that
+catalog target and wait on the USB-stick step; see
+[`../PROTOCOL.md`](../PROTOCOL.md#opening-the-app-on-a-target). The app is a
+unique `GApplication` with `HANDLES_COMMAND_LINE`, so a link opened while it
+runs is forwarded to the running window and the second process exits.
+
+```bash
+python3 -m tunaos_media_writer --fake-helper tests/fake_helper.py --target yellowfin:kde:linux/amd64
+python3 -m tunaos_media_writer 'tunaos-media-writer://build?target=yellowfin%3Agnome%3Alinux%2Famd64'  # to the running one
+```
 
 ## Tests
 

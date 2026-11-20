@@ -53,6 +53,24 @@ public final class FlowController: ObservableObject {
         updateDrivePolling()
     }
 
+    /// A tunaos-media-writer:// URL (SwiftUI `onOpenURL`).
+    public func open(link url: URL) {
+        if let id = try? LaunchLink.targetID(from: url) {
+            send(.openTarget(id))
+        } else {
+            send(.linkRejected)
+        }
+    }
+
+    /// The `--target ID` launch argument.
+    public func open(targetArgument value: String) {
+        if let id = try? LaunchLink.targetID(value) {
+            send(.openTarget(id))
+        } else {
+            send(.linkRejected)
+        }
+    }
+
     public func cancel() {
         cancelRequested = true
         currentRun?.cancel()
