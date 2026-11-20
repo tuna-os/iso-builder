@@ -264,7 +264,7 @@ test.describe("iso builder", () => {
     await page.locator("#build").click();
     await page.locator("#review-create").click();
 
-    await expect(page.locator("#stage")).toContainText(/Build failed — sink write error/i);
+    await expect(page.locator("#stage")).toContainText("Build failed — the ISO file could not be saved.");
     await expect(page.locator("#stage")).not.toContainText(/ISO saved|download started/);
     await expect(page.locator("#postcard")).toBeHidden();
     await expect(page.locator("#fallbackcard")).toBeVisible();
@@ -330,7 +330,7 @@ test.describe("iso builder", () => {
 
     await page.locator("#build").click();
     await page.locator("#review-create").click();
-    await expect(page.locator("#stage")).toContainText("Authoring EROFS");
+    await expect(page.locator("#stage")).toContainText("Packing the system into the ISO");
     await expect(page.locator("#bar")).toHaveJSProperty("value", 1);
     await expect(page.locator("#postcard")).toBeHidden();
     for (const id of ["variant", "platform", "image", "clearcache"]) {
