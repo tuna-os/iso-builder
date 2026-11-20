@@ -65,12 +65,13 @@
 
   let capable = initialCapability();
   let desktop = null, base = null, busy = false;
-  // The app writes a USB stick for a PC; an Apple Silicon Mac cannot boot it.
-  // Only Chromium tells an Intel Mac apart, so every other Mac is told.
-  let appleSilicon = OS.id === 'macos';
-  if (appleSilicon && navigator.userAgentData?.getHighEntropyValues) {
+  // Every download here is for a PC; a Mac with an Apple chip cannot start
+  // it. Only Chromium tells the processor ('arm' or 'x86'); in any other Mac
+  // browser it stays null and the note covers both.
+  let macArch = null;
+  if (OS.id === 'macos' && navigator.userAgentData?.getHighEntropyValues) {
     navigator.userAgentData.getHighEntropyValues(['architecture'])
-      .then((values) => { appleSilicon = values.architecture !== 'x86'; render(); })
+      .then((values) => { macArch = values.architecture || null; render(); })
       .catch(() => {});
   }
 
@@ -164,11 +165,11 @@
   }
 
   // What an unsigned app costs the user on first launch, in their OS's words.
-  // A Linux bundle is not store-signed, so Linux always gets its hint.
+  // Linux gets #quick-app-linux instead: a Flatpak bundle is never
+  // store-signed, and stock Ubuntu has no Flatpak to open it with.
   const FIRST_LAUNCH_HINTS = {
     macos: 'First launch: if macOS blocks the app, choose Open Anyway in System Settings → Privacy & Security.',
     windows: 'If Windows SmartScreen warns you, choose More info, then Run anyway.',
-    linux: 'Open the downloaded file with your software center to install it.',
   };
 
   function appLinks(asset) {
@@ -236,6 +237,8 @@
 
     const leaf = selectedLeaf();
     const r = route(leaf);
+    $q('quick-arm').hidden = !(OS.id === 'macos' && macArch === 'arm');
+    $q('quick-mac').hidden = !(OS.id === 'macos' && macArch === null);
     $q('quick-download').hidden = r.kind !== 'browser' && r.kind !== 'local';
     $q('quick-download').textContent = r.kind === 'local' ? 'Build on your computer' : 'Download ISO';
     $q('quick-download').disabled = busy;
@@ -271,8 +274,9 @@
     if (!asset) return;
     const primary = r.kind === 'app';
     app.classList.toggle('is-secondary', !primary);
-    // The primary route's note belongs to its button; the app route's to the app.
-    if (primary) app.after($q('quick-meta')); else app.before($q('quick-meta'));
+    // What is said under the primary action belongs to it: under its button,
+    // or under the app on the app route.
+    if (primary) app.after($q('quick-under')); else app.before($q('quick-under'));
     $q('quick-app-reason').hidden = !primary;
     $q('quick-app-title').hidden = primary;
     if (primary) $q('quick-app-reason').textContent = qualified(leaf) && !capable.ok ? capable.reason : 'This one can’t be built in a browser yet.';
@@ -285,7 +289,10 @@
     const hint = asset.signed === true ? '' : FIRST_LAUNCH_HINTS[OS.id] || '';
     $q('quick-app-hint').textContent = hint;
     $q('quick-app-hint').hidden = !hint;
-    $q('quick-app-arm').hidden = !appleSilicon;
+    $q('quick-app-linux').hidden = OS.id !== 'linux';
+    // balenaEtcher writes an ISO file, so it is the fallback only where this
+    // page hands out one.
+    $q('quick-app-etcher').hidden = primary;
   }
 
   // build-request.json for the app's "Open build request…": this image with
@@ -416,7 +423,6 @@
   $q('quick-alt-local').addEventListener('click', buildOnComputer);
   $q('quick-retry').addEventListener('click', () => { clearResult(); render(); });
   $q('quick-customize').addEventListener('click', () => { leaveQuick(); window.scrollTo(0, 0); });
-  $q('quick-guide').href = BUILDER_CONFIG.brand.documentation_url || BUILDER_CONFIG.brand.homepage_url;
   $q('quick-title').textContent = `Download ${BUILDER_CONFIG.brand.name}`;
 
   globalThis.tboxQuickRefresh = render;
