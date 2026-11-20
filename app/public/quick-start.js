@@ -15,14 +15,22 @@
  *                this operating system.
  *   4. local:    none of the above; the full builder's build-on-your-computer
  *                instructions.
+ * Whenever Media Writer has a release for this OS it is also offered under
+ * the button as the second action ("Write it to a USB stick"), with a deep
+ * link that opens the app on this image (tunaos-media-writer://build?target=
+ * <catalog target id>, desktop/PROTOCOL.md) and this image's
+ * build-request.json for the app's "Open build request…".
  * Prebuilt ISOs and app releases come from downloads.json, generated from the
  * published index and the GitHub release at deploy time
  * (scripts/generate-downloads.py); a missing file only removes routes 2-3.
  *
  * Runs after app.js and reads its script-scope state (guidedModel,
- * guidedPicker, inspect, build, ...). Quick mode is only offered on the bare
- * URL of a guided, buildable deployment; any query parameter (a share link,
- * ?customize=1, a test preset) opens the full builder unchanged. */
+ * guidedPicker, inspect, build, ...). Quick mode is only offered by a guided,
+ * buildable deployment, on the bare URL or on a link naming only a TunaOS
+ * image (index.html's TBOX_QUICK_IMAGE, as tunaos.org links), which opens on
+ * that desktop and base. Any other query parameter (a share link,
+ * ?customize=1, a test preset), or an image this view does not offer, opens
+ * the full builder unchanged. */
 (function () {
   'use strict';
   if (!document.querySelector) return;
@@ -51,10 +59,20 @@
     $q('fallback-app').hidden = false;
   });
   $q('quick-back').hidden = !offered;
-  if (!offered || location.search !== '') { root.classList.remove('quick'); return; }
+  if (!offered || (location.search !== '' && !globalThis.TBOX_QUICK_IMAGE)) { root.classList.remove('quick'); return; }
+  // The image a tunaos.org link names, until the first render resolves it.
+  let preselect = globalThis.TBOX_QUICK_IMAGE || null;
 
   let capable = initialCapability();
   let desktop = null, base = null, busy = false;
+  // The app writes a USB stick for a PC; an Apple Silicon Mac cannot boot it.
+  // Only Chromium tells an Intel Mac apart, so every other Mac is told.
+  let appleSilicon = OS.id === 'macos';
+  if (appleSilicon && navigator.userAgentData?.getHighEntropyValues) {
+    navigator.userAgentData.getHighEntropyValues(['architecture'])
+      .then((values) => { appleSilicon = values.architecture !== 'x86'; render(); })
+      .catch(() => {});
+  }
 
   function detectOs() {
     const ua = navigator.userAgent || '';
@@ -148,7 +166,7 @@
   // What an unsigned app costs the user on first launch, in their OS's words.
   // A Linux bundle is not store-signed, so Linux always gets its hint.
   const FIRST_LAUNCH_HINTS = {
-    macos: 'First launch: right-click the app in Applications and choose Open.',
+    macos: 'First launch: if macOS blocks the app, choose Open Anyway in System Settings → Privacy & Security.',
     windows: 'If Windows SmartScreen warns you, choose More info, then Run anyway.',
     linux: 'Open the downloaded file with your software center to install it.',
   };
@@ -171,10 +189,24 @@
     return { macos: 'macOS', 'windows-x64': 'Windows', 'linux-x86_64': 'Linux', 'linux-aarch64': 'Linux (ARM)' }[key] || key;
   }
 
+  // The catalog target a link names: its target id, or the image it is
+  // published as (flounder-sid:gnome publishes as flounder:gnome-sid).
+  const names = (leaf, image) => (leaf.entry.target.variant === image.variant && leaf.entry.target.flavor === image.flavor) ||
+    leaf.entry.publication?.ref === `ghcr.io/tuna-os/${image.variant}:${image.flavor}`;
+
   function render() {
+    // Once the full builder is showing, its own selection is the user's.
+    if (!root.classList.contains('quick')) return;
     const leaves = quickLeaves();
     const desktops = (guidedModel?.facetPresentation.desktop?.values || []).filter((v) => leaves.some((l) => l.facets.desktop[0] === v.id));
     if (!desktops.length) { leaveQuick(); return; }
+    if (preselect) {
+      const named = leaves.find((l) => names(l, preselect));
+      if (!named) { leaveQuick(); return; }
+      preselect = null;
+      desktop = named.facets.desktop[0];
+      base = named.facets.base[0];
+    }
     if (!desktops.some((d) => d.id === desktop)) {
       const preferred = defaultLeaf()?.facets.desktop?.[0];
       desktop = desktops.some((d) => d.id === preferred) ? preferred : desktops[0].id;
@@ -208,7 +240,7 @@
     $q('quick-download').textContent = r.kind === 'local' ? 'Build on your computer' : 'Download ISO';
     $q('quick-download').disabled = busy;
     $q('quick-prebuilt').hidden = r.kind !== 'prebuilt';
-    $q('quick-app').hidden = r.kind !== 'app';
+    renderApp(leaf, r);
     const meta = $q('quick-meta');
     meta.hidden = false;
     if (r.kind === 'browser') {
@@ -218,15 +250,7 @@
       $q('quick-prebuilt').href = r.iso.url;
       meta.textContent = `${gb(r.iso.size)} file. For 64-bit Intel and AMD PCs.`;
     } else if (r.kind === 'app') {
-      $q('quick-app-reason').textContent = qualified(leaf) && !capable.ok ? capable.reason : 'This one can’t be built in a browser yet.';
-      $q('quick-app-download').textContent = `Get ${APP_NAME} for ${OS_NAMES[OS.id]}`;
-      $q('quick-app-download').href = r.asset.url;
       meta.textContent = `The app builds ${facetLabel('desktop', desktop)} on ${facetLabel('base', base)} and puts it on your USB stick. Free.`;
-      appLinks(r.asset);
-      // Only the release's signing.json can say the OS trusts the app.
-      const hint = r.asset.signed === true ? '' : FIRST_LAUNCH_HINTS[OS.id] || '';
-      $q('quick-app-hint').textContent = hint;
-      $q('quick-app-hint').hidden = !hint;
     } else if (r.kind === 'mobile') {
       meta.textContent = capable.reason;
     } else {
@@ -236,6 +260,51 @@
     }
     // Keep the full builder on the same image, so Customize starts from it.
     if (leaf && !busy && guidedPicker && guidedPicker.getSelection()?.id !== leaf.id) guidedPicker.select(leaf.id);
+  }
+
+  // TunaOS Media Writer: the action itself on the app route, else the second
+  // action under the primary one.
+  function renderApp(leaf, r) {
+    const app = $q('quick-app');
+    const asset = OS.id === 'mobile' ? null : appAsset();
+    app.hidden = !asset;
+    if (!asset) return;
+    const primary = r.kind === 'app';
+    app.classList.toggle('is-secondary', !primary);
+    // The primary route's note belongs to its button; the app route's to the app.
+    if (primary) app.after($q('quick-meta')); else app.before($q('quick-meta'));
+    $q('quick-app-reason').hidden = !primary;
+    $q('quick-app-title').hidden = primary;
+    if (primary) $q('quick-app-reason').textContent = qualified(leaf) && !capable.ok ? capable.reason : 'This one can’t be built in a browser yet.';
+    $q('quick-app-download').textContent = `Get ${APP_NAME} for ${OS_NAMES[OS.id]}`;
+    $q('quick-app-download').href = asset.url;
+    $q('quick-app-links').hidden = !leaf;
+    if (leaf) $q('quick-app-open').href = `tunaos-media-writer://build?target=${encodeURIComponent(leaf.entry.targetKey)}`;
+    appLinks(asset);
+    // Only the release's signing.json can say the OS trusts the app.
+    const hint = asset.signed === true ? '' : FIRST_LAUNCH_HINTS[OS.id] || '';
+    $q('quick-app-hint').textContent = hint;
+    $q('quick-app-hint').hidden = !hint;
+    $q('quick-app-arm').hidden = !appleSilicon;
+  }
+
+  // build-request.json for the app's "Open build request…": this image with
+  // its desktop's default apps, as the one-click build and the app's own
+  // choice of this image use.
+  function saveBuildRequest() {
+    const leaf = selectedLeaf();
+    if (!leaf || busy || isOperationBusy()) return;
+    if (guidedPicker.getSelection()?.id !== leaf.id) guidedPicker.select(leaf.id);
+    const error = $q('quick-app-error');
+    try {
+      const request = structuredClone(globalThis.tboxGetBuildRequest());
+      request.options.flatpaks = [...(FLATPAK_DEFAULTS[leaf.facets.desktop[0]] || [])];
+      globalThis.tboxSaveBuildRequest(request);
+      error.hidden = true;
+    } catch (e) {
+      error.textContent = `Could not save the build request: ${e.message || e}`;
+      error.hidden = false;
+    }
   }
 
   function setBusy(value) {
@@ -327,7 +396,10 @@
 
   function leaveQuick() {
     root.classList.remove('quick');
-    if (location.search === '') history.replaceState(null, '', '?customize=1');
+    // A linked image this view does not offer: the full builder, as the link asks.
+    if (preselect) { preselect = null; globalThis.tboxApplyUrlParams(); return; }
+    // Reloading stays in the full builder; its share link carries the image.
+    history.replaceState(null, '', '?customize=1');
   }
 
   $q('quick-base').addEventListener('change', (event) => { base = event.target.value; clearResult(); render(); });
@@ -339,7 +411,8 @@
     else if (r.kind === 'local') buildOnComputer();
   });
   $q('quick-prebuilt').addEventListener('click', () => showResult('done', 'Your download has started.'));
-  $q('quick-app-download').addEventListener('click', () => showResult('app', `Open ${APP_NAME} when it has downloaded, choose ${facetLabel('desktop', desktop)} on ${facetLabel('base', base)}, and insert your USB stick.`));
+  $q('quick-app-download').addEventListener('click', () => showResult('app', `Install ${APP_NAME} when it has downloaded, then choose Open in Media Writer here, or pick ${facetLabel('desktop', desktop)} on ${facetLabel('base', base)} in the app, and insert your USB stick.`));
+  $q('quick-app-request').addEventListener('click', saveBuildRequest);
   $q('quick-alt-local').addEventListener('click', buildOnComputer);
   $q('quick-retry').addEventListener('click', () => { clearResult(); render(); });
   $q('quick-customize').addEventListener('click', () => { leaveQuick(); window.scrollTo(0, 0); });

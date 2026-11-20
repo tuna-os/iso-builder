@@ -21,15 +21,38 @@ depends on evidence, not preference (`app/public/quick-start.js`):
 4. **Build on your computer.** The page shows the local instructions of the
    full builder.
 
+TunaOS Media Writer can have a release for your operating system. Then the
+page also shows it under the button on every route: **Write it to a USB stick
+with TunaOS Media Writer**. Two links follow the download button:
+
+- **Open in Media Writer** opens the installed app on the selected image
+  (`tunaos-media-writer://build?target=<catalog target id>`, for example
+  `yellowfin:gnome:linux/amd64`). The app does not write anything until you
+  confirm.
+- **Download this image's build request** saves `build-request.json` for the
+  image, with the default apps of its desktop. In the app, choose
+  **Open build request…** and select that file.
+
+On macOS 15 and newer, an unsigned app opens only after you choose
+**Open Anyway** in **System Settings → Privacy & Security**. The app writes a
+USB stick for a PC. A Mac with Apple Silicon cannot start from that stick.
+
 The links to ready-made ISOs and app releases come from `downloads.json`.
 The deploy job makes this file with `scripts/generate-downloads.py`. The
 script reads the published ISO index and the GitHub releases. If the script
 cannot read a source, the page does not show that route. Thus the page never
-links to a missing file.
+links to a missing file. tunaos.org reads the same file from its download
+page, so `app/public/_headers` serves it (and `catalog-snapshot.json`) with
+`Access-Control-Allow-Origin: *`.
 
-This page shows only standard, generic x86-64 images.
-**Customize apps and settings** (or any URL parameter, such as `?customize=1`
-or a share link) opens the full builder described below, on the same image.
+This page shows only standard, generic x86-64 images. A link that names only
+a TunaOS image, as tunaos.org sends
+(`?image=tuna-os/bonito:kde`, optionally with `&platform=linux/amd64`), opens
+this page on that desktop and base. If the page does not offer that image,
+the link opens the full builder.
+**Customize apps and settings** (or any other URL parameter, such as
+`?customize=1` or a share link) opens the full builder described below, on
+the same image.
 
 ## The full builder
 

@@ -1,0 +1,10 @@
+# Workers static-assets response headers (not served itself):
+# https://developers.cloudflare.com/workers/static-assets/headers/
+#
+# tunaos.org's download page reads these from the browser, so they are open
+# to every origin. Both are public, credential-free metadata.
+/downloads.json
+  Access-Control-Allow-Origin: *
+
+/catalog-snapshot.json
+  Access-Control-Allow-Origin: *
