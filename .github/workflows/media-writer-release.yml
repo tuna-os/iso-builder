@@ -101,7 +101,7 @@ jobs:
       TAG: ${{ needs.version.outputs.tag }}
       DRY_RUN: ${{ needs.version.outputs.dry_run }}
     steps:
-      - uses: actions/download-artifact@v8.0.2
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           pattern: TunaOS-Media-Writer-*
           path: dist
@@ -109,7 +109,7 @@ jobs:
 
       # Each platform workflow uploads what its own signing step actually
       # did (desktop/PROTOCOL.md "Release assets"); never inferred here.
-      - uses: actions/download-artifact@v8.0.2
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           pattern: signing-*
           path: signing
@@ -165,7 +165,7 @@ jobs:
 
       - name: upload (dry run)
         if: needs.version.outputs.dry_run == 'true'
-        uses: actions/upload-artifact@v7.0.2
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: media-writer-release-dry-run
           path: dist/
