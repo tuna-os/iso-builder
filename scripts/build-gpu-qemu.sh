@@ -48,7 +48,7 @@ diag_patch="$(cd "$(dirname "$0")" && pwd)/diag-qemu-egl.patch"
 (cd "$work/qemu" && git apply "$diag_patch")
 export PKG_CONFIG_PATH="$PREFIX/lib/pkgconfig"
 (cd "$work/qemu" &&
-	./configure --prefix="$PREFIX" --target-list=x86_64-softmmu --enable-kvm --enable-opengl \
+	./configure --prefix="$PREFIX" --extra-ldflags=-rdynamic --target-list=x86_64-softmmu --enable-kvm --enable-opengl \
 		--enable-virglrenderer --enable-slirp --disable-docs --disable-werror --disable-user \
 		--disable-tools --extra-ldflags="-Wl,-rpath,$PREFIX/lib" &&
 	make -j"$(nproc)" && make install)
