@@ -15,11 +15,13 @@
  *                this operating system.
  *   4. local:    none of the above; the full builder's build-on-your-computer
  *                instructions.
+ * On a phone there is no route: it says a PC and a USB stick are needed and
+ * offers to send the link to that computer.
  * Whenever Media Writer has a release for this OS it is also offered under
- * the button as the second action ("Write it to a USB stick"), with a deep
+ * the button as the second action, with this image's build-request.json for
+ * the app's "Open build request…" and, from Media Writer 0.2.0 on, a deep
  * link that opens the app on this image (tunaos-media-writer://build?target=
- * <catalog target id>, desktop/PROTOCOL.md) and this image's
- * build-request.json for the app's "Open build request…".
+ * <catalog target id>, desktop/PROTOCOL.md).
  * Prebuilt ISOs and app releases come from downloads.json, generated from the
  * published index and the GitHub release at deploy time
  * (scripts/generate-downloads.py); a missing file only removes routes 2-3.
@@ -128,14 +130,24 @@
 
   const prebuiltFor = (leaf) => leaf && downloads.prebuilt[`${leaf.entry.target.variant}-${leaf.entry.target.flavor}`];
   function appAsset() { return (OS.asset && downloads.mediaWriter?.assets?.[OS.asset]) || null; }
+  // tunaos-media-writer:// links open the app from 0.2.0 on; an older app
+  // registers no handler, and the browser drops the link without a word.
+  const DEEP_LINK_SINCE = [0, 2, 0];
+  function appOpensLinks() {
+    const parts = String(downloads.mediaWriter?.version || '').split(/[.-]/).slice(0, 3).map(Number);
+    if (parts.length < 3 || parts.some((n) => !Number.isInteger(n))) return false;
+    const at = parts.findIndex((n, i) => n !== DEEP_LINK_SINCE[i]);
+    return at < 0 || parts[at] > DEEP_LINK_SINCE[at];
+  }
   const qualified = (leaf) => Boolean(leaf) && catalogQualification(leaf.entry).status === 'qualified';
 
+  // A phone cannot install TunaOS, and a multi-GB ISO on it helps no one.
   function route(leaf) {
+    if (OS.id === 'mobile') return { kind: 'mobile' };
     if (!leaf) return { kind: 'local' };
     if (qualified(leaf) && capable.ok) return { kind: 'browser' };
     const iso = prebuiltFor(leaf);
     if (iso) return { kind: 'prebuilt', iso };
-    if (OS.id === 'mobile') return { kind: 'mobile' };
     const asset = appAsset();
     if (asset) return { kind: 'app', asset };
     return { kind: 'local' };
@@ -243,9 +255,12 @@
     $q('quick-download').textContent = r.kind === 'local' ? 'Build on your computer' : 'Download ISO';
     $q('quick-download').disabled = busy;
     $q('quick-prebuilt').hidden = r.kind !== 'prebuilt';
+    $q('quick-phone').hidden = r.kind !== 'mobile';
+    // The phone's own message already names the USB stick.
+    $q('quick-usb').hidden = r.kind === 'mobile';
     renderApp(leaf, r);
     const meta = $q('quick-meta');
-    meta.hidden = false;
+    meta.hidden = r.kind === 'mobile';
     if (r.kind === 'browser') {
       const size = leaf.entry.facts?.compressedSize;
       meta.textContent = `Built right here in your browser${size ? ` from about ${gb(size)} of downloads` : ''}. For 64-bit Intel and AMD PCs.`;
@@ -255,7 +270,7 @@
     } else if (r.kind === 'app') {
       meta.textContent = `The app builds ${facetLabel('desktop', desktop)} on ${facetLabel('base', base)} and puts it on your USB stick. Free.`;
     } else if (r.kind === 'mobile') {
-      meta.textContent = capable.reason;
+      meta.textContent = '';
     } else {
       meta.textContent = qualified(leaf) && !capable.ok
         ? `${capable.reason} You can build it on your computer instead.`
@@ -282,8 +297,14 @@
     if (primary) $q('quick-app-reason').textContent = qualified(leaf) && !capable.ok ? capable.reason : 'This one can’t be built in a browser yet.';
     $q('quick-app-download').textContent = `Get ${APP_NAME} for ${OS_NAMES[OS.id]}`;
     $q('quick-app-download').href = asset.url;
+    const links = appOpensLinks();
     $q('quick-app-links').hidden = !leaf;
+    $q('quick-app-open').hidden = !links;
+    $q('quick-app-sep').hidden = !links;
     if (leaf) $q('quick-app-open').href = `tunaos-media-writer://build?target=${encodeURIComponent(leaf.entry.targetKey)}`;
+    $q('quick-app-how').textContent = links
+      ? 'Already installed? Open in Media Writer. Otherwise install it, then choose Open in Media Writer again.'
+      : 'Install it, then pick this desktop in the app, or choose Open build request… with the file above.';
     appLinks(asset);
     // Only the release's signing.json can say the OS trusts the app.
     const hint = asset.signed === true ? '' : FIRST_LAUNCH_HINTS[OS.id] || '';
@@ -409,6 +430,31 @@
     history.replaceState(null, '', '?customize=1');
   }
 
+  // The link to send to the computer: this view on the chosen image.
+  function pageLink() {
+    const leaf = selectedLeaf();
+    const url = new URL(location.pathname, location.origin);
+    if (leaf) url.searchParams.set('image', `tuna-os/${leaf.entry.target.variant}:${leaf.entry.target.flavor}`);
+    return url.href;
+  }
+
+  async function sharePageLink() {
+    const status = $q('quick-phone-status');
+    const url = pageLink();
+    try {
+      if (navigator.share) {
+        await navigator.share({ title: `Download ${BUILDER_CONFIG.brand.name}`, url });
+        status.textContent = '';
+        return;
+      }
+      await navigator.clipboard.writeText(url);
+      status.textContent = 'Link copied. Paste it into a message or email to yourself, then open it on your computer.';
+    } catch (error) {
+      if (error?.name === 'AbortError') return; // share sheet dismissed
+      status.textContent = `Copy this link: ${url}`;
+    }
+  }
+
   $q('quick-base').addEventListener('change', (event) => { base = event.target.value; clearResult(); render(); });
   $q('quick-download').addEventListener('click', () => {
     if (busy || isOperationBusy()) return;
@@ -418,7 +464,28 @@
     else if (r.kind === 'local') buildOnComputer();
   });
   $q('quick-prebuilt').addEventListener('click', () => showResult('done', 'Your download has started.'));
-  $q('quick-app-download').addEventListener('click', () => showResult('app', `Install ${APP_NAME} when it has downloaded, then choose Open in Media Writer here, or pick ${facetLabel('desktop', desktop)} on ${facetLabel('base', base)} in the app, and insert your USB stick.`));
+  $q('quick-app-download').addEventListener('click', () => showResult('app', appOpensLinks()
+    ? `Install ${APP_NAME} when it has downloaded, then choose Open in Media Writer here and insert your USB stick.`
+    : `Install ${APP_NAME} when it has downloaded, then pick ${facetLabel('desktop', desktop)} on ${facetLabel('base', base)} in the app and insert your USB stick.`));
+  // A browser with no handler for the link does nothing at all. If this page
+  // is still in front two seconds later, the app most likely isn't installed.
+  let nothingTimer = null;
+  $q('quick-app-open').addEventListener('click', () => {
+    clearTimeout(nothingTimer);
+    $q('quick-app-nothing').hidden = true;
+    const left = () => clearTimeout(nothingTimer);
+    window.addEventListener('blur', left, { once: true });
+    document.addEventListener('visibilitychange', left, { once: true });
+    nothingTimer = setTimeout(() => {
+      window.removeEventListener('blur', left);
+      document.removeEventListener('visibilitychange', left);
+      if (document.hidden) return;
+      $q('quick-app-nothing').hidden = false;
+      $q('quick-app-how').hidden = true;
+    }, 2000);
+  });
+  $q('quick-phone-share').textContent = navigator.share ? 'Send this link to your computer' : 'Copy link';
+  $q('quick-phone-share').addEventListener('click', sharePageLink);
   $q('quick-app-request').addEventListener('click', saveBuildRequest);
   $q('quick-alt-local').addEventListener('click', buildOnComputer);
   $q('quick-retry').addEventListener('click', () => { clearResult(); render(); });
