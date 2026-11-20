@@ -278,6 +278,8 @@
     font: inherit; font-weight: 700; font-size: 1.05rem; text-decoration: none; cursor: pointer; }
   #quick .button:hover, #quick-download:hover:not(:disabled) { filter: brightness(1.12); }
   .quick-fine { color: var(--dim); font-size: .85rem; margin: .55rem 0 0; }
+  #quick-arm { margin: 0 0 .9rem; padding: .7rem .9rem; border-radius: 8px; border-left: 3px solid var(--warn); background: var(--panel); }
+  #quick code { font-size: .8rem; color: var(--fg); overflow-wrap: anywhere; }
   #quick-app-reason, #quick-app-title { margin: 0 0 .6rem; }
   #quick-app-title { font-weight: 600; }
   /* Beside another primary route the app is the second action: a rule above
@@ -319,12 +321,18 @@
     <div id="quick-desktops" class="quick-desktops" role="radiogroup" aria-label="Desktop"></div>
     <div class="quick-base"><label for="quick-base">Based on</label><select id="quick-base"></select></div>
     <div class="quick-action" id="quick-action">
+      <p id="quick-arm" role="note" hidden>This download is for PCs with Intel or AMD processors. Macs with Apple chips (M1, M2 and newer) can’t start TunaOS yet: <a href="https://tunaos.org/docs/apple-silicon">Apple Silicon Macs</a>.</p>
       <button id="quick-download" type="button">Download ISO</button>
       <a id="quick-prebuilt" class="button" hidden>Download ISO</a>
-      <p id="quick-meta" class="quick-fine"></p>
+      <div id="quick-under">
+        <p id="quick-meta" class="quick-fine"></p>
+        <p class="quick-fine" id="quick-usb">You need a USB stick of 16 GB or larger; everything on it is erased.</p>
+        <p class="quick-fine" id="quick-erase">Installing erases the computer’s drive. Want to keep Windows? <a href="https://tunaos.org/wootc">Use wootc</a>.</p>
+        <p class="quick-fine" id="quick-mac" hidden>For PCs and Intel Macs. Macs with Apple chips can’t start it: <a href="https://tunaos.org/docs/apple-silicon">Apple Silicon Macs</a>.</p>
+      </div>
       <div id="quick-app" hidden>
         <p id="quick-app-reason"></p>
-        <p id="quick-app-title">Write it to a USB stick with TunaOS Media Writer</p>
+        <p id="quick-app-title">Or skip the ISO file: TunaOS Media Writer downloads TunaOS and writes the USB stick for you.</p>
         <div class="quick-app-row">
           <a id="quick-app-download" class="button">Get the app</a>
           <span id="quick-app-links" class="quick-app-links"><a id="quick-app-open">Open in Media Writer</a> · <button type="button" id="quick-app-request" class="linklike">Download this image’s build request</button></span>
@@ -332,7 +340,7 @@
         <p class="quick-fine">Already installed? Open in Media Writer. Otherwise install it, then choose Open build request…</p>
         <p class="quick-fine" id="quick-app-other"></p>
         <p class="quick-fine" id="quick-app-hint" hidden></p>
-        <p class="quick-fine" id="quick-app-arm" hidden>Writing a USB stick for a PC. Apple Silicon Macs can’t boot it; see <a href="https://tunaos.org/docs/bootc-installer-asahi/DESIGN" target="_blank" rel="noopener">TunaOS for Apple Silicon (preview)</a>.</p>
+        <p class="quick-fine" id="quick-app-linux" hidden>Installing it needs Flatpak, which Ubuntu doesn’t include. Set it up once: open Terminal, run <code>sudo apt install flatpak gnome-software-plugin-flatpak</code>, then restart (<a href="https://flathub.org/setup/Ubuntu">Flathub’s Ubuntu guide</a>). Then open the downloaded file with Software.<span id="quick-app-etcher"> Or skip the app: download the ISO and write it with <a href="https://etcher.balena.io/">balenaEtcher</a>.</span></p>
         <p class="quick-fine" id="quick-app-error" role="alert" hidden></p>
       </div>
     </div>
@@ -343,10 +351,10 @@
     </div>
     <div id="quick-result" hidden role="status">
       <p id="quick-result-text"></p>
-      <p id="quick-next">Next: put the file on a USB stick with <a href="https://fedoraproject.org/workstation/download" target="_blank" rel="noopener">Fedora Media Writer</a> or <a href="https://etcher.balena.io/" target="_blank" rel="noopener">balenaEtcher</a>, then start your computer from the stick. <a id="quick-guide" target="_blank" rel="noopener">Installation guide</a></p>
+      <p id="quick-next">Next: write the ISO to your USB stick with <a href="https://etcher.balena.io/">balenaEtcher</a> (choose Flash from file). Then <a href="https://tunaos.org/docs/start-from-usb">start the computer from the USB stick</a> and <a href="https://tunaos.org/docs/installer">follow the installer</a>.</p>
       <p id="quick-failed-actions"><a id="quick-alt-prebuilt" class="button">Download the ready-made ISO</a><button type="button" id="quick-alt-local" class="linklike">Build it on your computer instead</button><button type="button" id="quick-retry" class="linklike">Try again</button></p>
     </div>
-    <p class="quick-more"><button type="button" id="quick-customize" class="linklike">Customize apps and settings</button></p>
+    <p class="quick-more"><a href="https://tunaos.org/download">Other ways to install TunaOS</a> · <button type="button" id="quick-customize" class="linklike">Customize apps and settings</button></p>
   </section>
   <a id="quick-back" href="./" hidden>← Simple download</a>
   <div class="experience-switcher"><label for="experience">Experience</label><select id="experience" aria-describedby="experience-help"></select><p id="experience-help" class="helper">Changing experience starts a new setup. Finish any build or save first.</p></div>

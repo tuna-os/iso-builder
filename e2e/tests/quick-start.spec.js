@@ -106,7 +106,13 @@ test.describe("one-click download view", () => {
       await expect(page.locator("#quick-app-download")).toHaveText("Get TunaOS Media Writer for Linux");
       await expect(page.locator("#quick-app-reason")).toContainText(why === "too little memory" ? "memory" : "storage");
       await expect(page.locator("#quick-app-other a")).toHaveText(["macOS", "Windows"]);
-      await expect(page.locator("#quick-app-hint")).toHaveText("Open the downloaded file with your software center to install it.");
+      // Stock Ubuntu has no Flatpak: the one-time setup, and no ISO to fall
+      // back to on the app route, so no balenaEtcher.
+      await expect(page.locator("#quick-app-hint")).toBeHidden();
+      await expect(page.locator("#quick-app-linux")).toBeVisible();
+      await expect(page.locator("#quick-app-linux code")).toHaveText("sudo apt install flatpak gnome-software-plugin-flatpak");
+      await expect(page.locator("#quick-app-linux a").first()).toHaveAttribute("href", "https://flathub.org/setup/Ubuntu");
+      await expect(page.locator("#quick-app-etcher")).toBeHidden();
 
       await open(page, { ...options, prebuilt: {}, mediaWriter: null });
       await settled(page);
@@ -192,23 +198,31 @@ test("the first-launch hint follows the release's recorded signing, per OS", asy
 });
 
 test("macOS: the unsigned app opens from Privacy & Security, and Apple Silicon is told the stick is for a PC", async ({ page }) => {
-  const appleSilicon = page.locator("#quick-app-arm");
+  const warning = page.locator("#quick-arm"), note = page.locator("#quick-mac");
   await open(page, { mediaWriter: WRITER, platform: "macOS" });
   await settled(page);
   await expect(page.locator("#quick-app-hint")).toHaveText("First launch: if macOS blocks the app, choose Open Anyway in System Settings → Privacy & Security.");
-  // No architecture hint (Safari, Firefox): every Mac is told.
-  await expect(appleSilicon).toBeVisible();
-  await expect(appleSilicon.locator("a")).toHaveAttribute("href", "https://tunaos.org/docs/bootc-installer-asahi/DESIGN");
+  await expect(page.locator("#quick-app-linux")).toBeHidden();
+  // No processor hint (Safari, Firefox): every Mac gets the note under the action.
+  await expect(note).toBeVisible();
+  await expect(note.locator("a")).toHaveAttribute("href", "https://tunaos.org/docs/apple-silicon");
+  await expect(warning).toBeHidden();
+  // Chromium on an Apple chip: the warning comes before the Download button.
   await open(page, { mediaWriter: WRITER, platform: "macOS", architecture: "arm" });
   await settled(page);
-  await expect(appleSilicon).toBeVisible();
+  await expect(warning).toBeVisible();
+  await expect(warning.locator("a")).toHaveAttribute("href", "https://tunaos.org/docs/apple-silicon");
+  expect(await page.evaluate(() => document.getElementById("quick-arm").compareDocumentPosition(document.getElementById("quick-prebuilt")) & Node.DOCUMENT_POSITION_FOLLOWING)).toBeTruthy();
+  await expect(note).toBeHidden();
   await open(page, { mediaWriter: WRITER, platform: "macOS", architecture: "x86" });
   await settled(page);
   await expect(page.locator("#quick-app")).toBeVisible();
-  await expect(appleSilicon).toBeHidden();
+  await expect(warning).toBeHidden();
+  await expect(note).toBeHidden();
   await open(page, { mediaWriter: WRITER, platform: "Windows" });
   await settled(page);
-  await expect(appleSilicon).toBeHidden();
+  await expect(warning).toBeHidden();
+  await expect(note).toBeHidden();
 });
 
 test.describe("TunaOS Media Writer beside every route", () => {
@@ -223,13 +237,16 @@ test.describe("TunaOS Media Writer beside every route", () => {
     await expect(page.locator("#quick-download")).toBeVisible();
     await expect(app(page)).toBeVisible();
     await expect(app(page)).toHaveClass(/is-secondary/);
-    await expect(page.locator("#quick-app-title")).toHaveText("Write it to a USB stick with TunaOS Media Writer");
+    await expect(page.locator("#quick-app-title")).toHaveText("Or skip the ISO file: TunaOS Media Writer downloads TunaOS and writes the USB stick for you.");
     await expect(page.locator("#quick-app-reason")).toBeHidden();
     await expect(page.locator("#quick-app-download")).toHaveAttribute("href", WRITER.assets["linux-x86_64"].url);
     await expect(page.locator("#quick-app-open")).toHaveAttribute("href", "tunaos-media-writer://build?target=bonito%3Agnome%3Alinux%2Famd64");
     await expect(app(page)).toContainText("Already installed? Open in Media Writer. Otherwise install it, then choose Open build request…");
     // The primary route's note stays under the primary button.
-    expect(await page.evaluate(() => document.getElementById("quick-meta").nextElementSibling.id)).toBe("quick-app");
+    expect(await page.evaluate(() => document.getElementById("quick-under").nextElementSibling.id)).toBe("quick-app");
+    // Linux: the Flatpak setup, and balenaEtcher for the ISO this route gives.
+    await expect(page.locator("#quick-app-linux")).toBeVisible();
+    await expect(page.locator("#quick-app-etcher a")).toHaveAttribute("href", "https://etcher.balena.io/");
   });
 
   test("a ready-made ISO keeps the app as the second action, and the deep link follows the chosen image", async ({ page }) => {
@@ -257,7 +274,7 @@ test.describe("TunaOS Media Writer beside every route", () => {
     await expect(app(page)).not.toHaveClass(/is-secondary/);
     await expect(page.locator("#quick-app-title")).toBeHidden();
     await expect(page.locator("#quick-app-reason")).toBeVisible();
-    expect(await page.evaluate(() => document.getElementById("quick-app").nextElementSibling.id)).toBe("quick-meta");
+    expect(await page.evaluate(() => document.getElementById("quick-app").nextElementSibling.id)).toBe("quick-under");
   });
 
   test("the build request is this image with its desktop's default apps", async ({ page }) => {
@@ -314,4 +331,40 @@ test.describe("a tunaos.org ?image= link", () => {
       expect(new URL(page.url()).search).toBe(`?${query}`);
     });
   }
+});
+
+test.describe("the USB path, in plain words", () => {
+  test.describe.configure({ timeout: 60_000 });
+
+  test("under every primary action: the USB stick size, the drive erase, and the way to keep Windows", async ({ page }) => {
+    for (const options of [{}, { prebuilt: {}, mediaWriter: WRITER }]) {
+      await open(page, options);
+      await settled(page);
+      await expect(page.locator("#quick-usb")).toHaveText("You need a USB stick of 16 GB or larger; everything on it is erased.");
+      await expect(page.locator("#quick-erase")).toHaveText("Installing erases the computer’s drive. Want to keep Windows? Use wootc.");
+      await expect(page.locator("#quick-erase a")).toHaveAttribute("href", "https://tunaos.org/wootc");
+    }
+  });
+
+  test("one line leads back to tunaos.org's other ways to install", async ({ page }) => {
+    await open(page, { mediaWriter: WRITER });
+    await settled(page);
+    await expect(page.locator(".quick-more a")).toHaveAttribute("href", "https://tunaos.org/download");
+    await expect(page.locator(".quick-more a")).toHaveText("Other ways to install TunaOS");
+  });
+
+  test("after the ISO: balenaEtcher for the file, then the USB start and installer guides", async ({ page }) => {
+    await open(page, { mediaWriter: WRITER });
+    await settled(page);
+    await page.locator("#quick-prebuilt").evaluate(a => a.addEventListener("click", e => e.preventDefault()));
+    await page.locator("#quick-prebuilt").click();
+    await expect(page.locator("#quick-next")).toBeVisible();
+    expect(await page.locator("#quick-next a").evaluateAll(links => links.map(a => a.href))).toEqual([
+      "https://etcher.balena.io/", "https://tunaos.org/docs/start-from-usb", "https://tunaos.org/docs/installer"]);
+    // The app stays offered beside the result; nothing on the way points at
+    // developer docs or another project's writer.
+    await expect(page.locator("#quick-app")).toBeVisible();
+    const hrefs = await page.locator("#quick a[href]").evaluateAll(links => links.map(a => a.href));
+    expect(hrefs.filter(h => /docs\/iso-builder|bootc-installer-asahi|fedoraproject/.test(h))).toEqual([]);
+  });
 });
