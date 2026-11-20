@@ -2,8 +2,8 @@
   "schemaVersion": 1,
   "kind": "guided-image-catalog",
   "catalogId": "stock",
-  "generatedAt": "2026-11-19T22:37:43Z",
-  "snapshotDigest": "sha256:6f84795e4a02bf918075dea0e713fe45c5c5365c576b933d7604485822843f82",
+  "generatedAt": "2026-11-20T01:06:10Z",
+  "snapshotDigest": "sha256:5137f227a38d5a7c1de4af34df54540caf3fcbce8025b08c95c19ca0791c2546",
   "leaves": [
     {
       "id": "albacore:base-hwe:linux/amd64",
