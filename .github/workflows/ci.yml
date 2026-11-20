@@ -995,7 +995,7 @@ jobs:
         with:
           persist-credentials: false
           repository: tuna-os/tunaOS
-          ref: 8bb7a90af4217110fcbebb9fb6ca70d4f27c136c
+          ref: c584f5b4befc20be130f81bbaaaeac80c05dacba
           path: tunaos-e2e
       - name: checkout current tunaOS strict harness (pinned)
         if: github.event.inputs.strict_roundtrip_test == 'true'
@@ -1004,7 +1004,7 @@ jobs:
         with:
           persist-credentials: false
           repository: tuna-os/tunaOS
-          ref: 8bb7a90af4217110fcbebb9fb6ca70d4f27c136c
+          ref: c584f5b4befc20be130f81bbaaaeac80c05dacba
           path: tunaos-e2e-current
 
       - name: verify guest under QEMU (${{ matrix.edition.slug }})
