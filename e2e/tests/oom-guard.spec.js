@@ -135,6 +135,6 @@ test.describe("engine OOM guard", () => {
       await page.clock.fastForward("00:30");
     }
     await expect(page.locator("#stage")).not.toContainText(/Out of memory/i);
-    await expect(page.locator("#stage")).toContainText(/Unpacking layer 12\/65/);
+    await expect(page.locator("#stage")).toContainText(/Downloading .+ \(part 12 of 65\)/);
   });
 });

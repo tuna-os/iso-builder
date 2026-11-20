@@ -672,15 +672,18 @@ function loadWasm() {
 window.loadWasm = loadWasm;
 
 let lastProgressAt = 0;
+// Plain words for the engine's stages: the people reading them are waiting
+// for a USB stick, not following the build.
 globalThis.tboxOnProgress = (stage, i, n) => {
+  const system = GUIDED && !manualImageMode ? BUILDER_CONFIG.brand.name : "the system";
   $("stage").textContent = {
-    resolve: "Resolving manifest…",
-    unpack: `Unpacking layer ${i}/${n}`,
-    overlay: "Applying live overlay…",
-    initrd: "Appending tbox initramfs overlay…",
-    erofs: "Authoring EROFS live root…",
-    esp: "Authoring EFI system partition…",
-    iso: "Streaming ISO…",
+    resolve: `Looking up ${system}…`,
+    unpack: `Downloading ${system} (part ${i} of ${n})`,
+    overlay: "Preparing the live system…",
+    initrd: "Preparing the startup files…",
+    erofs: "Packing the system into the ISO…",
+    esp: "Adding the boot files…",
+    iso: "Writing the ISO file…",
   }[stage] || stage;
   if (Number.isFinite(n) && n > 0 && Number.isFinite(i) && i >= 0) {
     $("bar").max = n; $("bar").value = i;
@@ -1553,11 +1556,11 @@ async function buildDdi(ch) {
     $("postcard").classList.add("hidden");
     log("error: " + e);
     if (/QuotaExceededError|quota exceeded/i.test(String(e))) {
-      $("stage").textContent = "Build failed — storage quota exceeded.";
+      $("stage").textContent = "Build failed — this browser ran out of storage space.";
     } else if (e.name === "AbortError") {
       $("stage").textContent = "Save cancelled — no completed save confirmed. Your setup is preserved; retry when ready.";
     } else if (/download stalled/i.test(String(e))) {
-      $("stage").textContent = "Build failed — layer download stalled (try again; the browser may recover on a fresh page load).";
+      $("stage").textContent = "Build failed — the download stopped. Reload the page and try again; parts already downloaded are kept.";
     } else {
       $("stage").textContent = "Build failed.";
     }
@@ -1697,13 +1700,13 @@ async function build(presetSink = null) {
     log("error: " + e);
     if (/digest mismatch/.test(String(e))) log("a downloaded layer does not match its digest — clear it under Advanced → Clear downloaded layers, then try again");
     if (/QuotaExceededError|quota exceeded/i.test(String(e))) {
-      $("stage").textContent = "Build failed — storage quota exceeded.";
+      $("stage").textContent = "Build failed — this browser ran out of storage space.";
     } else if (e.name === "AbortError") {
       $("stage").textContent = "Save cancelled — no completed save confirmed. Your setup is preserved; retry when ready.";
     } else if (/download stalled/i.test(String(e))) {
-      $("stage").textContent = "Build failed — layer download stalled (try again; the browser may recover on a fresh page load).";
+      $("stage").textContent = "Build failed — the download stopped. Reload the page and try again; parts already downloaded are kept.";
     } else if (/sink write/i.test(String(e))) {
-      $("stage").textContent = "Build failed — sink write error.";
+      $("stage").textContent = "Build failed — the ISO file could not be saved. Check that the disk has space.";
     } else {
       $("stage").textContent = "Build failed.";
     }

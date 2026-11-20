@@ -323,6 +323,11 @@
         <button type="button" id="quick-phone-share" class="button">Copy link</button>
         <p class="quick-fine" id="quick-phone-status" role="status"></p>
       </div>
+      <div id="quick-progress" hidden>
+        <p id="quick-stage" role="status" aria-live="polite"></p>
+        <progress id="quick-bar" max="1" aria-label="Download progress"></progress>
+        <p class="quick-fine">Keep this tab open until it finishes. <button type="button" id="quick-cancel" class="linklike">Cancel</button></p>
+      </div>
       <div id="quick-under">
         <p id="quick-meta" class="quick-fine"></p>
         <p class="quick-fine" id="quick-usb">You need a USB stick of 16 GB or larger; everything on it is erased.</p>
@@ -343,11 +348,6 @@
         <p class="quick-fine" id="quick-app-linux" hidden>Installing it needs Flatpak, which Ubuntu doesn’t include. Set it up once: open Terminal, run <code>sudo apt install flatpak gnome-software-plugin-flatpak</code>, then restart (<a href="https://flathub.org/setup/Ubuntu">Flathub’s Ubuntu guide</a>). Then open the downloaded file with Software.<span id="quick-app-etcher"> Or skip the app: download the ISO and write it with <a href="https://etcher.balena.io/">balenaEtcher</a>.</span></p>
         <p class="quick-fine" id="quick-app-error" role="alert" hidden></p>
       </div>
-    </div>
-    <div id="quick-progress" hidden>
-      <p id="quick-stage" role="status" aria-live="polite"></p>
-      <progress id="quick-bar" max="1" aria-label="Download progress"></progress>
-      <p class="quick-fine">Keep this tab open until it finishes.</p>
     </div>
     <div id="quick-result" hidden role="status">
       <p id="quick-result-text"></p>

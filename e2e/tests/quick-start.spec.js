@@ -440,3 +440,55 @@ test.describe("Open in Media Writer", () => {
     await expect(page.locator("#quick-app-how")).toBeHidden();
   });
 });
+
+test.describe("a browser build, start to cancel", () => {
+  test.describe.configure({ timeout: 60_000 });
+
+  async function stubEngine(page) {
+    await page.evaluate(() => {
+      window.showSaveFilePicker = async ({ suggestedName }) => ({ createWritable: async () => ({
+        write: async () => {}, close: async () => {}, name: suggestedName,
+        abort: async () => { sessionStorage.setItem("test-aborted", "1"); },
+      }) });
+      window.loadWasm = async () => {};
+      window.tboxIntrospect = async image => JSON.stringify({ desktop: image.split(":").pop(), kernelVer: "6.12", layerCount: 65, compressedSize: 1 });
+      // Never finishes on its own, like a long build.
+      window.tboxBuildIso = async () => { globalThis.tboxOnProgress("unpack", 3, 65); await new Promise(() => {}); };
+      window.tboxReset = () => null;
+    });
+  }
+
+  test("says before it starts: a Save dialog, how much downloads, roughly how long, keep the tab open", async ({ page }) => {
+    await open(page, { mediaWriter: WRITER });
+    await settled(page);
+    await page.locator("#quick-base").selectOption("bonito");
+    expect((await route(page)).kind).toBe("browser");
+    const size = snapshot.targets.find(t => t.targetKey === QUALIFIED_FOR_SPECS).facts.compressedSize;
+    await expect(page.locator("#quick-meta")).toHaveText(new RegExp(
+      `^Built in this browser tab, for 64-bit Intel and AMD PCs\\. First you choose where to save the file\\. Then this tab downloads about ${(size / 1e9).toFixed(1)} GB and builds the ISO, roughly \\d+ to \\d+ minutes on a home connection\\. Keep the tab open until it finishes\\.$`));
+  });
+
+  test("shows plain progress with Cancel, keeps Media Writer offered, and Cancel stops it", async ({ page }) => {
+    await qualifiedCatalogFixture(page);
+    await open(page, { catalog: null, mediaWriter: WRITER });
+    await settled(page);
+    await stubEngine(page);
+    await page.locator("#quick-download").click();
+    await expect(page.locator("#quick-stage")).toHaveText("Downloading TunaOS (part 3 of 65)");
+    await expect(page.locator("#quick-download")).toBeHidden();
+    await expect(page.locator("#quick-under")).toBeHidden();
+    await expect(page.locator("#quick-app")).toBeVisible();
+    await expect(page.locator("#quick-cancel")).toBeVisible();
+
+    await Promise.all([page.waitForEvent("load"), page.locator("#quick-cancel").click()]);
+    await settled(page);
+    expect(await page.evaluate(() => sessionStorage.getItem("test-aborted"))).toBe("1");
+    await expect(page.locator("#quick-result-text")).toHaveText("Download cancelled. If an unfinished .iso file was left where you chose to save it, you can delete it.");
+    await expect(page.locator("#quick-next")).toBeHidden();
+    await expect(page.locator("#quick-download")).toBeVisible();
+    // Only once: a later reload starts clean.
+    await page.reload();
+    await settled(page);
+    await expect(page.locator("#quick-result")).toBeHidden();
+  });
+});

@@ -249,12 +249,15 @@
 
     const leaf = selectedLeaf();
     const r = route(leaf);
-    $q('quick-arm').hidden = !(OS.id === 'macos' && macArch === 'arm');
+    // While a build runs the progress takes the primary action's place; the
+    // app stays offered below it.
+    $q('quick-arm').hidden = busy || !(OS.id === 'macos' && macArch === 'arm');
     $q('quick-mac').hidden = !(OS.id === 'macos' && macArch === null);
-    $q('quick-download').hidden = r.kind !== 'browser' && r.kind !== 'local';
+    $q('quick-download').hidden = busy || (r.kind !== 'browser' && r.kind !== 'local');
     $q('quick-download').textContent = r.kind === 'local' ? 'Build on your computer' : 'Download ISO';
     $q('quick-download').disabled = busy;
-    $q('quick-prebuilt').hidden = r.kind !== 'prebuilt';
+    $q('quick-prebuilt').hidden = busy || r.kind !== 'prebuilt';
+    $q('quick-under').hidden = busy;
     $q('quick-phone').hidden = r.kind !== 'mobile';
     // The phone's own message already names the USB stick.
     $q('quick-usb').hidden = r.kind === 'mobile';
@@ -263,7 +266,10 @@
     meta.hidden = r.kind === 'mobile';
     if (r.kind === 'browser') {
       const size = leaf.entry.facts?.compressedSize;
-      meta.textContent = `Built right here in your browser${size ? ` from about ${gb(size)} of downloads` : ''}. For 64-bit Intel and AMD PCs.`;
+      const save = window.showSaveFilePicker ? 'First you choose where to save the file. Then this tab' : 'This tab';
+      meta.textContent = `Built in this browser tab, for 64-bit Intel and AMD PCs. ${save} downloads ${size
+        ? `about ${gb(size)} and builds the ISO, roughly ${buildMinutes(size)} on a home connection`
+        : `${BUILDER_CONFIG.brand.name} and builds the ISO`}. Keep the tab open until it finishes.`;
     } else if (r.kind === 'prebuilt') {
       $q('quick-prebuilt').href = r.iso.url;
       meta.textContent = `${gb(r.iso.size)} file. For 64-bit Intel and AMD PCs.`;
@@ -335,11 +341,32 @@
     }
   }
 
+  // A rough range, not a measurement: the download at 100 and at 25 Mbit/s,
+  // plus 10 to 20 minutes to build the ISO, in steps of five minutes.
+  function buildMinutes(bytes) {
+    const step = (seconds) => Math.max(5, Math.round(seconds / 300) * 5);
+    return `${step(bytes / 12.5e6 + 600)} to ${step(bytes / 3.125e6 + 1200)} minutes`;
+  }
+
   function setBusy(value) {
     busy = value;
     $q('quick').classList.toggle('is-busy', value);
-    $q('quick-action').hidden = value;
     render();
+  }
+
+  // The engine cannot be stopped mid-build, so Cancel discards the unfinished
+  // file and reloads the page. Downloaded parts stay in the browser's cache,
+  // so starting again is faster.
+  const CANCELLED_KEY = 'tbox-quick-cancelled';
+  let activeSink = null;
+  async function cancelBuild() {
+    if (!busy) return;
+    $q('quick-cancel').disabled = true;
+    busy = false; // stop mirroring the engine's stage over this one
+    $q('quick-stage').textContent = 'Cancelling…';
+    try { sessionStorage.setItem(CANCELLED_KEY, '1'); } catch { /* the reload still stops it */ }
+    await activeSink?.w.abort?.().catch(() => {});
+    location.reload();
   }
 
   function clearResult() {
@@ -390,9 +417,11 @@
       return;
     }
     if (!sink) return; // save dialog cancelled
+    activeSink = sink;
     setBusy(true);
     clearResult();
     $q('quick-progress').hidden = false;
+    $q('quick-cancel').disabled = false;
     $q('quick-stage').textContent = 'Checking the image…';
     $q('quick-bar').removeAttribute('value');
     try {
@@ -410,6 +439,7 @@
         showResult('failed', stage.textContent || 'The build did not finish.');
       }
     } finally {
+      activeSink = null;
       setBusy(false);
     }
   }
@@ -486,6 +516,7 @@
   });
   $q('quick-phone-share').textContent = navigator.share ? 'Send this link to your computer' : 'Copy link';
   $q('quick-phone-share').addEventListener('click', sharePageLink);
+  $q('quick-cancel').addEventListener('click', cancelBuild);
   $q('quick-app-request').addEventListener('click', saveBuildRequest);
   $q('quick-alt-local').addEventListener('click', buildOnComputer);
   $q('quick-retry').addEventListener('click', () => { clearResult(); render(); });
@@ -495,5 +526,8 @@
   globalThis.tboxQuickRefresh = render;
   globalThis.tboxQuickRoute = () => ({ ...route(selectedLeaf()), desktop, base, capable, os: OS.id });
   render();
+  let cancelled = false;
+  try { cancelled = sessionStorage.getItem(CANCELLED_KEY) === '1'; sessionStorage.removeItem(CANCELLED_KEY); } catch { /* no storage, no message */ }
+  if (cancelled) showResult('cancelled', 'Download cancelled. If an unfinished .iso file was left where you chose to save it, you can delete it.');
   Promise.all([loaded, measureCapability()]).finally(render);
 })();
