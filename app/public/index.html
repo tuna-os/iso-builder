@@ -282,7 +282,9 @@
   .quick-app-row { display: flex; flex-wrap: wrap; align-items: center; gap: .5rem 1.2rem; }
   .quick-app-links { font-size: .92rem; }
   .quick-app-links a, .quick-app-links .linklike { color: var(--accent-soft); }
+  #quick-phone p:first-child { margin: 0 0 .8rem; font-size: 1.02rem; }
   #quick-app .quick-fine { margin-top: .3rem; }
+  #quick-app #quick-app-nothing { color: var(--warn); }
   #quick-progress progress { height: 10px; margin-top: .5rem; }
   #quick-stage { margin: 0; font-weight: 600; }
   #quick-result { margin-top: 1.2rem; padding: 1rem 1.2rem; border-radius: 12px; background: var(--panel); }
@@ -316,6 +318,11 @@
       <p id="quick-arm" role="note" hidden>This download is for PCs with Intel or AMD processors. Macs with Apple chips (M1, M2 and newer) can’t start TunaOS yet: <a href="https://tunaos.org/docs/apple-silicon">Apple Silicon Macs</a>.</p>
       <button id="quick-download" type="button">Download ISO</button>
       <a id="quick-prebuilt" class="button" hidden>Download ISO</a>
+      <div id="quick-phone" hidden>
+        <p id="quick-phone-text">You’ll need a Windows, Mac or Linux PC and a USB stick of 16 GB or larger. Open this page on that computer to download TunaOS.</p>
+        <button type="button" id="quick-phone-share" class="button">Copy link</button>
+        <p class="quick-fine" id="quick-phone-status" role="status"></p>
+      </div>
       <div id="quick-under">
         <p id="quick-meta" class="quick-fine"></p>
         <p class="quick-fine" id="quick-usb">You need a USB stick of 16 GB or larger; everything on it is erased.</p>
@@ -327,9 +334,10 @@
         <p id="quick-app-title">Or skip the ISO file: TunaOS Media Writer downloads TunaOS and writes the USB stick for you.</p>
         <div class="quick-app-row">
           <a id="quick-app-download" class="button">Get the app</a>
-          <span id="quick-app-links" class="quick-app-links"><a id="quick-app-open">Open in Media Writer</a> · <button type="button" id="quick-app-request" class="linklike">Download this image’s build request</button></span>
+          <span id="quick-app-links" class="quick-app-links"><a id="quick-app-open">Open in Media Writer</a><span id="quick-app-sep"> · </span><button type="button" id="quick-app-request" class="linklike">Download this image’s build request</button></span>
         </div>
-        <p class="quick-fine">Already installed? Open in Media Writer. Otherwise install it, then choose Open build request…</p>
+        <p class="quick-fine" id="quick-app-nothing" role="status" hidden>Nothing happened? Install the app first, then choose Open in Media Writer again.</p>
+        <p class="quick-fine" id="quick-app-how"></p>
         <p class="quick-fine" id="quick-app-other"></p>
         <p class="quick-fine" id="quick-app-hint" hidden></p>
         <p class="quick-fine" id="quick-app-linux" hidden>Installing it needs Flatpak, which Ubuntu doesn’t include. Set it up once: open Terminal, run <code>sudo apt install flatpak gnome-software-plugin-flatpak</code>, then restart (<a href="https://flathub.org/setup/Ubuntu">Flathub’s Ubuntu guide</a>). Then open the downloaded file with Software.<span id="quick-app-etcher"> Or skip the app: download the ISO and write it with <a href="https://etcher.balena.io/">balenaEtcher</a>.</span></p>

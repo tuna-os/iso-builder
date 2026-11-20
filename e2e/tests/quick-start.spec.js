@@ -33,20 +33,20 @@ const WRITER = { version: "1.0.0", assets: {
   "linux-x86_64": { url: "https://github.com/tuna-os/iso-builder/releases/download/media-writer-v1.0.0/TunaOS-Media-Writer-Linux-x86_64.flatpak" },
 } };
 
-async function open(page, { prebuilt = PREBUILT, mediaWriter = null, deviceMemory = 16, freeGB = 100, url = "/", platform = "Linux", architecture = null, catalog = "unqualified" } = {}) {
+async function open(page, { prebuilt = PREBUILT, mediaWriter = null, deviceMemory = 16, freeGB = 100, url = "/", platform = "Linux", architecture = null, catalog = "unqualified", mobile = false } = {}) {
   if (catalog === "unqualified") await unqualifiedCatalog(page);
   await page.route("**/wasm_exec.js", route => route.fulfill({ contentType: "text/javascript", body: "" }));
   await page.route("**/tbox.wasm", route => route.abort());
   await page.route("https://**/*", route => route.abort());
   await page.route("**/downloads.json", route => route.fulfill({ json: { schemaVersion: 1, prebuilt, mediaWriter } }));
-  await page.addInitScript(({ deviceMemory, freeGB, platform, architecture }) => {
+  await page.addInitScript(({ deviceMemory, freeGB, platform, architecture, mobile }) => {
     Object.defineProperty(navigator, "deviceMemory", { value: deviceMemory, configurable: true });
     navigator.storage.estimate = async () => ({ quota: freeGB * 1e9, usage: 0 });
-    const uaData = { platform, mobile: false };
+    const uaData = { platform, mobile };
     // Chromium's high-entropy hint; other browsers have none.
     if (architecture !== null) uaData.getHighEntropyValues = async () => ({ architecture });
     Object.defineProperty(navigator, "userAgentData", { value: uaData, configurable: true });
-  }, { deviceMemory, freeGB, platform, architecture });
+  }, { deviceMemory, freeGB, platform, architecture, mobile });
   await page.goto(url);
 }
 const route = page => page.evaluate(() => window.tboxQuickRoute());
@@ -241,7 +241,7 @@ test.describe("TunaOS Media Writer beside every route", () => {
     await expect(page.locator("#quick-app-reason")).toBeHidden();
     await expect(page.locator("#quick-app-download")).toHaveAttribute("href", WRITER.assets["linux-x86_64"].url);
     await expect(page.locator("#quick-app-open")).toHaveAttribute("href", "tunaos-media-writer://build?target=bonito%3Agnome%3Alinux%2Famd64");
-    await expect(app(page)).toContainText("Already installed? Open in Media Writer. Otherwise install it, then choose Open build request…");
+    await expect(app(page)).toContainText("Already installed? Open in Media Writer. Otherwise install it, then choose Open in Media Writer again.");
     // The primary route's note stays under the primary button.
     expect(await page.evaluate(() => document.getElementById("quick-under").nextElementSibling.id)).toBe("quick-app");
     // Linux: the Flatpak setup, and balenaEtcher for the ISO this route gives.
@@ -378,4 +378,65 @@ test("developer documentation is linked from the full builder only", async ({ pa
   await page.locator("#quick-customize").click();
   await expect(link).toBeVisible();
   await expect(link).toHaveAttribute("href", "https://tunaos.org/docs/iso-builder");
+});
+
+test.describe("a phone", () => {
+  test.describe.configure({ timeout: 60_000 });
+
+  test("is told it needs a PC and a USB stick, offered no ISO, and can copy the link to this image", async ({ page, context }) => {
+    await context.grantPermissions(["clipboard-read", "clipboard-write"]);
+    await open(page, { mediaWriter: WRITER, platform: "Android", mobile: true });
+    await settled(page);
+    expect((await route(page)).kind).toBe("mobile");
+    await expect(page.locator("#quick-phone-text")).toHaveText("You’ll need a Windows, Mac or Linux PC and a USB stick of 16 GB or larger. Open this page on that computer to download TunaOS.");
+    for (const id of ["quick-prebuilt", "quick-download", "quick-app", "quick-usb", "quick-meta"]) await expect(page.locator(`#${id}`)).toBeHidden();
+    await expect(page.locator("#quick-erase")).toBeVisible();
+    await page.getByText("KDE Plasma", { exact: true }).click();
+    await expect(page.locator("#quick-phone-share")).toHaveText("Copy link");
+    await page.locator("#quick-phone-share").click();
+    await expect(page.locator("#quick-phone-status")).toContainText("Link copied.");
+    const copied = await page.evaluate(() => navigator.clipboard.readText());
+    expect(new URL(copied).searchParams.get("image")).toBe("tuna-os/yellowfin:kde");
+  });
+
+  test("uses the share sheet where there is one", async ({ page }) => {
+    await page.addInitScript(() => { navigator.share = async (data) => { window.__shared = data; }; });
+    await open(page, { platform: "Android", mobile: true });
+    await settled(page);
+    await expect(page.locator("#quick-phone-share")).toHaveText("Send this link to your computer");
+    await page.locator("#quick-phone-share").click();
+    await expect.poll(() => page.evaluate(() => window.__shared?.url)).toMatch(/\?image=tuna-os%2Fyellowfin%3Agnome$/);
+  });
+});
+
+test.describe("Open in Media Writer", () => {
+  test.describe.configure({ timeout: 60_000 });
+
+  test("is not offered before Media Writer 0.2.0, which registers no link handler", async ({ page }) => {
+    for (const version of ["0.1.0", "0.1.9", "not-a-version"]) {
+      await open(page, { mediaWriter: { ...WRITER, version } });
+      await settled(page);
+      await expect(page.locator("#quick-app")).toBeVisible();
+      await expect(page.locator("#quick-app-open")).toBeHidden();
+      await expect(page.locator("#quick-app-request")).toBeVisible();
+      await expect(page.locator("#quick-app-how")).toHaveText("Install it, then pick this desktop in the app, or choose Open build request… with the file above.");
+    }
+    for (const version of ["0.2.0", "0.10.1", "1.0.0"]) {
+      await open(page, { mediaWriter: { ...WRITER, version } });
+      await settled(page);
+      await expect(page.locator("#quick-app-open")).toBeVisible();
+    }
+  });
+
+  test("says to install the app first when nothing happens", async ({ page }) => {
+    await open(page, { mediaWriter: { ...WRITER, version: "0.2.0" } });
+    await settled(page);
+    // No handler for the scheme: the click goes nowhere, as without the app.
+    await page.locator("#quick-app-open").evaluate(a => a.addEventListener("click", e => e.preventDefault()));
+    await page.locator("#quick-app-open").click();
+    await expect(page.locator("#quick-app-nothing")).toBeHidden();
+    await expect(page.locator("#quick-app-nothing")).toBeVisible({ timeout: 4000 });
+    await expect(page.locator("#quick-app-nothing")).toHaveText("Nothing happened? Install the app first, then choose Open in Media Writer again.");
+    await expect(page.locator("#quick-app-how")).toBeHidden();
+  });
 });
