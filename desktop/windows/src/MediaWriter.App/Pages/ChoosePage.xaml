@@ -69,7 +69,7 @@
         </ComboBox>
 
         <StackPanel Grid.Row="4" Spacing="8">
-            <!-- A link (--target / tunaos-media-writer://) that could not be opened. -->
+            <!-- A link (target argument or tunaos-media-writer:// URL) that could not be opened. -->
             <InfoBar
                 x:Name="LinkInfo"
                 IsClosable="True"
