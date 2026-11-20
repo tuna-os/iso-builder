@@ -132,14 +132,6 @@
   .variant-select { margin-top: .4rem; padding: .55rem .65rem; border-radius: 6px; border: none;
     background: var(--bg); color: var(--fg); font: inherit; font-size: .9rem; width: 100%; max-width: 340px; }
 
-  .tabs { display: flex; flex-wrap: wrap; gap: .3rem; border-bottom: 1px solid var(--border); padding-bottom: .4rem; margin-top: .9rem; }
-  .tab-btn { background: transparent; color: var(--dim); border: none; font-size: .84rem; font-weight: 600;
-    padding: .35rem .7rem; cursor: pointer; border-radius: 6px; }
-  .tab-btn:hover { color: var(--fg); background: var(--bg); }
-  .tab-btn.active { color: var(--fg); background: var(--panel-2); }
-  .tab-content { font-size: .88rem; line-height: 1.7; color: var(--dim); }
-  .tab-content b, .tab-content code { color: var(--fg); }
-
   pre { background: var(--bg); border-radius: 6px; }
 
   dialog { background:var(--panel); color:var(--fg); border:1px solid var(--accent); border-radius:14px; max-width: min(650px, calc(100% - 2rem)); overflow-wrap:anywhere; }
@@ -541,53 +533,7 @@
     
     <p id="delivery-status" role="status"></p>
     <p class="helper">Saving does not independently verify the saved file. Input digest checks establish byte integrity, not publisher authentication. A successful build does not establish that this ISO boots or installs on your computer.</p>
-    <div class="tabs">
-      <button class="tab-btn active" onclick="switchTab(event, 'etcher')">BalenaEtcher</button>
-      <button class="tab-btn" onclick="switchTab(event, 'ventoy')">Ventoy</button>
-      <button class="tab-btn" onclick="switchTab(event, 'rufus')">Rufus</button>
-      <button class="tab-btn" onclick="switchTab(event, 'dd')">Terminal (dd)</button>
-    </div>
-    
-    <div id="tab-etcher" class="tab-content" style="margin-top:1rem">
-      <ol style="padding-left:1.2rem;margin:0">
-        <li>Download and install <a href="https://etcher.balena.io/" target="_blank" rel="noopener">BalenaEtcher</a> (supports Windows, macOS, and Linux).</li>
-        <li>Use a USB drive with capacity larger than the downloaded ISO file. Back up its files and verify the selected drive before flashing; flashing erases its contents.</li>
-        <li>Open Etcher, click <b>Flash from file</b> and select your downloaded ISO.</li>
-        <li>Select your USB target and click <b>Flash!</b>.</li>
-      </ol>
-    </div>
-    
-    <div id="tab-ventoy" class="tab-content hidden" style="margin-top:1rem">
-      <p style="margin:0 0 .5rem;font-size:.85rem;color:var(--warn)"><strong>Warning:</strong> Normal Ventoy installation reformats the selected USB drive and erases all its data. Back up its files and verify the target drive before you install.</p>
-      <p class="sub">Check your edition's USB-writing instructions first. <a href="https://docs.projectbluefin.io/installation/" target="_blank" rel="noopener">Bluefin recommends Fedora Media Writer and does not support Ventoy.</a></p>
-      <ol style="padding-left:1.2rem;margin:0">
-        <li>If Ventoy is already installed, do not reinstall it to add this ISO. Otherwise, follow the <a href="https://www.ventoy.net/en/doc_start.html" target="_blank" rel="noopener">Ventoy installation instructions</a> after the backup and target check above.</li>
-        <li>Open the USB drive's Ventoy data partition, normally named <code>Ventoy</code>, and check that its free space exceeds the ISO file size.</li>
-        <li>Copy your downloaded ISO file onto that data partition.</li>
-        <li>Reboot your PC, boot from the USB drive, and choose the ISO from the Ventoy menu.</li>
-      </ol>
-    </div>
-
-    <div id="tab-rufus" class="tab-content hidden" style="margin-top:1rem">
-      <ol style="padding-left:1.2rem;margin:0">
-        <li>Download and open <a href="https://rufus.ie/" target="_blank" rel="noopener">Rufus</a> (Windows only).</li>
-        <li>Select your USB drive under <b>Device</b>.</li>
-        <li>Click <b>SELECT</b> and choose your downloaded ISO.</li>
-        <li>Keep default settings (GPT, UEFI) and click <b>START</b>.</li>
-        <li>If prompted for write mode, select <b>Write in ISO Image mode</b>.</li>
-      </ol>
-    </div>
-
-    <div id="tab-dd" class="tab-content hidden" style="margin-top:1rem">
-      <p style="margin:0 0 .5rem;font-size:.85rem;color:var(--warn)">Warning: writing to the wrong drive wipes it. Check the device name first.</p>
-      <ol style="padding-left:1.2rem;margin:0">
-        <li>Identify your USB drive name (e.g. <code>/dev/sdX</code> on Linux, <code>/dev/diskN</code> on macOS).</li>
-        <li>Run the following command in your terminal:
-          <pre style="padding:.6rem;overflow-x:auto;margin:.4rem 0;font:12px var(--mono)"><code>sudo dd if=path/to/image.iso of=/dev/sdX bs=4M status=progress oflag=sync</code></pre>
-        </li>
-        <li>Wait for the write command to complete and safely eject the drive.</li>
-      </ol>
-    </div>
+    <p id="postcard-next">Next: write the ISO to a USB stick of 16 GB or larger with <a href="https://etcher.balena.io/" target="_blank" rel="noopener">balenaEtcher</a> (choose Flash from file; everything on the stick is erased). Then follow the <a id="postcard-guide" target="_blank" rel="noopener">installation guide</a>.</p>
   </div>
 
   <details id="planning-recovery"><summary>Save planning choices for a refresh</summary>
@@ -599,6 +545,7 @@
     <a id="sharelink" href="#" style="word-break:break-all"><code id="share">?image=…</code></a>
     <button id="copyshare" class="secondary" style="padding:.2rem .6rem;font-size:.8rem;margin-left:.4rem">Copy</button>
   </p></details>
+  <p class="helper"><a href="https://tunaos.org/docs/iso-builder">How this builder works (developer documentation)</a></p>
 </main>
 <script src="wasm_exec.js"></script>
 <script src="layercache.js"></script>
