@@ -21,6 +21,11 @@ depends on evidence, not preference (`app/public/quick-start.js`):
 4. **Build on your computer.** The page shows the local instructions of the
    full builder.
 
+On a phone, the page does not use these routes and offers no ISO. It says
+that you need a Windows, Mac or Linux PC and a USB stick of 16 GB or larger.
+Its button sends the page link to your computer, or copies the link when the
+phone cannot share it. The link opens the page on the same desktop and base.
+
 TunaOS Media Writer can have a release for your operating system. Then the
 page also shows it under the button on every route: **Write it to a USB stick
 with TunaOS Media Writer**. Two links follow the download button:
