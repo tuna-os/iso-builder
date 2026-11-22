@@ -104,11 +104,12 @@ func FetchMedium(ctx context.Context, o MediumOptions) (MediumResult, error) {
 		readers.Go(func() {
 			scanLines(r, func(line string) {
 				mu.Lock()
+				defer mu.Unlock()
 				fmt.Fprintln(mirror, line)
-				mu.Unlock()
 				if r == stdout {
 					rawOut.WriteString(line + "\n")
 				}
+				// The tracker is shared by both readers; mu guards it too.
 				track.line(line)
 			})
 		})
@@ -193,18 +194,27 @@ func parseMediumSummary(stdout string) (MediumResult, error) {
 }
 
 // classifyMediumFailure maps the engine's last line to a protocol error.
+// httpStatusRE matches a standalone 429 or 5xx status, not digits inside a path.
+var httpStatusRE = regexp.MustCompile(`(^|[^0-9a-z/._-])(429|5[0-9]{2})([^0-9a-z/._-]|$)`)
+
 func classifyMediumFailure(last string, err error) *protocol.Error {
 	l := strings.ToLower(last)
-	for _, s := range []string{"no such host", "connection refused", "connection reset", "timeout", "tls", "429", " 5"} {
-		if strings.Contains(l, s) {
-			return &protocol.Error{Kind: protocol.KindNetwork, Message: "Could not reach the image registry. Check the network and try again.", Err: err}
-		}
-	}
+	// Specific, path-bearing messages first: the target path can contain any
+	// digits (a temp dir named ...429...), which must not read as an HTTP status.
 	if strings.Contains(l, "refusing to write target") {
 		return &protocol.Error{Kind: protocol.KindStorage, Message: "The staged image file cannot be reused. Delete it and try again.", Err: err}
 	}
 	if strings.Contains(l, "not an installer image") || strings.Contains(l, "digest mismatch") || strings.Contains(l, "sha256 mismatch") {
 		return &protocol.Error{Kind: protocol.KindVerifyMismatch, Message: "The downloaded image failed its integrity check. Try again.", Err: err}
+	}
+	netMsg := false
+	for _, s := range []string{"no such host", "connection refused", "connection reset", "timeout", "tls"} {
+		if strings.Contains(l, s) {
+			netMsg = true
+		}
+	}
+	if netMsg || httpStatusRE.MatchString(l) {
+		return &protocol.Error{Kind: protocol.KindNetwork, Message: "Could not reach the image registry. Check the network and try again.", Err: err}
 	}
 	return &protocol.Error{Kind: protocol.KindEngine, Message: "Fetching the installer image failed. Details hold the engine output.", Err: err}
 }

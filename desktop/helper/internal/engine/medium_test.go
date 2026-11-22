@@ -137,3 +137,16 @@ func TestMediumProgressDedup(t *testing.T) {
 		t.Fatalf("duplicate progress emitted %d times", n)
 	}
 }
+
+func TestClassifyMediumFailureIgnoresDigitsInPaths(t *testing.T) {
+	e := classifyMediumFailure("Error: refusing to write target: /tmp/TestX4291/001/cell.img is a non-empty file", nil)
+	if e.Kind != protocol.KindStorage {
+		t.Fatalf("refusal misclassified: %v", e.Kind)
+	}
+	if e := classifyMediumFailure("write /tmp/a4291/cell.img: disk full", nil); e.Kind != protocol.KindEngine {
+		t.Fatalf("path digits read as status: %v", e.Kind)
+	}
+	if e := classifyMediumFailure("fetch manifest: unexpected status 503 Service Unavailable", nil); e.Kind != protocol.KindNetwork {
+		t.Fatalf("503 not network: %v", e.Kind)
+	}
+}
