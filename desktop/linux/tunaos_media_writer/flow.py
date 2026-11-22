@@ -7,12 +7,16 @@ from __future__ import annotations
 
 import enum
 import os
+import re
 from dataclasses import dataclass
 from typing import Callable
 
 from . import protocol, strings
 from .catalog import Catalog, Target
 from .protocol import Drive
+
+# A manifest digest pins the exact image bytes a cell link means.
+_DIGEST = re.compile(r"sha256:[0-9a-fA-F]{64}")
 
 
 class Step(enum.Enum):
@@ -47,18 +51,26 @@ class InvalidTransition(RuntimeError):
 
 @dataclass(frozen=True)
 class Source:
-    """What to build: a catalog target or a build-request.json file."""
+    """What to fetch or build: a catalog target, a build-request.json file,
+    or (with cell set) a prepared installer image."""
 
     label: str
     save_name: str
     target_id: str = ""
     request_path: str = ""
+    cell: str = ""
+    digest: str = ""
 
     @property
     def key(self) -> str:
-        return self.target_id or f"request:{self.request_path}"
+        base = self.target_id or f"request:{self.request_path}"
+        if self.cell:
+            base += f"|cell:{self.cell}"
+        return base
 
     def build_args(self) -> list[str]:
+        if self.cell:
+            return ["--cell", self.cell]
         if self.target_id:
             return ["--target", self.target_id]
         return ["--request", self.request_path]
@@ -87,7 +99,12 @@ class Source:
         name = os.path.basename(name)
         if not name:
             name = os.path.splitext(os.path.basename(path))[0] + ".iso"
-        return cls(label=label or os.path.basename(path), save_name=name, request_path=path)
+        cell = data.get("cell") if isinstance(data.get("cell"), str) else ""
+        digest = data.get("digest") if isinstance(data.get("digest"), str) else ""
+        if digest and not _DIGEST.fullmatch(digest):
+            raise ValueError("bad cell digest")
+        return cls(label=label or os.path.basename(path), save_name=name, request_path=path,
+                   cell=cell, digest=digest)
 
 
 @dataclass(frozen=True)
@@ -125,7 +142,7 @@ class Flow:
         self.error: protocol.Error | None = None
         self.result: protocol.Done | None = None
         self._notice: Notice | None = None
-        self.pending_target: str | None = None  # a link that arrived before the catalog
+        self.pending_target: tuple[str, str, str] | None = None  # a link that arrived before the catalog
         self._listeners: list[Callable[["Flow"], None]] = []
 
     # -- observation -------------------------------------------------
@@ -162,25 +179,30 @@ class Flow:
         self.step = Step.CHOOSE
         self._changed()
         if self.pending_target is not None:
-            target_id, self.pending_target = self.pending_target, None
-            self.open_target(target_id)
+            pending, self.pending_target = self.pending_target, None
+            self.open_target(*pending)
 
-    def open_target(self, target_id: str) -> None:
+    def open_target(self, target_id: str, cell: str = "", digest: str = "") -> None:
         """A link (`--target ID` or tunaos-media-writer://build?target=ID):
         select that catalog target exactly like picking it on step 1 and
         pressing Continue, then wait on step 2 for the user to choose where
-        it goes. Never starts a job. Unknown target: notice, nothing selected."""
+        it goes. Never starts a job. Unknown target: notice, nothing selected.
+        A cell names the prepared image to fetch instead of building; a
+        digest pins its manifest."""
         if self.step is Step.PROGRESS:
             self._notify(Notice.LINK_BUSY)
             return
         if self.catalog is None:
-            self.pending_target = target_id  # applied by catalog_loaded
+            self.pending_target = (target_id, cell, digest)  # applied by catalog_loaded
             return
         target = self.catalog.target(target_id)
         if target is None:
             self._notify(Notice.LINK_UNKNOWN_TARGET)
             return
         self.source = Source.from_target(self.catalog, target)
+        if cell:
+            self.source = Source(label=self.source.label, save_name=self.source.save_name,
+                                 target_id=self.source.target_id, cell=cell, digest=digest)
         self.destination = None
         self.error = None
         self.result = None

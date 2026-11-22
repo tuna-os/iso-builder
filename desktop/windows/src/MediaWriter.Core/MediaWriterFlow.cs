@@ -239,6 +239,8 @@ public sealed class MediaWriterFlow
     }
 
     /// <summary>A <c>tunaos-media-writer://build?target=ID</c> link (the URL protocol's argument).</summary>
+    // TODO(writer-665): parse LaunchLink.CellAndDigestFromUri(link) and thread the cell
+    // through OpenTarget into BuildAsync (medium branch, like the Linux controller).
     public void OpenLink(string link) => Open(() => LaunchLink.TargetIdFromUri(link));
 
     /// <summary>The <c>--target ID</c> launch argument.</summary>
@@ -459,6 +461,9 @@ public sealed class MediaWriterFlow
 
     private async Task<string?> BuildAsync(string outPath, CancellationToken ct)
     {
+        // TODO(writer-665): when the source carries a cell, fetch instead:
+        // ["medium", "--cell", cell, "--out", outPath, "--resume"], then check the
+        // fetched manifest against the link digest (see the Linux controller).
         List<string> args = ["build"];
         if (BuildRequestPath is not null)
         {

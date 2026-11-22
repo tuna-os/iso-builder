@@ -22,6 +22,9 @@ import (
 // behaves like cmd/purebuild — same flags, same console output, same
 // workdir files — so Build is exercised end to end without a registry.
 func TestMain(m *testing.M) {
+	if os.Getenv("FAKE_WRITE_MEDIUM") != "" {
+		os.Exit(fakeWriteMedium())
+	}
 	if mode := os.Getenv("FAKE_ENGINE"); mode != "" {
 		os.Exit(fakeEngine(mode))
 	}

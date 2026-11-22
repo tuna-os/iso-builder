@@ -88,11 +88,12 @@ class CatalogEvent:
 
 @dataclass(frozen=True)
 class Done:
-    """`build` sets path/sha256; `write` sets device/verified."""
+    """`build` sets path/sha256; `medium` sets path/sha256/manifest; `write` sets device/verified."""
 
     bytes: int = 0
     path: str = ""
     sha256: str = ""
+    manifest: str = ""
     device: str = ""
     verified: bool = False
 
@@ -176,6 +177,7 @@ def parse_event(line: str | bytes) -> Event | None:
             bytes=_int(obj, "bytes"),
             path=_str(obj, "path"),
             sha256=_str(obj, "sha256"),
+            manifest=_str(obj, "manifest"),
             device=_str(obj, "device"),
             verified=obj.get("verified") is True,
         )

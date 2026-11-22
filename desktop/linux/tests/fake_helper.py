@@ -140,6 +140,24 @@ def cmd_build(args):
         fh.write(data)
     emit("done", path=os.path.abspath(args.out), bytes=size, sha256=hashlib.sha256(data).hexdigest())
 
+def cmd_medium(args):
+    if not args.cell:
+        fail("usage", "medium needs --cell and --out", 2)
+    size = int(os.environ.get("FAKE_HELPER_ISO_BYTES", str(2 * 1024 * 1024)))
+    log(f"fetching {args.cell} -> {args.out}")
+    total = 4 * CHUNK
+    for current in range(0, total + 1, 4 * CHUNK):
+        emit("progress", phase="download", current=current, total=total, unit="bytes", message="Fetching")
+        maybe_fail("medium", current >= total // 2)
+        delay()
+    data = bytearray(size)
+    data[32769:32774] = b"CD001"
+    with open(args.out, "wb") as fh:
+        fh.write(data)
+    manifest = "sha256:" + hashlib.sha256(b"MANIFEST" + data).hexdigest()
+    emit("done", path=os.path.abspath(args.out), bytes=size, sha256=hashlib.sha256(data).hexdigest(),
+         manifest=manifest, verified=True)
+
 
 def cmd_write(args):
     drive = next((d for d in drives() if d["id"] == args.device or d["path"] == args.device), None)
@@ -194,7 +212,11 @@ def main():
     p.add_argument("--out", required=True)
     p.add_argument("--workdir")
     p.add_argument("--flatpaks")
-    p.add_argument("--base-url")
+    p = sub.add_parser("medium", parents=[common])
+    p.add_argument("--cell")
+    p.add_argument("--out", required=True)
+    p.add_argument("--resume", action="store_true")
+    p.add_argument("--layout-name")
     p = sub.add_parser("write", parents=[common])
     p.add_argument("--iso", required=True)
     p.add_argument("--device", required=True)
@@ -206,9 +228,8 @@ def main():
         emit("error", kind="usage", message="Invalid arguments.")
         sys.exit(2)
     _events_path = args.events
-    {"version": cmd_version, "catalog": cmd_catalog, "drives": cmd_drives, "build": cmd_build, "write": cmd_write}[
-        args.command
-    ](args)
+    {"version": cmd_version, "catalog": cmd_catalog, "drives": cmd_drives, "build": cmd_build,
+     "medium": cmd_medium, "write": cmd_write}[args.command](args)
 
 
 if __name__ == "__main__":

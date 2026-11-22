@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"flag"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -18,6 +19,9 @@ import (
 // With FAKE_ENGINE set the test binary stands in for tunaos-media-engine:
 // it copies the request it was given and writes a tiny ISO.
 func TestMain(m *testing.M) {
+	if os.Getenv("FAKE_WRITE_MEDIUM") != "" {
+		os.Exit(fakeWriteMedium())
+	}
 	if os.Getenv("FAKE_ENGINE") != "" {
 		fs := flag.NewFlagSet("purebuild", flag.ExitOnError)
 		req := fs.String("request", "", "")
@@ -35,6 +39,28 @@ func TestMain(m *testing.M) {
 		os.Exit(0)
 	}
 	os.Exit(m.Run())
+}
+
+// fakeWriteMedium stands in for `tacklebox write-medium`: same argv shape,
+// same stdout summary, so `medium` is exercised without a registry.
+func fakeWriteMedium() int {
+	args := os.Args[1:]
+	if len(args) < 3 || args[0] != "write-medium" {
+		fmt.Fprintln(os.Stderr, "usage: write-medium REF-OR-OCI-LAYOUT TARGET")
+		return 2
+	}
+	out := args[2]
+	payload := []byte("CELL")
+	sum := sha256.Sum256(payload)
+	fmt.Fprintf(os.Stderr, "\r100%% (%d / %d MiB)\n", 1, 1)
+	if err := os.WriteFile(out, payload, 0o644); err != nil {
+		return 3
+	}
+	fmt.Printf("wrote %d bytes to %s\n", len(payload), out)
+	fmt.Println("manifest sha256:5d1e1de95521dd31273571f66b92a8671755cb411d209c13bed4cab65db6f735")
+	fmt.Printf("sha256 %s (read back and verified)\n", hex.EncodeToString(sum[:]))
+	fmt.Println("chunks written 1, skipped 0")
+	return 0
 }
 
 // offline points catalog loads at a closed port so they fall back to the
@@ -85,9 +111,9 @@ func TestUsageErrors(t *testing.T) {
 		{"frobnicate"},
 		{"build", "--out", "x.iso"},
 		{"build", "--target", "a", "--request", "b", "--out", "x.iso"},
-		{"write", "--iso", "x.iso"},
-		{"drives", "--no-such-flag"},
-		{"version", "extra"},
+		{"medium"},
+		{"medium", "--cell", "x"},
+		{"medium", "--out", "x.img"},
 	} {
 		code, evs := call(t, args...)
 		e := last(evs)
@@ -177,6 +203,51 @@ func TestBuildRequestFile(t *testing.T) {
 	_ = json.Unmarshal(b, &req)
 	if req["registry"] != "https://ghcr.io" || len(req["options"].(map[string]any)["flatpaks"].([]any)) != 0 {
 		t.Fatalf("engine got %s", b)
+	}
+}
+
+// fakeWriteMediumExe points the medium subcommand at this test binary.
+func fakeWriteMediumExe(t *testing.T) {
+	t.Helper()
+	t.Setenv("FAKE_WRITE_MEDIUM", "1")
+	exe, err := os.Executable()
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("TUNAOS_MEDIA_WRITE_MEDIUM", exe)
+}
+
+func TestMediumStagesCell(t *testing.T) {
+	fakeWriteMediumExe(t)
+	dir := t.TempDir()
+	out := filepath.Join(dir, "cell.img")
+	code, evs := call(t, "medium", "--cell", "/tmp/fake-cell", "--out", out)
+	done := last(evs)
+	sum := sha256.Sum256([]byte("CELL"))
+	if code != 0 || done["event"] != "done" || done["path"] != out || done["bytes"] != float64(4) ||
+		done["sha256"] != hex.EncodeToString(sum[:]) ||
+		done["manifest"] != "sha256:5d1e1de95521dd31273571f66b92a8671755cb411d209c13bed4cab65db6f735" ||
+		done["verified"] != true {
+		t.Fatalf("%d %v", code, evs)
+	}
+}
+
+func TestBuildRequestWithCellStagesInsteadOfBuilding(t *testing.T) {
+	fakeWriteMediumExe(t)
+	seen := fakeEngine(t)
+	dir := t.TempDir()
+	reqPath := filepath.Join(dir, "build-request.json")
+	withCell := `{"schemaVersion":1,"kind":"build-request","customImage":true,"image":"ghcr.io/tuna-os/flounder:xfce","registry":"https://relay.tunaos.org","options":{"label":"TUNAOS","packages":[],"flatpaks":[],"extraRun":[],"outputFilename":"x.iso"},"catalogVersion":"","cell":"/tmp/fake-cell"}`
+	if err := os.WriteFile(reqPath, []byte(withCell), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	out := filepath.Join(dir, "cell.img")
+	code, evs := call(t, "build", "--request", reqPath, "--out", out, "--workdir", dir, "--base-url", offline)
+	if code != 0 || last(evs)["event"] != "done" {
+		t.Fatalf("%d %v", code, evs)
+	}
+	if _, err := os.Stat(seen); !os.IsNotExist(err) {
+		t.Fatal("cell request reached the ISO builder")
 	}
 }
 

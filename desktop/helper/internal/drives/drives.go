@@ -1,8 +1,9 @@
 // Package drives enumerates the USB drives the Media Writer may offer as a
-// write target. The safety filters are ported from native/blockdev_*.go (the
-// older Fyne app): only whole, external/removable, writable, non-empty disks
-// that the running system does not use are ever listed. The system/boot disk
-// and the disk holding --exclude PATH (the ISO's own disk) never are.
+// write target. The safety decision lives in the shared safedrives module
+// (also used by native/): only whole, external/removable, writable,
+// non-empty disks that the running system does not use are ever listed.
+// The system/boot disk and the disk holding --exclude PATH (the ISO's own
+// disk) never are.
 package drives
 
 import (

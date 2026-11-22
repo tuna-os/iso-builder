@@ -33,6 +33,9 @@ public struct Job: Equatable, Sendable {
         return false
     }
 
+    // TODO(writer-665): when the source carries a cell, run the fetch branch
+    // ["medium", "--cell", cell, "--out", output, "--resume"] and check the
+    // fetched manifest against the link digest (see the Linux controller).
     public func buildArguments(output: String) -> [String] {
         switch source {
         case .target(let target):

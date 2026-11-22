@@ -73,11 +73,12 @@ class Application(Adw.Application):
     def open_link(self, value: str, parse) -> None:
         try:
             target_id = parse(value)
+            cell, digest = launch.cell_and_digest(value) if "://" in value else ("", "")
         except launch.LinkError as exc:
             self.controller.details.append(str(exc))
             self.flow.link_rejected()
             return
-        self.flow.open_target(target_id)
+        self.flow.open_target(target_id, cell, digest)
 
     def do_startup(self) -> None:
         Adw.Application.do_startup(self)

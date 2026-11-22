@@ -17,6 +17,9 @@ public enum LaunchLink {
         case unknownAction
         case missingTarget
         case invalidTargetID
+        case invalidCell
+        case invalidDigest
+        case digestWithoutCell
     }
 
     /// base:desktop:os/arch[/variant], as the catalog's target ids are spelled.
@@ -43,5 +46,32 @@ public enum LaunchLink {
         let values = (parts.queryItems ?? []).filter { $0.name == "target" }.compactMap(\.value)
         guard values.count == 1, !values[0].isEmpty else { throw Failure.missingTarget }
         return try targetID(values[0])
+    }
+
+    // TODO(writer-665): not compiled on this host; the macOS CI job covers
+    // it. Mirrors the tested Python parser in desktop/linux/launch.py.
+    /// The optional `cell` and `digest` of a build link ("" when absent).
+    ///
+    /// A cell names the prepared installer image to fetch instead of
+    /// building. A digest pins its manifest; the fetch fails if it differs.
+    public static func cellAndDigest(from url: URL) throws -> (cell: String, digest: String) {
+        guard let parts = URLComponents(url: url, resolvingAgainstBaseURL: false),
+              parts.scheme?.lowercased() == scheme
+        else { throw Failure.notALink }
+        let cells = (parts.queryItems ?? []).filter { $0.name == "cell" }.compactMap(\.value)
+        let digests = (parts.queryItems ?? []).filter { $0.name == "digest" }.compactMap(\.value)
+        guard cells.count <= 1, digests.count <= 1 else { throw Failure.invalidCell }
+        let cell = cells.first ?? "", digest = digests.first ?? ""
+        if cell.contains(where: \.isWhitespace) || cell.contains("?") || cell.contains("#") || cell.count > 1024 {
+            throw Failure.invalidCell
+        }
+        if !digest.isEmpty {
+            guard digest.hasPrefix("sha256:"),
+                  digest.count == 7 + 64,
+                  digest.dropFirst(7).allSatisfy({ $0.isHexDigit })
+            else { throw Failure.invalidDigest }
+            guard !cell.isEmpty else { throw Failure.digestWithoutCell }
+        }
+        return (cell, digest)
     }
 }

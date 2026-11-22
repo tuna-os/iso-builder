@@ -34,6 +34,7 @@ commands:
   version
   catalog [--base-url URL]
   build (--target ID | --request FILE) --out PATH [--workdir DIR] [--flatpaks default|none|id,id] [--base-url URL]
+  medium --cell REF --out PATH [--resume] [--layout-name NAME]
   drives [--exclude PATH]
   write --iso PATH --device ID [--fd N] [--no-verify]
 
@@ -109,6 +110,17 @@ func run(args []string, stdout, stderr io.Writer) int {
 				return protocol.Errorf(protocol.KindUsage, "build needs exactly one of --target or --request, and --out.")
 			}
 			return build(ctx, em, stderr, *target, *request, *out, *workdir, *flatpaks, *baseURL)
+		}
+	case "medium":
+		cell := fs.String("cell", "", "installer cell: registry ref or OCI layout directory")
+		out := fs.String("out", "", "where to stage the fetched image")
+		resume := fs.Bool("resume", false, "keep the staged file and skip chunks that already match")
+		layoutName := fs.String("layout-name", "", "ref name for layouts with several manifests")
+		cmd = func(ctx context.Context, em *protocol.Emitter) error {
+			if *cell == "" || *out == "" {
+				return protocol.Errorf(protocol.KindUsage, "medium needs --cell and --out.")
+			}
+			return medium(ctx, em, stderr, *cell, *out, *resume, *layoutName)
 		}
 	case "drives":
 		exclude := fs.String("exclude", "", "never list the disk holding this path (the ISO)")
@@ -227,6 +239,11 @@ func build(ctx context.Context, em *protocol.Emitter, stderr io.Writer, target, 
 				compressed = e.Facts.CompressedSize
 			}
 		}
+		// A request that names a cell stages a prepared image instead of
+		// building one; requests without a cell keep the old builder.
+		if r.Cell != "" {
+			return medium(ctx, em, stderr, r.Cell, out, true, "")
+		}
 	}
 	native, err := buildreq.Native(doc)
 	if err != nil {
@@ -243,6 +260,29 @@ func build(ctx context.Context, em *protocol.Emitter, stderr io.Writer, target, 
 	em.Emit(struct {
 		Event string `json:"event"`
 		engine.Result
+	}{"done", res})
+	return nil
+}
+
+// medium fetches a prepared installer cell with the write-medium engine,
+// verifies it (every chunk, the whole stream, the read-back) and stages it
+// as a file the `write` subcommand turns into a bootable stick.
+func medium(ctx context.Context, em *protocol.Emitter, stderr io.Writer, cell, out string, resume bool, layoutName string) error {
+	enginePath, err := engine.LocateWriteMedium()
+	if err != nil {
+		return err
+	}
+	fmt.Fprintf(stderr, "engine %s\ncell: %s\n", enginePath, cell)
+	res, err := engine.FetchMedium(ctx, engine.MediumOptions{
+		Engine: enginePath, Cell: cell, Out: out,
+		Resume: resume, LayoutName: layoutName, Emitter: em, Stderr: stderr,
+	})
+	if err != nil {
+		return err
+	}
+	em.Emit(struct {
+		Event string `json:"event"`
+		engine.MediumResult
 	}{"done", res})
 	return nil
 }

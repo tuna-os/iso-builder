@@ -55,6 +55,9 @@ public final class FlowController: ObservableObject {
 
     /// A tunaos-media-writer:// URL (SwiftUI `onOpenURL`).
     public func open(link url: URL) {
+        // TODO(writer-665): parse LaunchLink.cellAndDigest(from: url) and thread the
+        // cell through FlowAction.openTarget into Job.buildArguments (medium branch,
+        // like the Linux controller); the digest shows on the destination step.
         if let id = try? LaunchLink.targetID(from: url) {
             send(.openTarget(id))
         } else {

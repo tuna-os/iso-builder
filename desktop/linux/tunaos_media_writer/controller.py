@@ -3,12 +3,11 @@ Flow. The window only calls the public methods here and renders Flow."""
 
 from __future__ import annotations
 
+import hashlib
 import os
 import shlex
 import signal
 from dataclasses import dataclass
-from typing import Callable
-
 from gi.repository import Gio, GLib
 
 from . import protocol, strings
@@ -206,6 +205,10 @@ class Controller:
 
     # -- step 3: build, then write -----------------------------------
     def iso_path_for(self, source: Source) -> str:
+        if source.cell:
+            # One cache file per cell, so a second stick needs no download.
+            name = hashlib.sha256(source.cell.encode()).hexdigest()[:16] + ".img"
+            return os.path.join(self._work_dir, "cells", name)
         return os.path.join(self._work_dir, source.save_name)
 
     def start(self, destination: DriveDestination | FileDestination) -> None:
@@ -221,8 +224,9 @@ class Controller:
             self._prepare_write(self._built[1])
             return
         self.discard_build()
-        os.makedirs(self._work_dir, exist_ok=True)
-        self._build(self.iso_path_for(source))
+        iso_path = self.iso_path_for(source)
+        os.makedirs(os.path.dirname(iso_path), exist_ok=True)
+        self._build(iso_path)
 
     def _build(self, out: str) -> None:
         state: dict = {}
@@ -238,24 +242,37 @@ class Controller:
         def on_exit(code):
             self._job = None
             if self.flow.stage is Stage.CANCELLING:
-                self._remove(out)
+                self._remove_uncached(out)
                 self.details.extend(proc.log)
                 self.flow.cancelled()
                 return
             if code != protocol.EXIT_OK or "done" not in state:
-                self._remove(out)
+                self._remove_uncached(out)
                 self._fail_from(proc, state.get("error"), code)
                 return
             self.details.extend(proc.log)
             done = state["done"]
+            source = self.flow.source
+            if source.cell and source.digest and done.manifest != source.digest:
+                self._remove_uncached(out)
+                self.flow.fail("verify-mismatch", strings.CELL_DIGEST_CHANGED)
+                return
+            if source.cell:
+                self.details.append(strings.CELL_FETCHED.format(manifest=done.manifest or done.sha256))
             iso = done.path or out
             if self.flow.writes_drive:
-                self._built = (self.flow.source.key, iso)
+                self._built = (source.key, iso)
             self.flow.build_done(done)
             if self.flow.writes_drive:
                 self._prepare_write(iso)
 
-        args = ["build", *self.flow.source.build_args(), "--out", out]
+        source = self.flow.source
+        if source.cell:
+            args = ["medium", "--cell", source.cell, "--out", out]
+            if os.path.dirname(os.path.abspath(out)) == self._cells_dir():
+                args.append("--resume")
+        else:
+            args = ["build", *source.build_args(), "--out", out]
         proc = self._spawn(args, on_event, on_exit)
         self._job = proc
 
@@ -332,9 +349,19 @@ class Controller:
         except FileNotFoundError:
             pass
 
+    def _cells_dir(self) -> str:
+        return os.path.abspath(os.path.join(self._work_dir, "cells"))
+
+    def _remove_uncached(self, path: str) -> None:
+        # Cell cache files persist for reuse across sticks and sessions;
+        # the engine repairs partial ones with --resume.
+        if os.path.dirname(os.path.abspath(path)) == self._cells_dir():
+            return
+        self._remove(path)
+
     def discard_build(self) -> None:
         if self._built is not None:
-            self._remove(self._built[1])
+            self._remove_uncached(self._built[1])
             self._built = None
 
     def shutdown(self) -> None:

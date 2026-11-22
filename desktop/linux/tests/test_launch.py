@@ -1,6 +1,6 @@
 import pytest
 
-from tunaos_media_writer.launch import LinkError, target_from_uri, target_id
+from tunaos_media_writer.launch import LinkError, cell_and_digest, target_from_uri, target_id
 
 
 @pytest.mark.parametrize(
@@ -56,3 +56,36 @@ def test_uri_url_encoded_variant_path():
 def test_uri_invalid(uri):
     with pytest.raises(LinkError):
         target_from_uri(uri)
+
+
+def test_uri_without_cell_has_empty_cell_and_digest():
+    uri = "tunaos-media-writer://build?target=yellowfin%3Agnome%3Alinux%2Famd64"
+    assert cell_and_digest(uri) == ("", "")
+
+
+def test_uri_with_cell_and_digest():
+    uri = ("tunaos-media-writer://build?target=yellowfin%3Agnome%3Alinux%2Famd64"
+           "&cell=ghcr.io%2Ftuna-os%2Fexample-installer%3Astable"
+           "&digest=sha256%3A5d1e1de95521dd31273571f66b92a8671755cb411d209c13bed4cab65db6f735")
+    cell, digest = cell_and_digest(uri)
+    assert cell == "ghcr.io/tuna-os/example-installer:stable"
+    assert digest == "sha256:5d1e1de95521dd31273571f66b92a8671755cb411d209c13bed4cab65db6f735"
+
+
+@pytest.mark.parametrize(
+    "uri",
+    [
+        "tunaos-media-writer://build?target=yellowfin%3Agnome%3Alinux%2Famd64&cell=%20",
+        "tunaos-media-writer://build?target=yellowfin%3Agnome%3Alinux%2Famd64&digest=sha256:xyz",
+        "tunaos-media-writer://build?target=yellowfin%3Agnome%3Alinux%2Famd64&digest=sha256:" + "0" * 64,
+        "tunaos-media-writer://build?target=yellowfin%3Agnome%3Alinux%2Famd64&cell=a&cell=b",
+    ],
+)
+def test_uri_bad_cell_or_digest(uri):
+    with pytest.raises(LinkError):
+        cell_and_digest(uri)
+
+
+def test_uri_empty_cell_is_absent():
+    uri = "tunaos-media-writer://build?target=yellowfin%3Agnome%3Alinux%2Famd64&cell="
+    assert cell_and_digest(uri) == ("", "")

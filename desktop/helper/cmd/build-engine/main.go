@@ -32,52 +32,68 @@ import (
 //go:embed punch_other.go.txt
 var punchOther []byte
 
+// enginePkg is tacklebox's cmd/purebuild: the ISO engine the helper ships
+// as tunaos-media-engine (see desktop/README.md).
 const enginePkg = "./cmd/purebuild"
+
+// writeMediumPkg is tacklebox's full CLI, which carries the write-medium
+// subcommand (tuna-os/tacklebox#512). It is built with -pkg from a branch
+// checkout (-mod), never from the pinned module, until that PR merges and
+// both pins move together.
+const writeMediumPkg = "./cmd/tacklebox"
 
 func main() {
 	out := flag.String("o", "", "output path for the engine binary (required)")
 	goos := flag.String("goos", "", "target GOOS (default: host)")
 	goarch := flag.String("goarch", "", "target GOARCH (default: host)")
+	pkg := flag.String("pkg", enginePkg, "package to build inside the tacklebox source")
+	mod := flag.String("mod", "", "tacklebox source directory (default: the pinned module from the module cache)")
+	shim := flag.Bool("shim", true, "add the !linux punch-reader shim to cmd/purebuild before building")
 	flag.Parse()
 	if *out == "" || flag.NArg() != 0 {
 		flag.Usage()
 		os.Exit(2)
 	}
-	if err := run(*out, *goos, *goarch); err != nil {
+	if err := run(*out, *pkg, *mod, *shim, *goos, *goarch); err != nil {
 		fmt.Fprintln(os.Stderr, "build-engine:", err)
 		os.Exit(1)
 	}
 }
 
-func run(out, goos, goarch string) error {
+func run(out, pkg, modDir string, shim bool, goos, goarch string) error {
 	out, err := filepath.Abs(out)
 	if err != nil {
 		return err
 	}
-	if b, err := exec.Command("go", "mod", "download", "github.com/tuna-os/tacklebox").CombinedOutput(); err != nil {
-		return fmt.Errorf("download pinned tacklebox module: %v: %s", err, b)
+	src := modDir
+	if src == "" {
+		if b, err := exec.Command("go", "mod", "download", "github.com/tuna-os/tacklebox").CombinedOutput(); err != nil {
+			return fmt.Errorf("download pinned tacklebox module: %v: %s", err, b)
+		}
+		dirOut, err := exec.Command("go", "list", "-m", "-f", "{{.Dir}}", "github.com/tuna-os/tacklebox").Output()
+		if err != nil {
+			return fmt.Errorf("locate pinned tacklebox module: %w", err)
+		}
+		modDir = strings.TrimSpace(string(dirOut))
+		if modDir == "" {
+			return fmt.Errorf("pinned tacklebox module is not in the module cache")
+		}
+		tmp, err := os.MkdirTemp("", "build-engine-")
+		if err != nil {
+			return err
+		}
+		defer os.RemoveAll(tmp)
+		src = filepath.Join(tmp, "tacklebox")
+		if err := copyTree(modDir, src); err != nil {
+			return fmt.Errorf("copy tacklebox module: %w", err)
+		}
 	}
-	dirOut, err := exec.Command("go", "list", "-m", "-f", "{{.Dir}}", "github.com/tuna-os/tacklebox").Output()
-	if err != nil {
-		return fmt.Errorf("locate pinned tacklebox module: %w", err)
+	if shim && pkg == enginePkg {
+		if err := os.WriteFile(filepath.Join(src, "cmd", "purebuild", "punch_other.go"), punchOther, 0o644); err != nil {
+			return err
+		}
 	}
-	modDir := strings.TrimSpace(string(dirOut))
-	if modDir == "" {
-		return fmt.Errorf("pinned tacklebox module is not in the module cache")
-	}
-	tmp, err := os.MkdirTemp("", "build-engine-")
-	if err != nil {
-		return err
-	}
-	defer os.RemoveAll(tmp)
-	src := filepath.Join(tmp, "tacklebox")
-	if err := copyTree(modDir, src); err != nil {
-		return fmt.Errorf("copy tacklebox module: %w", err)
-	}
-	if err := os.WriteFile(filepath.Join(src, "cmd", "purebuild", "punch_other.go"), punchOther, 0o644); err != nil {
-		return err
-	}
-	cmd := exec.Command("go", "build", "-trimpath", "-o", out, enginePkg)
+	cmd := exec.Command("go", "build", "-trimpath", "-o", out, pkg)
 	cmd.Dir = src
 	cmd.Stdout, cmd.Stderr = os.Stdout, os.Stderr
 	cmd.Env = append(os.Environ(), "CGO_ENABLED=0", "GOWORK=off", "GOFLAGS=-mod=readonly")
