@@ -1081,6 +1081,7 @@ function rebuildCurrentOperation(state = "idle") {
     ...built,
   };
   globalThis.tboxCurrentOperation = currentOp;
+  renderMediumCard();
   return currentOp;
 }
 
@@ -1355,6 +1356,14 @@ async function inspect() {
         log(`browser build gated for ${op.request.image} (${op.request.target.platform}): ${reason}`);
         renderFallbackCard(op, `Browser build is gated for this target (${reason}). Run the exact pinned target locally:`);
       }
+      // A pinned installer image replaces the legacy layer build for this
+      // cell: the medium card below is the path, not Build ISO.
+      if (op.ready && globalThis.TboxWriteMedium?.installerForEntry(op.catalogEntry)) {
+        $("build").disabled = true;
+        $("stage").textContent = "Image inspected — this cell ships a prepared installer image. Use Download the installer image below.";
+        log(`installer medium pinned for ${op.request.image}: legacy build off`);
+      }
+      renderMediumCard();
       updateShare();
       return;
     }
@@ -1495,6 +1504,128 @@ function showDeliveryStatus(delivery, bytes, seconds) {
   $("stage").textContent = `${title} — ${(bytes / 1e9).toFixed(2)} GB created in ${seconds}s. ${detail}`;
   $("delivery-status").textContent = detail;
   notify(title, detail);
+}
+
+// The installer medium (tuna-os/tunaOS#4905, ADR 0018): CI builds the medium
+// once and publishes it as an OCI image on ghcr.io. Cells that carry a pin
+// offer a download here instead of a build: no layer cache, no second copy,
+// and no Customize — the desktop's fixed Flatpak set is baked in.
+function currentInstaller() {
+  const entry = currentOp?.catalogEntry;
+  const forEntry = globalThis.TboxWriteMedium?.installerForEntry;
+  return typeof forEntry === 'function' ? forEntry(entry) : null;
+}
+
+function renderMediumCard() {
+  const card = $("mediumcard");
+  if (!card || !card.classList) return;
+  const installer = typeof currentInstaller === "function" ? currentInstaller() : null;
+  // add/remove, not toggle: the test-only VM harness stubs classList with
+  // add/remove/contains.
+  if (installer) card.classList.remove("hidden");
+  else card.classList.add("hidden");
+  for (const id of ["apps-options", "advanced-options"]) {
+    const section = $(id);
+    if (section) section.hidden = Boolean(installer);
+  }
+  if (!installer) return;
+  $("medium-pin").textContent = `Installer image ${installer.ref} · digest ${installer.manifestDigest} · ` +
+    `sha256 ${installer.sha256} · ${(installer.sizeBytes / 1e9).toFixed(1)} GB · ` +
+    `receipt ${installer.receiptDigest} · signed ${installer.cosignIdentity}. ` +
+    `The tab verifies the digest and receipt before it saves.`;
+  const leaves = typeof guidedModel !== "undefined" ? guidedModel?.leaves : null;
+  const leaf = leaves?.find((l) => l.entry === currentOp?.catalogEntry);
+  const desktop = leaf?.facets.desktop?.[0];
+  const ids = (BUILDER_CONFIG.desktops.find((d) => d.id === desktop)?.default_flatpaks) || [];
+  $("medium-flatpaks").textContent = ids.length
+    ? `Fixed apps for this desktop: ${ids.join(", ")}. Add more from Flathub after you install. No app or setting here changes the image.`
+    : "This desktop ships no extra apps. Add more from Flathub after you install.";
+  if ($("build")) $("build").disabled = true;
+  if ($("medium-download")) $("medium-download").disabled = isOperationBusy();
+}
+
+async function checkMediumStorage(installer) {
+  if (!navigator.storage?.estimate) return { freeBytes: null, blocked: false };
+  try {
+    const { quota, usage } = await navigator.storage.estimate();
+    if (!Number.isFinite(quota) || !Number.isFinite(usage)) return { freeBytes: null, blocked: false };
+    const freeBytes = quota - usage;
+    const need = installer.sizeBytes * (window.showSaveFilePicker ? 1 : 2);
+    if (freeBytes < need) {
+      const msg = `Only ${(freeBytes / 1e9).toFixed(1)} GB free; this image needs ${(need / 1e9).toFixed(1)} GB.`;
+      $("medium-stage").textContent = msg;
+      log(`error: insufficient storage for the installer image (${msg})`);
+      return { freeBytes, blocked: true };
+    }
+    return { freeBytes, blocked: false };
+  } catch {
+    return { freeBytes: null, blocked: false };
+  }
+}
+
+let mediumAbort = null;
+async function mediumDownload() {
+  if (BUILDER_CONFIG.preview_only) return;
+  if (isOperationBusy()) return;
+  const installer = currentInstaller();
+  if (!installer) return;
+  askNotify();
+  setOperationBusy(true, "medium");
+  renderMediumCard();
+  if ($("medium-download")) $("medium-download").disabled = true;
+  if ($("medium-cancel")) $("medium-cancel").disabled = false;
+  if ($("medium-result")) $("medium-result").textContent = "";
+  const name = globalThis.TboxWriteMedium.mediumFileName(installer);
+  let s = null;
+  try {
+    await window.loadWasm();
+    const quota = await checkMediumStorage(installer);
+    if (quota.blocked) return;
+    s = await isoSink(name);
+    if (!s) { $("medium-stage").textContent = "Save cancelled."; return; }
+    mediumAbort = async () => { await s?.w?.abort?.().catch(() => {}); };
+    $("medium-stage").textContent = `Fetching ${installer.ref}…`;
+    const t0 = performance.now();
+    const receipt = await globalThis.TboxWriteMedium.writeInstallerImage({
+      installer,
+      write: (u8) => s.w.write(u8),
+      onProgress: ({ stage, done, total }) => {
+        $("medium-stage").textContent = stage === "verify" ? "Verifying the image…" : `Fetching ${installer.ref}…`;
+        const barEl = $("medium-bar");
+        if (barEl && Number.isFinite(done) && Number.isFinite(total) && total > 0) {
+          barEl.max = total;
+          barEl.value = done;
+        } else if (barEl) {
+          barEl.removeAttribute("value");
+        }
+      },
+    });
+    const outputDelivery = await finishIsoSink(s, name);
+    s = null;
+    const dt = ((performance.now() - t0) / 1000).toFixed(1);
+    currentOp.mediumReceipt = Object.freeze({ ...receipt, ref: installer.ref });
+    $("medium-stage").textContent = `Saved ${name} — ${(receipt.bytesWritten / 1e9).toFixed(2)} GB in ${dt}s.`;
+    $("medium-result").textContent = `Installer digest ${receipt.installerDigest}, raw sha256 ${receipt.rawSha256}. ` +
+      `This file boots as an ISO and also works with dd.` +
+      (outputDelivery.kind === "picker" ? "" : " Check your browser downloads and wait for the file to finish saving.");
+    log(`installer image written: ${receipt.bytesWritten} bytes, digest ${receipt.installerDigest}`);
+    notify("Installer image saved", name);
+  } catch (e) {
+    if (s?.w?.abort) await s.w.abort().catch(() => {});
+    if (e?.name === "AbortError") {
+      $("medium-stage").textContent = "Save cancelled — no completed save confirmed.";
+    } else {
+      $("medium-stage").textContent = "Download failed.";
+      $("medium-result").textContent = String(e?.message || e);
+      log("error: " + e);
+    }
+    notify("Installer download failed", String(e).slice(0, 120));
+  } finally {
+    mediumAbort = null;
+    setOperationBusy(false, "medium");
+    renderMediumCard();
+    showCacheSize();
+  }
 }
 
 function prepareDdi(ch) {
@@ -1775,6 +1906,13 @@ $("build").onclick = () => {
 };
 $("review-back").onclick = () => $("build-review").close();
 $("review-create").onclick = () => { $("build-review").close(); build(); };
+if ($("medium-download")) $("medium-download").onclick = () => { mediumDownload(); };
+if ($("medium-cancel")) $("medium-cancel").onclick = async () => {
+  if (!isOperationBusy()) return;
+  $("medium-cancel").disabled = true;
+  $("medium-stage").textContent = "Cancelling…";
+  try { await mediumAbort?.(); } catch { /* the download reports the abort */ }
+};
 $("curated").onclick = loadCuratedSet;
 renderCuratedSets(null);
 $("addrepo").onclick = addRepo;

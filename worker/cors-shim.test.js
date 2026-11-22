@@ -100,6 +100,29 @@ test("full blob request enables edge caching", async (t) => {
   assert.ok(captured.cf && captured.cf.cacheEverything === true);
 });
 
+test("installer chunk blob relays with auth and edge caching, no R2", async (t) => {
+  // The browser streams installer chunks (tuna-os/tunaOS#4905) through this
+  // relay: same blob path as layer pulls, chunk media type in Accept only.
+  let captured = {};
+  t.mock.method(globalThis, "fetch", async (url, opts) => {
+    captured = { url: String(url), headers: opts.headers, cf: opts.cf };
+    return new Response("chunk", { status: 200 });
+  });
+  const digest = `sha256:${"b".repeat(64)}`;
+  const res = await worker.fetch(
+    req(`https://relay.tunaos.org/v2/tuna-os/flounder-installer/blobs/${digest}`, {
+      headers: {
+        Authorization: "Bearer tok",
+        Accept: "application/vnd.tunaos.installer.chunk.v1+zstd",
+      },
+    })
+  );
+  assert.equal(res.status, 200);
+  assert.equal(captured.headers.get("authorization"), "Bearer tok");
+  assert.ok(captured.cf && captured.cf.cacheEverything === true);
+  assert.equal(res.headers.get("Access-Control-Allow-Origin"), "*");
+});
+
 test("healthz rejects non-GET/HEAD", async () => {
   const res = await worker.fetch(req("https://relay.tunaos.org/healthz", { method: "POST" }));
   assert.equal(res.status, 405);
