@@ -113,6 +113,10 @@ public static partial class LaunchLink
         return (cell, digest);
     }
 
+    /// <summary>base:desktop:os/arch[/variant], as the catalog's target ids are spelled.</summary>
+    [GeneratedRegex(@"\A[a-z0-9][a-z0-9._-]*:[a-z0-9][a-z0-9._-]*:[a-z0-9]+(/[a-z0-9._-]+)+\z")]
+    private static partial Regex TargetIdPattern();
+
     /// <summary>A manifest digest pins the exact image bytes a cell link means.</summary>
     [GeneratedRegex(@"\Asha256:[0-9a-fA-F]{64}\z")]
     private static partial Regex DigestPattern();
