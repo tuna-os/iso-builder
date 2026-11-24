@@ -38,14 +38,20 @@ modules:
         GOPATH: /run/build/tunaos-media-helper/.go
         GOCACHE: /run/build/tunaos-media-helper/.gocache
     build-commands:
-      - go build -ldflags=-s -o /app/bin/tunaos-media-helper ./cmd/tunaos-media-helper
-      - go run ./cmd/build-engine -goos linux -goarch "$(go env GOARCH)" -o /app/bin/tunaos-media-engine
+      # The helper replaces safedrives with ../../safedrives, so both trees are
+      # staged at their repo-relative paths below.
+      - cd desktop/helper && go build -ldflags=-s -o /app/bin/tunaos-media-helper ./cmd/tunaos-media-helper
+      - cd desktop/helper && go run ./cmd/build-engine -goos linux -goarch "$(go env GOARCH)" -o /app/bin/tunaos-media-engine
       # build-engine sets its own GOFLAGS, so the module cache is read-only;
       # let go remove it or flatpak-builder cannot delete the build dir.
-      - go clean -modcache
+      - cd desktop/helper && go clean -modcache
     sources:
       - type: dir
         path: ../helper
+        dest: desktop/helper
+      - type: dir
+        path: ../../safedrives
+        dest: safedrives
 
   - name: tunaos-media-writer
     buildsystem: simple

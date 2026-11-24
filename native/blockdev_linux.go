@@ -4,7 +4,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"os/exec"
-	"strings"
+
+	"github.com/tuna-os/iso-builder/safedrives"
 )
 
 type lsblkDevice struct {
@@ -24,53 +25,29 @@ type lsblkOutput struct {
 	BlockDevices []lsblkDevice `json:"blockdevices"`
 }
 
-// removableMountRoots are where desktops auto-mount user-removable media. A
-// mount under one of these is the *target drive mounting itself* (GNOME/
-// Bluefin auto-mount every USB on insert), NOT the disk being in system use —
-// so it must not disqualify the drive, or the user's intended target is
-// invisible (observed on dilli: a USB SSD auto-mounted at /run/media/…).
-var removableMountRoots = []string{"/run/media/", "/media/", "/mnt/"}
+// toShared converts lsblk trees to the shared filter input, keeping each
+// disk's lsblk model for the native Drive label.
+func toShared(devices []lsblkDevice) (inputs []safedrives.LinuxDevice, models map[string]string) {
+	models = make(map[string]string, len(devices))
+	for _, d := range devices {
+		models[d.Name] = d.Model
+		inputs = append(inputs, convertLsblkDevice(d))
+	}
+	return inputs, models
+}
 
-// hasSystemMount reports whether d or any descendant is mounted somewhere
-// that means the disk is in use by the running system (root, /boot, /sysroot,
-// swap, /home, …) — anything NOT under a removable-media root. Such a disk
-// must never be a write target. A drive auto-mounted only under a removable
-// root is still eligible (the writer unmounts it before writing).
-func hasSystemMount(d lsblkDevice) bool {
-	if mp := d.MountPoint; mp != nil && *mp != "" && !isRemovableMount(*mp) {
-		return true
+func convertLsblkDevice(d lsblkDevice) safedrives.LinuxDevice {
+	out := safedrives.LinuxDevice{
+		Name: d.Name, Model: d.Model, Size: d.Size, Type: d.Type,
+		RM: d.RM, RO: d.RO, HotPlug: d.HotPlug, Tran: d.Tran,
+	}
+	if d.MountPoint != nil && *d.MountPoint != "" {
+		out.MountPoints = []string{*d.MountPoint}
 	}
 	for _, c := range d.Children {
-		if hasSystemMount(c) {
-			return true
-		}
+		out.Children = append(out.Children, convertLsblkDevice(c))
 	}
-	return false
-}
-
-func isRemovableMount(mp string) bool {
-	for _, root := range removableMountRoots {
-		if strings.HasPrefix(mp, root) {
-			return true
-		}
-	}
-	return false
-}
-
-// isExternalDisk reports whether d is an external/removable disk (a legitimate
-// write target) as opposed to an internal system disk. `rm` alone is wrong:
-// USB SSD enclosures report rm=0, so keying on it hides them. The reliable
-// signal is the transport bus — usb is external, nvme/sata are internal. rm
-// still covers classic USB sticks/SD; hotplug is trusted only when the bus
-// isn't a known-internal one (some internal NVMe bays report hotplug=1).
-func isExternalDisk(d lsblkDevice) bool {
-	if d.Tran == "usb" || d.RM {
-		return true
-	}
-	if d.HotPlug && d.Tran != "nvme" && d.Tran != "sata" {
-		return true
-	}
-	return false
+	return out
 }
 
 // SafeWriteTargets enumerates whole disks via `lsblk` and returns only the
@@ -90,37 +67,29 @@ func SafeWriteTargets() ([]Drive, error) {
 	if err := json.Unmarshal(out, &parsed); err != nil {
 		return nil, fmt.Errorf("parse lsblk output: %w", err)
 	}
-	return filterSafeDrives(parsed.BlockDevices), nil
+	inputs, _ := toShared(parsed.BlockDevices)
+	// The disk holding the running system is never a target, even when
+	// lsblk shows it without a mountpoint (btrfs roots).
+	excluded := map[string]bool{}
+	if sys := safedrives.DiskHolding(inputs, "", "/"); sys != "" {
+		excluded[sys] = true
+	}
+	return filterSafeDrives(parsed.BlockDevices, excluded), nil
 }
 
-// filterSafeDrives is the pure safety filter: a whole "disk" (not a
-// partition), external (USB/removable, never an internal system disk), not
-// read-only, non-zero size, and not in use by the running system (no
-// non-removable-media mounts in its tree). No I/O, no root required — fully
-// unit-testable.
-func filterSafeDrives(devices []lsblkDevice) []Drive {
+// filterSafeDrives maps the shared decision to the native Drive type.
+// excluded names disks to drop (the system disk, the disk holding the ISO).
+// No I/O, no root required — fully unit-testable.
+func filterSafeDrives(devices []lsblkDevice, excluded map[string]bool) []Drive {
+	inputs, models := toShared(devices)
 	var safe []Drive
-	for _, d := range devices {
-		if d.Type != "disk" {
-			continue
-		}
-		if !isExternalDisk(d) {
-			continue // internal system disk — never a write target
-		}
-		if d.RO {
-			continue
-		}
-		if d.Size <= 0 {
-			continue
-		}
-		if hasSystemMount(d) {
-			continue
-		}
+	for _, c := range safedrives.FilterLinux(inputs, excluded) {
+		name := c.Path[len("/dev/"):]
 		safe = append(safe, Drive{
-			Path:  "/dev/" + d.Name,
-			Model: d.Model,
-			Size:  d.Size,
-			SizeH: humanSize(d.Size),
+			Path:  c.Path,
+			Model: models[name],
+			Size:  c.SizeBytes,
+			SizeH: humanSize(c.SizeBytes),
 		})
 	}
 	return safe

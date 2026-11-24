@@ -9,6 +9,8 @@ public enum LinkFailure
     UnknownAction,
     MissingTarget,
     InvalidTargetId,
+    InvalidCell,
+    InvalidDigest,
 }
 
 public sealed class LaunchLinkException(LinkFailure failure, string value)
@@ -65,7 +67,57 @@ public static partial class LaunchLink
         return TargetId(targets[0]);
     }
 
+    // TODO(writer-665): not compiled on this host; the Windows CI job covers it.
+    // Mirrors the tested Python parser in desktop/linux/launch.py.
+    /// <summary>The optional <c>cell</c> and <c>digest</c> of a build link (empty when absent).</summary>
+    public static (string Cell, string Digest) CellAndDigestFromUri(string link)
+    {
+        if (!Uri.TryCreate(link, UriKind.Absolute, out var uri) || !uri.Scheme.Equals(Scheme, StringComparison.OrdinalIgnoreCase))
+        {
+            throw new LaunchLinkException(LinkFailure.NotALink, link);
+        }
+
+        List<string> Values(string name) => uri.Query.TrimStart('?')
+            .Split('&', StringSplitOptions.RemoveEmptyEntries)
+            .Select(pair => pair.Split('=', 2))
+            .Where(kv => kv[0] == name && kv.Length == 2 && kv[1].Length > 0)
+            .Select(kv => Uri.UnescapeDataString(kv[1]))
+            .ToList();
+        var cells = Values("cell");
+        var digests = Values("digest");
+        if (cells.Count > 1 || digests.Count > 1)
+        {
+            throw new LaunchLinkException(LinkFailure.InvalidCell, link);
+        }
+
+        var cell = cells.Count == 1 ? cells[0] : "";
+        var digest = digests.Count == 1 ? digests[0] : "";
+        if (cell.Any(char.IsWhiteSpace) || cell.Contains('?') || cell.Contains('#') || cell.Length > 1024)
+        {
+            throw new LaunchLinkException(LinkFailure.InvalidCell, cell);
+        }
+
+        if (digest.Length > 0)
+        {
+            if (!DigestPattern().IsMatch(digest))
+            {
+                throw new LaunchLinkException(LinkFailure.InvalidDigest, digest);
+            }
+
+            if (cell.Length == 0)
+            {
+                throw new LaunchLinkException(LinkFailure.InvalidDigest, link);
+            }
+        }
+
+        return (cell, digest);
+    }
+
     /// <summary>base:desktop:os/arch[/variant], as the catalog's target ids are spelled.</summary>
     [GeneratedRegex(@"\A[a-z0-9][a-z0-9._-]*:[a-z0-9][a-z0-9._-]*:[a-z0-9]+(/[a-z0-9._-]+)+\z")]
     private static partial Regex TargetIdPattern();
+
+    /// <summary>A manifest digest pins the exact image bytes a cell link means.</summary>
+    [GeneratedRegex(@"\Asha256:[0-9a-fA-F]{64}\z")]
+    private static partial Regex DigestPattern();
 }

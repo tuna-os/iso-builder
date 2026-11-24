@@ -4,6 +4,8 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+
+	"github.com/tuna-os/iso-builder/safedrives"
 )
 
 func write(t *testing.T, path, content string) {
@@ -111,7 +113,7 @@ func TestSysfsEnumeration(t *testing.T) {
 	for _, d := range devs {
 		switch d.Name {
 		case "nvme0n1":
-			if d.Tran != "nvme" || d.HotPlug || d.Serial != "S64DNF0R" || !hasSystemMount(d) {
+			if d.Tran != "nvme" || d.HotPlug || d.Serial != "S64DNF0R" || !safedrives.HasSystemMount(d) {
 				t.Fatalf("nvme: %+v", d)
 			}
 		case "loop0":

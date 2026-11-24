@@ -195,3 +195,42 @@ def test_open_target_replaces_choice_but_never_interrupts_a_job(catalog_event):
     flow.open_target("yellowfin:kde:linux/amd64")  # from Done: straight to the new system
     assert flow.step is Step.DESTINATION and flow.result is None
     assert flow.source.target_id == "yellowfin:kde:linux/amd64"
+
+
+CELL = "ghcr.io/tuna-os/example-installer:stable"
+DIGEST = "sha256:" + "5d" * 32
+
+
+def test_source_cell_key_and_args():
+    plain = Source(label="L", save_name="x.iso", target_id="t")
+    assert plain.build_args() == ["--target", "t"]
+    cell = Source(label="L", save_name="x.iso", target_id="t", cell=CELL, digest=DIGEST)
+    assert cell.build_args() == ["--cell", CELL]
+    assert cell.key != plain.key
+
+
+def test_source_from_request_with_cell(tmp_path):
+    path = str(tmp_path / "build-request.json")
+    source = Source.from_request(path, {"schemaVersion": 1, "image": "x", "cell": CELL, "digest": DIGEST})
+    assert (source.cell, source.digest) == (CELL, DIGEST)
+    assert source.build_args() == ["--cell", CELL]
+    old = Source.from_request(path, {"schemaVersion": 1, "image": "x"})
+    assert (old.cell, old.digest, old.build_args()) == ("", "", ["--request", path])
+    with pytest.raises(ValueError):
+        Source.from_request(path, {"schemaVersion": 1, "image": "x", "cell": CELL, "digest": "sha256:xyz"})
+
+
+def test_open_target_with_cell_and_digest(catalog_event):
+    flow = Flow()
+    flow.catalog_loaded(Catalog.from_event(catalog_event))
+    flow.open_target("yellowfin:gnome:linux/amd64", CELL, DIGEST)
+    assert flow.step is Step.DESTINATION
+    assert flow.source is not None and (flow.source.cell, flow.source.digest) == (CELL, DIGEST)
+
+
+def test_open_target_cell_waits_for_catalog(catalog_event):
+    flow = Flow()
+    flow.open_target("yellowfin:gnome:linux/amd64", CELL, DIGEST)
+    assert flow.pending_target == ("yellowfin:gnome:linux/amd64", CELL, DIGEST)
+    flow.catalog_loaded(Catalog.from_event(catalog_event))
+    assert flow.source is not None and flow.source.cell == CELL

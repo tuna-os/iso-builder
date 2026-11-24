@@ -36,6 +36,11 @@ type Request struct {
 	Options         Options         `json:"options"`
 	CatalogVersion  string          `json:"catalogVersion"`
 	QualificationID string          `json:"qualificationId,omitempty"`
+	// Cell names the prepared installer OCI image to fetch, verify and
+	// write instead of building (tuna-os/iso-builder#665). It is empty for
+	// old requests, which keep the old builder. Never set by the catalog
+	// path: FromTarget leaves it empty.
+	Cell string `json:"cell,omitempty"`
 }
 
 type Target struct {

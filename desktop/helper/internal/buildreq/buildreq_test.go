@@ -166,6 +166,30 @@ func TestLoadFileAndSetFlatpaks(t *testing.T) {
 	}
 }
 
+func TestCellRoundTrip(t *testing.T) {
+	p := filepath.Join(t.TempDir(), "build-request.json")
+	withCell := `{"schemaVersion":1,"kind":"build-request","customImage":true,"image":"ghcr.io/tuna-os/flounder:xfce","registry":"https://ghcr.io","options":{"label":"T","packages":[],"flatpaks":[],"extraRun":[],"outputFilename":"x.iso"},"catalogVersion":"","cell":"ghcr.io/tuna-os/example-installer:stable"}`
+	if err := os.WriteFile(p, []byte(withCell), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	_, r, err := LoadFile(p)
+	if err != nil || r.Cell != "ghcr.io/tuna-os/example-installer:stable" {
+		t.Fatalf("cell lost: %v %+v", err, r)
+	}
+	native, err := Native([]byte(withCell))
+	if err != nil || !strings.Contains(string(native), `"cell": "ghcr.io/tuna-os/example-installer:stable"`) {
+		t.Fatalf("Native dropped cell: %v %s", err, native)
+	}
+	// Old requests carry no cell and gain no cell key.
+	f := loadFixtures(t)[0]
+	if err := os.WriteFile(p, f.Request, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, r, err := LoadFile(p); err != nil || r.Cell != "" {
+		t.Fatalf("old request gained a cell: %v %+v", err, r)
+	}
+}
+
 // The tacklebox pin must equal native/go.mod's: the engine shipped with the
 // Media Writer is the one the website and the Fyne app use.
 func TestTackleboxPinMatchesNative(t *testing.T) {

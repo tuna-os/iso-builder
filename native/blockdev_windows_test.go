@@ -17,7 +17,7 @@ func TestFilterSafeDrivesWindows_RealShapedFixtures(t *testing.T) {
 			Size: 32000000000, InterfaceType: "USB", MediaType: "Removable Media",
 		},
 	}
-	safe := filterSafeDrivesWindows(drives)
+	safe := filterSafeDrivesWindows(drives, nil)
 	if len(safe) != 1 {
 		t.Fatalf("expected exactly 1 safe drive, got %d: %+v", len(safe), safe)
 	}
@@ -30,7 +30,7 @@ func TestFilterSafeDrivesWindows_RejectsNonUSBInterface(t *testing.T) {
 	drives := []win32DiskDrive{
 		{DeviceID: `\\.\PHYSICALDRIVE1`, Size: 32000000000, InterfaceType: "IDE", MediaType: "Removable Media"},
 	}
-	if safe := filterSafeDrivesWindows(drives); len(safe) != 0 {
+	if safe := filterSafeDrivesWindows(drives, nil); len(safe) != 0 {
 		t.Fatalf("non-USB interface must be rejected even if MediaType says removable, got %+v", safe)
 	}
 }
@@ -42,8 +42,22 @@ func TestFilterSafeDrivesWindows_RejectsFixedMedia(t *testing.T) {
 	drives := []win32DiskDrive{
 		{DeviceID: `\\.\PHYSICALDRIVE3`, Size: 500000000000, InterfaceType: "USB", MediaType: "Fixed hard disk media"},
 	}
-	if safe := filterSafeDrivesWindows(drives); len(safe) != 0 {
+	if safe := filterSafeDrivesWindows(drives, nil); len(safe) != 0 {
 		t.Fatalf("fixed media over USB must still be rejected, got %+v", safe)
+	}
+}
+
+// An excluded disk number (the system disk, the ISO's disk) is dropped
+// even when it is USB removable — the helper's exclusion rule, now shared
+// (tuna-os/iso-builder#620).
+func TestFilterSafeDrivesWindows_ExcludesSystemDisk(t *testing.T) {
+	drives := []win32DiskDrive{
+		{DeviceID: `\\.\PHYSICALDRIVE1`, Model: "USB System Disk", Size: 32000000000, InterfaceType: "USB", MediaType: "Removable Media", Index: 1},
+		{DeviceID: `\\.\PHYSICALDRIVE2`, Model: "Target Stick", Size: 16000000000, InterfaceType: "USB", MediaType: "Removable Media", Index: 2},
+	}
+	safe := filterSafeDrivesWindows(drives, map[int]bool{1: true})
+	if len(safe) != 1 || safe[0].Path != `\\.\PHYSICALDRIVE2` {
+		t.Fatalf("excluded system disk must be dropped, got %+v", safe)
 	}
 }
 

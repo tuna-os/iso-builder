@@ -235,3 +235,79 @@ def test_merge_drives_offers_named_test_devices_despite_system_hint():
 def test_merge_drives_never_offers_system_disks():
     drive = protocol.Drive("usb-1", "/dev/sda", "Disk", 8, "usb", True, system_disk=True)
     assert merge_drives([drive], None) == []
+
+
+CELL_SOURCE = Source(label="Cell", save_name="cell.iso", target_id="yellowfin:gnome:linux/amd64",
+                      cell="/tmp/fake-cell")
+BAD_DIGEST_SOURCE = Source(label="Cell", save_name="cell.iso", target_id="yellowfin:gnome:linux/amd64",
+                            cell="/tmp/fake-cell", digest="sha256:" + "0" * 64)
+
+
+def fake_cell_bytes(size=2 * 1024 * 1024):
+    data = bytearray(size)
+    data[32769:32774] = b"CD001"
+    return bytes(data)
+
+
+def to_cell_destination(flow, ctl, run_until, source=CELL_SOURCE):
+    ctl.load_catalog()
+    run_until(lambda: flow.step is not Step.LOADING)
+    flow.choose(source)
+
+
+def test_cell_fetch_then_write_and_cache_reuse(fake_env, run_until):
+    flow, ctl = controller(fake_env)
+    to_cell_destination(flow, ctl, run_until)
+    choice = first_drive(ctl, run_until)
+    ctl.start(DriveDestination(choice.drive, choice.label))
+    run_until(lambda: flow.step is not Step.PROGRESS)
+    assert flow.step is Step.DONE, (flow.error, ctl.details)
+    assert flow.result.verified
+    assert any("Fetched installer image sha256:" in line for line in ctl.details)
+    cache = list((fake_env / "work" / "cells").glob("*.img"))
+    assert len(cache) == 1
+    assert cache[0].read_bytes() == fake_cell_bytes()
+    # A second stick reuses the staged file: no second fetch runs.
+    assert [line for line in ctl.details if "fake-helper: fetching" in line] != []
+    flow.start_over()
+    flow.choose(CELL_SOURCE)
+    ctl.start(DriveDestination(choice.drive, choice.label))
+    run_until(lambda: flow.step is not Step.PROGRESS)
+    assert flow.step is Step.DONE, (flow.error, ctl.details)
+    assert [line for line in ctl.details if "fake-helper: fetching" in line] == []
+    assert any("reusing" in line for line in ctl.details)
+
+
+def test_cell_digest_mismatch_fails(fake_env, run_until):
+    flow, ctl = controller(fake_env)
+    to_cell_destination(flow, ctl, run_until, BAD_DIGEST_SOURCE)
+    choice = first_drive(ctl, run_until)
+    ctl.start(DriveDestination(choice.drive, choice.label))
+    run_until(lambda: flow.step is not Step.PROGRESS)
+    assert flow.step is Step.ERROR, ctl.details
+    assert flow.error.kind == "verify-mismatch"
+
+
+def test_cell_save_file_only(fake_env, run_until):
+    flow, ctl = controller(fake_env)
+    to_cell_destination(flow, ctl, run_until)
+    out = fake_env / "Downloads" / "cell.img"
+    out.parent.mkdir()
+    ctl.start(FileDestination(str(out)))
+    run_until(lambda: flow.step is not Step.PROGRESS)
+    assert flow.step is Step.DONE, (flow.error, ctl.details)
+    assert out.read_bytes() == fake_cell_bytes()
+
+
+def test_cell_pinned_digest_accepts_matching_manifest(fake_env, run_until):
+    data = fake_cell_bytes()
+    manifest = "sha256:" + hashlib.sha256(b"MANIFEST" + data).hexdigest()
+    source = Source(label="Cell", save_name="cell.iso", target_id="yellowfin:gnome:linux/amd64",
+                    cell="/tmp/fake-cell", digest=manifest)
+    flow, ctl = controller(fake_env)
+    to_cell_destination(flow, ctl, run_until, source)
+    out = fake_env / "Downloads" / "cell.img"
+    out.parent.mkdir()
+    ctl.start(FileDestination(str(out)))
+    run_until(lambda: flow.step is not Step.PROGRESS)
+    assert flow.step is Step.DONE, (flow.error, ctl.details)

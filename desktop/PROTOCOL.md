@@ -65,12 +65,24 @@ helper polls it every second).
    required/available GB). Workdir defaults to an OS cache dir and is cleaned
    on exit.
 
-4. `drives [--exclude PATH]` →
+4. `medium --cell REF --out PATH [--resume] [--layout-name NAME]` → stages a
+   prepared installer cell with the `tacklebox write-medium` engine. It never
+   builds an ISO. `REF` is a registry ref or an OCI layout directory. Emits
+   progress events, then
+   `{"event":"done","path":"/abs/staged.img","bytes":N,"sha256":"...","manifest":"sha256:...","verified":true}`.
+   The engine checks every chunk, the whole stream, and the read-back.
+   `verified` covers the staged file; `write` checks the stick again. Pass
+   the staged file to `write --iso` as the image. `--resume` keeps the target
+   and skips chunks that already match. Signature checks are stubs upstream
+   (tuna-os/tacklebox#511): the helper passes `--insecure-skip-verify`, and
+   forwards the engine warning as a `log` event.
+
+5. `drives [--exclude PATH]` →
    `{"event":"drives","drives":[{"id":"stable id (disk serial/by-id path or Windows disk number+serial)","path":"/dev/sdb | /dev/disk4 | \\\\.\\PhysicalDrive2","name":"SanDisk Ultra","sizeBytes":N,"bus":"usb|sd|other","removable":true,"mounted":["/media/..."],"systemDisk":false}]}`.
    Never lists the system/boot disk or the disk that holds `--exclude PATH`
    (the ISO's own disk).
 
-5. `write --iso PATH --device ID [--fd N] [--no-verify]` → re-resolves ID
+6. `write --iso PATH --device ID [--fd N] [--no-verify]` → re-resolves ID
    right before writing and refuses (`device-changed`) if path/size/serial no
    longer match; unmounts/locks/dismounts the disk's volumes (macOS
    `diskutil unmountDisk`, Windows FSCTL_LOCK_VOLUME + FSCTL_DISMOUNT_VOLUME
@@ -104,12 +116,20 @@ tunaos-media-writer://build?target=yellowfin%3Agnome%3Alinux%2Famd64
   user still picks the drive and confirms the erase. Back returns to step 1
   with that desktop and base selected when step 1 offers them. Any catalog
   target is accepted, including other editions and platforms than step 1
-  shows; the app builds exactly the linked id.
+  shows; the app builds exactly the linked id, or fetches the linked cell
+  (see below).
+- The link may name a cell: `...&cell=REF&digest=sha256:...`. `cell` names
+  the prepared installer image to fetch instead of an ISO build. `digest`
+  its manifest; the app refuses a staged file whose manifest differs. A
+  `build-request.json` with a `cell` field behaves the same; requests
+  without one keep the old builder.
 - A link that arrives before the catalog has loaded is opened once it has.
 - Refused, with a visible message and nothing selected: anything that is not
   `tunaos-media-writer://build` with exactly one `target`; an id not shaped
   `base:desktop:os/arch[/variant]` (lower-case `a-z 0-9 . _ -`); an id the
   catalog does not offer; any link while a build or write is running.
+- Cell links add three refusals: more than one `cell` or `digest`; a
+  `digest` without `cell`; a `digest` that is not `sha256:` plus 64 hex digits.
 
 | | Scheme registration | A link while the app runs |
 |---|---|---|

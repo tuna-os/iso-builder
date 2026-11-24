@@ -1,88 +1,43 @@
 package drives
 
-import (
-	"encoding/json"
-	"fmt"
-	"strings"
-)
+import "github.com/tuna-os/iso-builder/safedrives"
 
 // No build constraint on purpose: the safety decision is unit-tested on
-// every runner. Ported from native/blockdev_windows.go.
+// every runner. The decision lives in the shared safedrives module,
+// imported by both this helper and native/.
 
-// win32DiskDrive mirrors the WMI/CIM fields the safety filter needs from
-// `Get-CimInstance Win32_DiskDrive`.
-type win32DiskDrive struct {
-	DeviceID      string // e.g. \\.\PHYSICALDRIVE2
-	Model         string
-	Size          int64
-	InterfaceType string // "USB", "SCSI", "IDE", ...
-	MediaType     string // "Removable Media", "Fixed hard disk media", ...
-	Index         int
-	SerialNumber  string
-}
+// win32DiskDrive keeps its name so enumerate_windows.go reads unchanged; it
+// is the shared Windows input struct.
+type win32DiskDrive = safedrives.WinDisk
 
 // win32Script enumerates physical disks. -Depth/explicit properties because
 // Win32_DiskDrive's default ConvertTo-Json output recurses through circular
 // CIM association properties.
 const win32Script = `Get-CimInstance Win32_DiskDrive | Select-Object DeviceID,Model,Size,InterfaceType,MediaType,Index,SerialNumber | ConvertTo-Json`
 
-// parseWin32DiskDrives handles PowerShell's ConvertTo-Json quirk: a single
-// matching object serializes as a bare JSON object, not a one-element
-// array, so callers can't just json.Unmarshal into []win32DiskDrive
-// unconditionally.
+// parseWin32DiskDrives handles PowerShell's ConvertTo-Json quirk; see
+// safedrives.ParseWin32DiskDrives.
 func parseWin32DiskDrives(data []byte) ([]win32DiskDrive, error) {
-	trimmed := strings.TrimSpace(string(data))
-	if trimmed == "" {
-		return nil, nil
-	}
-	if strings.HasPrefix(trimmed, "[") {
-		var drives []win32DiskDrive
-		if err := json.Unmarshal(data, &drives); err != nil {
-			return nil, fmt.Errorf("parse Win32_DiskDrive JSON array: %w", err)
-		}
-		return drives, nil
-	}
-	var one win32DiskDrive
-	if err := json.Unmarshal(data, &one); err != nil {
-		return nil, fmt.Errorf("parse Win32_DiskDrive JSON object: %w", err)
-	}
-	return []win32DiskDrive{one}, nil
+	return safedrives.ParseWin32DiskDrives(data)
 }
 
-// filterSafeDrivesWindows is the pure safety filter: InterfaceType must be
-// "USB" (excludes the internal SCSI/NVMe/IDE system disk categorically,
-// not just by heuristics about mount points — the same defense-in-depth
-// rpi-imager uses per tuna-os/tacklebox#106), MediaType must indicate
-// removable media, and size must be non-zero. excluded holds disk numbers
-// that must never be offered (the system disk, the ISO's disk).
+// filterSafeDrivesWindows maps the shared decision to this module's Drive
+// type. excluded holds disk numbers that must never be offered (the system
+// disk, the ISO's disk).
 func filterSafeDrivesWindows(drives []win32DiskDrive, excluded map[int]bool) []Drive {
-	var safe []Drive
-	for _, d := range drives {
-		if !strings.EqualFold(d.InterfaceType, "USB") {
-			continue
-		}
-		if !strings.Contains(strings.ToLower(d.MediaType), "removable") {
-			continue
-		}
-		if d.Size <= 0 {
-			continue
-		}
-		if excluded[d.Index] {
-			continue
-		}
-		ident := strings.TrimSpace(d.SerialNumber)
-		if ident == "" {
-			ident = strings.TrimSpace(d.Model)
-		}
-		safe = append(safe, Drive{
-			Path:       d.DeviceID,
-			Name:       strings.TrimSpace(d.Model),
-			SizeBytes:  d.Size,
-			Bus:        "usb",
-			Removable:  true,
-			Ident:      ident,
-			DiskNumber: d.Index,
+	cands := safedrives.FilterWindows(drives, excluded)
+	out := make([]Drive, 0, len(cands))
+	for _, c := range cands {
+		out = append(out, Drive{
+			Path:       c.Path,
+			Name:       c.Name,
+			SizeBytes:  c.SizeBytes,
+			Bus:        c.Bus,
+			Removable:  c.Removable,
+			Mounted:    c.Mounted,
+			Ident:      c.Ident,
+			DiskNumber: c.DiskNumber,
 		})
 	}
-	return safe
+	return out
 }

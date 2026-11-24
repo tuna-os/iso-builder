@@ -35,10 +35,15 @@ const EnvEngine = "TUNAOS_MEDIA_ENGINE"
 // Locate finds the engine: $TUNAOS_MEDIA_ENGINE, then next to the helper
 // executable, then PATH.
 func Locate() (string, error) {
-	if p := os.Getenv(EnvEngine); p != "" {
+	return locate(BinaryName, EnvEngine, "The image builder that comes with this app is missing. Please reinstall TunaOS Media Writer.")
+}
+
+// locate finds a shipped binary by env override, then beside the helper
+// executable, then on PATH.
+func locate(name, env, missing string) (string, error) {
+	if p := os.Getenv(env); p != "" {
 		return p, nil
 	}
-	name := BinaryName
 	if runtime.GOOS == "windows" {
 		name += ".exe"
 	}
@@ -54,7 +59,7 @@ func Locate() (string, error) {
 	if p, err := exec.LookPath(name); err == nil {
 		return p, nil
 	}
-	return "", protocol.Errorf(protocol.KindEngine, "The image builder that comes with this app is missing. Please reinstall TunaOS Media Writer.")
+	return "", &protocol.Error{Kind: protocol.KindEngine, Message: missing}
 }
 
 // Options configures one build.

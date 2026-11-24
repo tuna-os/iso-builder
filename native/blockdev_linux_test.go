@@ -24,7 +24,7 @@ func TestFilterSafeDrives_RealShapedFixtures(t *testing.T) {
 		},
 	}
 
-	safe := filterSafeDrives(devices)
+	safe := filterSafeDrives(devices, nil)
 	if len(safe) != 1 {
 		t.Fatalf("expected exactly 1 safe drive, got %d: %+v", len(safe), safe)
 	}
@@ -41,7 +41,7 @@ func TestFilterSafeDrives_RejectsInternalDisk(t *testing.T) {
 		{Name: "sda", Size: 32000000000, Type: "disk", RM: false, Tran: "sata"},
 		{Name: "nvme1n1", Size: 512000000000, Type: "disk", RM: false, Tran: "nvme", HotPlug: true},
 	}
-	if safe := filterSafeDrives(devices); len(safe) != 0 {
+	if safe := filterSafeDrives(devices, nil); len(safe) != 0 {
 		t.Fatalf("internal disks must be rejected, got %+v", safe)
 	}
 }
@@ -57,7 +57,7 @@ func TestFilterSafeDrives_AcceptsAutoMountedUSBSSD(t *testing.T) {
 			MountPoint: strp("/run/media/james/TUNAOS"),
 		},
 	}
-	safe := filterSafeDrives(devices)
+	safe := filterSafeDrives(devices, nil)
 	if len(safe) != 1 || safe[0].Path != "/dev/sdb" {
 		t.Fatalf("auto-mounted USB SSD must be offered, got %+v", safe)
 	}
@@ -75,7 +75,7 @@ func TestFilterSafeDrives_RejectsUSBMountedAsSystem(t *testing.T) {
 			},
 		},
 	}
-	if safe := filterSafeDrives(devices); len(safe) != 0 {
+	if safe := filterSafeDrives(devices, nil); len(safe) != 0 {
 		t.Fatalf("USB disk mounted as system root must be rejected, got %+v", safe)
 	}
 }
@@ -84,7 +84,7 @@ func TestFilterSafeDrives_RejectsPartitionType(t *testing.T) {
 	devices := []lsblkDevice{
 		{Name: "sdb1", Size: 32000000000, Type: "part", RM: true},
 	}
-	if safe := filterSafeDrives(devices); len(safe) != 0 {
+	if safe := filterSafeDrives(devices, nil); len(safe) != 0 {
 		t.Fatalf("a partition (type=part) must be rejected, got %+v", safe)
 	}
 }
@@ -93,8 +93,22 @@ func TestFilterSafeDrives_RejectsReadOnly(t *testing.T) {
 	devices := []lsblkDevice{
 		{Name: "sdb", Size: 32000000000, Type: "disk", RM: true, RO: true},
 	}
-	if safe := filterSafeDrives(devices); len(safe) != 0 {
+	if safe := filterSafeDrives(devices, nil); len(safe) != 0 {
 		t.Fatalf("a read-only device must be rejected, got %+v", safe)
+	}
+}
+
+// An excluded disk (the system disk, the disk holding the ISO) is dropped
+// even when it would otherwise be offered — the helper's exclusion rule,
+// now shared (tuna-os/iso-builder#620).
+func TestFilterSafeDrives_ExcludesNamedDisk(t *testing.T) {
+	devices := []lsblkDevice{
+		{Name: "sdb", Model: "Target Stick", Size: 32000000000, Type: "disk", RM: true, Tran: "usb"},
+		{Name: "sdc", Model: "ISO Stick", Size: 32000000000, Type: "disk", RM: true, Tran: "usb"},
+	}
+	safe := filterSafeDrives(devices, map[string]bool{"sdc": true})
+	if len(safe) != 1 || safe[0].Path != "/dev/sdb" {
+		t.Fatalf("excluded disk must be dropped, got %+v", safe)
 	}
 }
 

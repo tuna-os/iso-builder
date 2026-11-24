@@ -273,6 +273,11 @@ class MainWindow(Adw.ApplicationWindow):
             self._fill_choose()
         elif step is Step.DESTINATION:
             self.destination_title.set_subtitle(flow.source.label if flow.source else "")
+            if flow.source is not None and flow.source.digest:
+                self.drives_group.set_description(
+                    strings.CELL_IMAGE.format(digest=flow.source.digest))
+            else:
+                self.drives_group.set_description(strings.DRIVES_GROUP_DESCRIPTION)
             if flow.source != self._rendered_source:
                 self._rendered_source = flow.source
                 self._show_on_choose(flow.source)
@@ -473,9 +478,14 @@ class MainWindow(Adw.ApplicationWindow):
         self.flow.choose(source)
 
     def confirm_erase(self, choice: DriveChoice) -> None:
+        source = self.flow.source
+        if source is not None and source.digest:
+            body = strings.ERASE_BODY_CELL.format(digest=source.digest)
+        else:
+            body = strings.ERASE_BODY
         dialog = Adw.AlertDialog(
             heading=strings.ERASE_HEADING.format(name=choice.label, size=format_size(choice.size_bytes)),
-            body=strings.ERASE_BODY,
+            body=body,
         )
         dialog.add_response("cancel", strings.CANCEL)
         dialog.add_response("erase", strings.ERASE)
