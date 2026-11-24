@@ -233,7 +233,7 @@ jobs:
         with:
           persist-credentials: false
 
-      - uses: actions/setup-go@v7.0.0
+      - uses: actions/setup-go@v7.1.0
         with:
           go-version-file: native/go.mod
           cache-dependency-path: native/go.sum
@@ -293,7 +293,7 @@ jobs:
         with:
           persist-credentials: false
 
-      - uses: actions/setup-go@v7.0.0
+      - uses: actions/setup-go@v7.1.0
         with:
           go-version-file: native/go.mod
           cache-dependency-path: native/go.sum
@@ -340,7 +340,7 @@ jobs:
         with:
           persist-credentials: false
 
-      - uses: actions/setup-go@v7.0.0
+      - uses: actions/setup-go@v7.1.0
         with:
           go-version-file: native/go.mod
           cache-dependency-path: native/go.sum
@@ -384,7 +384,7 @@ jobs:
         with:
           persist-credentials: false
 
-      - uses: actions/setup-go@v7.0.0
+      - uses: actions/setup-go@v7.1.0
         with:
           go-version-file: native/go.mod
           cache-dependency-path: native/go.sum
