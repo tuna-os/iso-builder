@@ -1,38 +1,47 @@
 /* One-click download: pick a desktop (and optionally a base), press one
- * button, get an ISO. Everything else lives in the full builder, one click
- * away under "Customize".
+ * button, get the installer image. Everything else lives in the full builder,
+ * one click away under "Customize".
  *
  * The button's route for the selected catalog target, in order:
- *   1. browser:  the catalog carries a complete qualification receipt
+ *   1. installer: the catalog pins an installer image for this cell
+ *                (installerForEntry in write-medium.js: ref, manifest digest,
+ *                raw sha256, size, receipt digest, cosign identity). This tab
+ *                streams its chunks into the file the user picks, verifies
+ *                the digest and receipt, and saves one file. The file boots
+ *                as an ISO and also works with `dd`. No build, no R2.
+ *   2. browser:  the legacy path for cells with no installer pin. The catalog
+ *                carries a complete qualification receipt
  *                (catalogQualification) AND this browser can build it
  *                (capability() below). Built in this tab with the default
  *                apps, exactly as the full builder would.
- *   2. prebuilt: download.tunaos.org publishes an ISO for it. Unqualified
- *                targets keep their prebuilt path (spec
- *                on-demand-live-iso-parity, "Safe per-target cutover").
- *   3. app:      TunaOS Media Writer, the native app that builds the ISO on
- *                this computer and writes the USB stick, has a release for
- *                this operating system.
- *   4. local:    none of the above; the full builder's build-on-your-computer
+ *   3. prebuilt: download.tunaos.org publishes an ISO for it. Only for cells
+ *                with no installer pin (spec on-demand-live-iso-parity,
+ *                "Safe per-target cutover").
+ *   4. app:      TunaOS Media Writer, the native app that writes the USB
+ *                stick, has a release for this operating system.
+ *   5. local:    none of the above; the full builder's build-on-your-computer
  *                instructions.
  * On a phone there is no route: it says a PC and a USB stick are needed and
  * offers to send the link to that computer.
+ * For an installer cell there is no "Customize apps and settings": CI bakes
+ * the desktop's fixed Flatpak set into the image. The page lists that set
+ * and says to add more apps from Flathub after install.
  * Whenever Media Writer has a release for this OS it is also offered under
  * the button as the second action, with this image's build-request.json for
  * the app's "Open build request…" and, from Media Writer 0.2.0 on, a deep
  * link that opens the app on this image (tunaos-media-writer://build?target=
  * <catalog target id>, desktop/PROTOCOL.md).
- * Prebuilt ISOs and app releases come from downloads.json, generated from the
- * published index and the GitHub release at deploy time
- * (scripts/generate-downloads.py); a missing file only removes routes 2-3.
+ * Prebuilt ISOs and app releases come from downloads.json, generated from
+ * the published index and the GitHub release at deploy time
+ * (scripts/generate-downloads.py); a missing file only removes routes 3-4.
  *
- * Runs after app.js and reads its script-scope state (guidedModel,
- * guidedPicker, inspect, build, ...). Quick mode is only offered by a guided,
- * buildable deployment, on the bare URL or on a link naming only a TunaOS
- * image (index.html's TBOX_QUICK_IMAGE, as tunaos.org links), which opens on
- * that desktop and base. Any other query parameter (a share link,
- * ?customize=1, a test preset), or an image this view does not offer, opens
- * the full builder unchanged. */
+ * Runs after app.js and write-medium.js and reads their script-scope state
+ * (guidedModel, guidedPicker, inspect, build, ...). Quick mode is only
+ * offered by a guided, buildable deployment, on the bare URL or on a link
+ * naming only a TunaOS image (index.html's TBOX_QUICK_IMAGE, as tunaos.org
+ * links), which opens on that desktop and base. Any other query parameter
+ * (a share link, ?customize=1, a test preset), or an image this view does
+ * not offer, opens the full builder unchanged. */
 (function () {
   'use strict';
   if (!document.querySelector) return;
@@ -89,31 +98,55 @@
     return { id: 'other' };
   }
 
-  // What can be known without asking the browser for anything.
+  // What can be known without asking the browser for anything. The installer
+  // medium streams chunks to the file and never holds the image in memory,
+  // so there is no device-memory gate on this page: only WebAssembly (the
+  // engine) and private browser storage (the no-picker fallback) matter.
+  // The legacy build keeps its own stricter gates below (legacyBlockReason).
   function initialCapability() {
     if (OS.id === 'mobile') return { ok: false, reason: 'Open this page on the computer you want to install on.' };
     if (typeof WebAssembly !== 'object' || !navigator.storage?.getDirectory) {
-      return { ok: false, reason: 'This browser can’t build ISO files.' };
-    }
-    // The engine is 32-bit WebAssembly and can use up to 4 GiB.
-    if (typeof navigator.deviceMemory === 'number' && navigator.deviceMemory < 4) {
-      return { ok: false, reason: 'This browser doesn’t have enough memory to build it.' };
+      return { ok: false, reason: 'This browser can’t save installer images.' };
     }
     return { ok: true };
   }
 
-  // Storage the build needs: MIN_FREE_GB (app.js) for the layer cache, and
-  // the same again when the ISO has to be spooled before it can be saved.
+  // Free origin storage in bytes, once measured. Unknown stays unknown: the
+  // download checks again before it writes.
+  let measuredFreeBytes = null;
+  // Storage a stream needs: the file size, twice without the save dialog
+  // (the tab spools into private storage, then the browser saves a copy).
+  function mediumNeedBytes(installer) {
+    return installer.sizeBytes * (window.showSaveFilePicker ? 1 : 2);
+  }
+  const mediumStorageBlocked = (installer) =>
+    measuredFreeBytes !== null && measuredFreeBytes < mediumNeedBytes(installer);
+
+  // The legacy build path keeps its own gates: the engine is 32-bit
+  // WebAssembly and can use up to 4 GiB, and it needs MIN_FREE_GB (app.js)
+  // for the layer cache, twice that without the save dialog. A stream needs
+  // only the file size, so these never block the installer route.
+  let legacyStorageReason = null;
+  function legacyBlockReason() {
+    if (!capable.ok) return capable.reason;
+    if (typeof navigator.deviceMemory === 'number' && navigator.deviceMemory < 4) {
+      return 'This browser doesn’t have enough memory to build it.';
+    }
+    return legacyStorageReason;
+  }
+
   async function measureCapability() {
     if (!capable.ok || !navigator.storage?.estimate) return;
     try {
       const { quota, usage } = await navigator.storage.estimate();
       if (!Number.isFinite(quota) || !Number.isFinite(usage)) return;
-      const free = (quota - usage) / 1e9;
+      measuredFreeBytes = (quota - usage);
+      const free = measuredFreeBytes / 1e9;
       const need = window.showSaveFilePicker ? MIN_FREE_GB : MIN_FREE_GB * 2;
-      if (free < need) capable = { ok: false, reason: `This browser can use only ${free.toFixed(1)} GB of storage; building needs about ${Math.ceil(need)} GB.` };
-    } catch { /* unknown is not a refusal; inspect() checks again */ }
+      if (free < need) legacyStorageReason = `This browser can use only ${free.toFixed(1)} GB of storage; building needs about ${Math.ceil(need)} GB.`;
+    } catch { /* unknown is not a refusal; the write checks again */ }
   }
+
 
   const facetLabel = (facet, id) => guidedModel?.facetPresentation[facet]?.values.find((v) => v.id === id)?.label || id;
   const gb = (bytes) => `${(bytes / 1e9).toFixed(1)} GB`;
@@ -128,6 +161,7 @@
       leaf.facets.base?.length === 1 && leaf.facets.desktop[0] !== 'none');
   }
 
+  const installerForLeaf = (leaf) => leaf ? globalThis.TboxWriteMedium?.installerForEntry?.(leaf.entry) ?? null : null;
   const prebuiltFor = (leaf) => leaf && downloads.prebuilt[`${leaf.entry.target.variant}-${leaf.entry.target.flavor}`];
   function appAsset() { return (OS.asset && downloads.mediaWriter?.assets?.[OS.asset]) || null; }
   // tunaos-media-writer:// links open the app from 0.2.0 on; an older app
@@ -141,13 +175,19 @@
   }
   const qualified = (leaf) => Boolean(leaf) && catalogQualification(leaf.entry).status === 'qualified';
 
-  // A phone cannot install TunaOS, and a multi-GB ISO on it helps no one.
+  // A phone cannot install TunaOS, and a multi-GB image on it helps no one.
+  // The installer medium is the default wherever the catalog pins one; the
+  // ready-made R2 route serves only cells with no pin.
   function route(leaf) {
     if (OS.id === 'mobile') return { kind: 'mobile' };
     if (!leaf) return { kind: 'local' };
-    if (qualified(leaf) && capable.ok) return { kind: 'browser' };
-    const iso = prebuiltFor(leaf);
-    if (iso) return { kind: 'prebuilt', iso };
+    const installer = installerForLeaf(leaf);
+    if (installer && capable.ok && !mediumStorageBlocked(installer)) return { kind: 'installer', installer };
+    if (qualified(leaf) && !legacyBlockReason()) return { kind: 'browser' };
+    if (!installer) {
+      const iso = prebuiltFor(leaf);
+      if (iso) return { kind: 'prebuilt', iso };
+    }
     const asset = appAsset();
     if (asset) return { kind: 'app', asset };
     return { kind: 'local' };
@@ -163,11 +203,13 @@
     ? guidedModel.leaves.find((l) => l.id === guidedModel.defaultSelection.leaf_id) : null);
 
   // A desktop's default base: the deployment default when it offers this
-  // desktop, else the first base the browser can build, else the first with
-  // a ready-made ISO, else the first listed.
+  // desktop, else the first base with an installer image, else the first the
+  // browser can build, else the first with a ready-made ISO, else the first
+  // listed.
   function defaultBase(candidates) {
     const preferred = defaultLeaf()?.facets.base?.[0];
     return (candidates.find((l) => l.facets.base[0] === preferred) ||
+      candidates.find((l) => route(l).kind === 'installer') ||
       candidates.find((l) => route(l).kind === 'browser') ||
       candidates.find((l) => route(l).kind === 'prebuilt') || candidates[0])?.facets.base[0] || null;
   }
@@ -251,20 +293,28 @@
     const r = route(leaf);
     // While a build runs the progress takes the primary action's place; the
     // app stays offered below it.
+    const installer = r.kind === 'installer' ? r.installer : installerForLeaf(leaf);
+    const showCustomize = !installer;
     $q('quick-arm').hidden = busy || !(OS.id === 'macos' && macArch === 'arm');
     $q('quick-mac').hidden = !(OS.id === 'macos' && macArch === null);
-    $q('quick-download').hidden = busy || (r.kind !== 'browser' && r.kind !== 'local');
-    $q('quick-download').textContent = r.kind === 'local' ? 'Build on your computer' : 'Download ISO';
+    $q('quick-download').hidden = busy || (r.kind !== 'browser' && r.kind !== 'installer' && r.kind !== 'local');
+    $q('quick-download').textContent = r.kind === 'local' ? 'Build on your computer'
+      : r.kind === 'installer' ? 'Download the installer image' : 'Download ISO';
     $q('quick-download').disabled = busy;
     $q('quick-prebuilt').hidden = busy || r.kind !== 'prebuilt';
     $q('quick-under').hidden = busy;
     $q('quick-phone').hidden = r.kind !== 'mobile';
     // The phone's own message already names the USB stick.
     $q('quick-usb').hidden = r.kind === 'mobile';
+    $q('quick-customize').hidden = !showCustomize;
     renderApp(leaf, r);
+    renderPin(leaf, installer, r);
     const meta = $q('quick-meta');
     meta.hidden = r.kind === 'mobile';
-    if (r.kind === 'browser') {
+    if (r.kind === 'installer') {
+      const save = window.showSaveFilePicker ? 'First you choose where to save the file. Then this tab' : 'This tab';
+      meta.textContent = `CI built this image, for 64-bit Intel and AMD PCs. ${save} fetches ${gb(r.installer.sizeBytes)} and verifies it before it saves. Keep the tab open until it finishes.`;
+    } else if (r.kind === 'browser') {
       const size = leaf.entry.facts?.compressedSize;
       const save = window.showSaveFilePicker ? 'First you choose where to save the file. Then this tab' : 'This tab';
       meta.textContent = `Built in this browser tab, for 64-bit Intel and AMD PCs. ${save} downloads ${size
@@ -278,12 +328,30 @@
     } else if (r.kind === 'mobile') {
       meta.textContent = '';
     } else {
-      meta.textContent = qualified(leaf) && !capable.ok
-        ? `${capable.reason} You can build it on your computer instead.`
+      const blocked = legacyBlockReason();
+      meta.textContent = blocked
+        ? `${blocked} You can build it on your computer instead.`
         : 'Not available as a one-click download yet. You can build it on your computer.';
     }
     // Keep the full builder on the same image, so Customize starts from it.
     if (leaf && !busy && guidedPicker && guidedPicker.getSelection()?.id !== leaf.id) guidedPicker.select(leaf.id);
+  }
+
+  // The catalog pin this cell carries: digest, receipt and size, plus the
+  // desktop's fixed Flatpak set (baked in; more apps come from Flathub
+  // after install). Cells with no pin hide both lines.
+  function renderPin(leaf, installer, r) {
+    const pin = $q('quick-pin'), flats = $q('quick-flatpaks');
+    if (!installer || r.kind === 'mobile') { pin.hidden = true; flats.hidden = true; return; }
+    pin.hidden = false;
+    pin.textContent = `Installer image ${installer.ref} · digest ${installer.manifestDigest} · ` +
+      `sha256 ${installer.sha256} · ${gb(installer.sizeBytes)} · receipt ${installer.receiptDigest} · signed ${installer.cosignIdentity}. ` +
+      `The tab verifies the digest and receipt before it saves.`;
+    const ids = (BUILDER_CONFIG.desktops.find((d) => d.id === leaf?.facets.desktop?.[0])?.default_flatpaks) || [];
+    flats.hidden = false;
+    flats.textContent = ids.length
+      ? `Fixed apps for this desktop: ${ids.join(', ')}. Add more from Flathub after you install.`
+      : 'This desktop ships no extra apps. Add more from Flathub after you install.';
   }
 
   // TunaOS Media Writer: the action itself on the app route, else the second
@@ -300,7 +368,7 @@
     if (primary) app.after($q('quick-under')); else app.before($q('quick-under'));
     $q('quick-app-reason').hidden = !primary;
     $q('quick-app-title').hidden = primary;
-    if (primary) $q('quick-app-reason').textContent = qualified(leaf) && !capable.ok ? capable.reason : 'This one can’t be built in a browser yet.';
+    if (primary) $q('quick-app-reason').textContent = qualified(leaf) && legacyBlockReason() ? legacyBlockReason() : 'This one can’t be built in a browser yet.';
     $q('quick-app-download').textContent = `Get ${APP_NAME} for ${OS_NAMES[OS.id]}`;
     $q('quick-app-download').href = asset.url;
     const links = appOpensLinks();
@@ -383,7 +451,8 @@
     $q('quick-next').hidden = kind !== 'done';
     $q('quick-failed-actions').hidden = kind !== 'failed';
     const leaf = selectedLeaf();
-    const iso = prebuiltFor(leaf);
+    // The ready-made R2 route serves only cells with no installer pin.
+    const iso = installerForLeaf(leaf) ? null : prebuiltFor(leaf);
     $q('quick-alt-prebuilt').hidden = !iso;
     if (iso) $q('quick-alt-prebuilt').href = iso.url;
     const asset = appAsset();
@@ -444,6 +513,58 @@
     }
   }
 
+  // The default path: stream the catalog-pinned installer image into the
+  // user's file, verify digest and receipt, then report both. No build, no
+  // cache, no second copy: the sink takes each chunk once, in disk order.
+  async function installerDownload(leaf, installer) {
+    if (guidedPicker.getSelection()?.id !== leaf.id) guidedPicker.select(leaf.id);
+    const name = globalThis.TboxWriteMedium.mediumFileName(installer);
+    // Ask where to save while the click still counts as a user gesture.
+    // Without the picker the tab spools into private storage first, and the
+    // browser then offers the file to save (the manual route).
+    let sink;
+    try {
+      sink = await isoSink(name);
+    } catch (error) {
+      showResult('failed', `Could not start the download: ${error.message || error}`);
+      return;
+    }
+    if (!sink) return; // save dialog cancelled
+    activeSink = sink;
+    setBusy(true);
+    clearResult();
+    $q('quick-progress').hidden = false;
+    $q('quick-cancel').disabled = false;
+    $q('quick-stage').textContent = `Fetching ${installer.ref}…`;
+    $q('quick-bar').removeAttribute('value');
+    try {
+      const receipt = await globalThis.TboxWriteMedium.writeInstallerImage({
+        installer,
+        write: (u8) => sink.w.write(u8),
+        onProgress: ({ stage, done, total }) => {
+          $q('quick-stage').textContent = stage === 'verify' ? 'Verifying the image…' : `Fetching ${installer.ref}…`;
+          if (Number.isFinite(done) && Number.isFinite(total) && total > 0) {
+            $q('quick-bar').max = total;
+            $q('quick-bar').value = done;
+          }
+        },
+      });
+      await finishIsoSink(sink, name);
+      showResult('done', `Saved ${name}. Installer digest ${receipt.installerDigest}, raw sha256 ${receipt.rawSha256}. ` +
+        `This file boots as an ISO and also works with dd.`);
+    } catch (error) {
+      await sink.w.abort?.().catch(() => {});
+      if (error?.name === 'AbortError') {
+        showResult('failed', 'Save cancelled — no completed save confirmed.');
+      } else {
+        showResult('failed', String(error?.message || error));
+      }
+    } finally {
+      activeSink = null;
+      setBusy(false);
+    }
+  }
+
   function buildOnComputer() {
     const asset = appAsset();
     if (asset) { location.assign(asset.url); return; }
@@ -490,7 +611,8 @@
     if (busy || isOperationBusy()) return;
     const leaf = selectedLeaf();
     const r = route(leaf);
-    if (r.kind === 'browser') browserBuild(leaf);
+    if (r.kind === 'installer') installerDownload(leaf, r.installer);
+    else if (r.kind === 'browser') browserBuild(leaf);
     else if (r.kind === 'local') buildOnComputer();
   });
   $q('quick-prebuilt').addEventListener('click', () => showResult('done', 'Your download has started.'));

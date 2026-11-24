@@ -217,6 +217,21 @@ def validate_snapshot(snapshot_path: Path | None = None) -> dict:
         pm_digest = (entry.get("resolvedInputs") or {}).get("platformManifestDigest")
         if avail.get("available") and not DIGEST_RE.match(str(pm_digest or "")):
             sys.exit(f"available entry {entry.get('targetKey')} missing platformManifestDigest in {path}")
+        installer = entry.get("installer")
+        if installer is not None:
+            if not isinstance(installer, dict):
+                sys.exit(f"entry {entry.get('targetKey')} has a non-object installer pin in {path}")
+            for key in ("manifestDigest", "sha256", "receiptDigest"):
+                if not DIGEST_RE.match(str(installer.get(key) or "")):
+                    sys.exit(f"entry {entry.get('targetKey')} has an invalid installer {key} in {path}")
+            if not isinstance(installer.get("ref"), str) or not installer["ref"].startswith("ghcr.io/"):
+                sys.exit(f"entry {entry.get('targetKey')} has an invalid installer ref in {path}")
+            size = installer.get("sizeBytes")
+            if not isinstance(size, int) or isinstance(size, bool) or size <= 0:
+                sys.exit(f"entry {entry.get('targetKey')} has an invalid installer sizeBytes in {path}")
+            identity = installer.get("cosignIdentity")
+            if not isinstance(identity, str) or not identity.strip():
+                sys.exit(f"entry {entry.get('targetKey')} has an invalid installer cosignIdentity in {path}")
     return doc
 
 

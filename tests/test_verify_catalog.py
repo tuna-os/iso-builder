@@ -307,3 +307,71 @@ def test_main_returns_0_and_notes_inconclusive_refs_separately(vc, monkeypatch, 
     out = capsys.readouterr().out
     assert "did not resolve for reasons other than 404" in out
     assert "OK: 1 of 2 catalog refs resolved." in out
+
+
+# --- installer pin ----------------------------------------------------------
+
+
+def test_validate_snapshot_accepts_a_well_formed_installer_pin(vc, tmp_path):
+    import hashlib
+
+    target = {
+        "targetKey": "flounder:kde:linux/amd64",
+        "availability": {"available": True},
+        "resolvedInputs": {"platformManifestDigest": "sha256:" + "a" * 64},
+        "qualification": {"status": "local-only"},
+        "installer": {
+            "ref": "ghcr.io/tuna-os/flounder-installer:synthetic",
+            "manifestDigest": "sha256:" + "b" * 64,
+            "sha256": "sha256:" + "c" * 64,
+            "sizeBytes": 262144,
+            "receiptDigest": "sha256:" + "d" * 64,
+            "cosignIdentity": "https://github.com/tuna-os/tunaOS/.github/workflows/ci.yml@refs/heads/main",
+        },
+    }
+    doc = {
+        "coverageDigest": "sha256:" + "e" * 64,
+        "generatedAt": "2026-11-22T00:00:00Z",
+        "kind": "catalog-snapshot",
+        "schemaVersion": 1,
+        "targets": [target],
+    }
+    canonical = __import__("json").dumps([target], sort_keys=True, separators=(",", ":"), ensure_ascii=True, allow_nan=False).encode()
+    doc["snapshotDigest"] = "sha256:" + hashlib.sha256(canonical).hexdigest()
+    snap = tmp_path / "snapshot.json"
+    snap.write_text(__import__("json").dumps(doc))
+    assert vc.validate_snapshot(snap)["targets"][0]["installer"]["sizeBytes"] == 262144
+
+
+def test_validate_snapshot_rejects_a_bad_installer_digest(vc, tmp_path):
+    import json
+
+    snap = tmp_path / "snapshot.json"
+    target = {
+        "targetKey": "flounder:kde:linux/amd64",
+        "availability": {"available": True},
+        "resolvedInputs": {"platformManifestDigest": "sha256:" + "a" * 64},
+        "qualification": {"status": "local-only"},
+        "installer": {
+            "ref": "ghcr.io/tuna-os/flounder-installer:synthetic",
+            "manifestDigest": "not-a-digest",
+            "sha256": "sha256:" + "c" * 64,
+            "sizeBytes": 262144,
+            "receiptDigest": "sha256:" + "d" * 64,
+            "cosignIdentity": "x",
+        },
+    }
+    doc = {
+        "coverageDigest": "sha256:" + "e" * 64,
+        "generatedAt": "2026-11-22T00:00:00Z",
+        "kind": "catalog-snapshot",
+        "schemaVersion": 1,
+        "targets": [target],
+    }
+    import hashlib
+
+    canonical = json.dumps([target], sort_keys=True, separators=(",", ":"), ensure_ascii=True, allow_nan=False).encode()
+    doc["snapshotDigest"] = "sha256:" + hashlib.sha256(canonical).hexdigest()
+    snap.write_text(json.dumps(doc))
+    with __import__("pytest").raises(SystemExit):
+        vc.validate_snapshot(snap)

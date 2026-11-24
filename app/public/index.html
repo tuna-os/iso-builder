@@ -330,6 +330,8 @@
       </div>
       <div id="quick-under">
         <p id="quick-meta" class="quick-fine"></p>
+        <p class="quick-fine" id="quick-pin" hidden></p>
+        <p class="quick-fine" id="quick-flatpaks" hidden></p>
         <p class="quick-fine" id="quick-usb">You need a USB stick of 16 GB or larger; everything on it is erased.</p>
         <p class="quick-fine" id="quick-erase">Installing erases the computer’s drive. Want to keep Windows? <a href="https://tunaos.org/wootc">Use wootc</a>.</p>
         <p class="quick-fine" id="quick-mac" hidden>For PCs and Intel Macs. Macs with Apple chips can’t start it: <a href="https://tunaos.org/docs/apple-silicon">Apple Silicon Macs</a>.</p>
@@ -518,6 +520,19 @@
     <div class="note hidden" id="initrdnote"></div>
     <details><summary>Technical details</summary><div id="log"></div></details>
   </div>
+  <div class="card hidden" id="mediumcard">
+    <h3 style="margin-top:0">Download the installer image</h3>
+    <p class="sub" id="medium-blurb">CI built and qualified this image. This tab fetches it, verifies it, and saves one file. That file boots as an ISO and also works with <code>dd</code>.</p>
+    <p class="helper" id="medium-pin"></p>
+    <p class="helper" id="medium-flatpaks"></p>
+    <div class="row">
+      <button id="medium-download">Download the installer image</button>
+      <button type="button" id="medium-cancel" class="secondary" disabled>Cancel</button>
+    </div>
+    <p id="medium-stage" role="status" aria-live="polite"></p>
+    <progress aria-label="Installer image download progress" id="medium-bar" max="1"></progress>
+    <p id="medium-result" role="status"></p>
+  </div>
   <div class="card hidden" id="fallbackcard">
     <h3 style="margin-top:0">Build on your own machine</h3>
     <p id="fallback-app" hidden><a id="fallback-app-link"></a> builds this image and writes your USB stick, no commands needed. Or build it from a terminal:</p>
@@ -566,6 +581,7 @@
 <script src="experience-data.js"></script>
 <script src="experiences.js"></script>
 <script src="flatpak-defaults.js"></script>
+<script src="write-medium.js"></script>
 <script src="setup-safety.js"></script>
 <script src="setup-draft.js"></script>
 <script src="app.js"></script>
