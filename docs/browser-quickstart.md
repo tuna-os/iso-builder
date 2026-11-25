@@ -24,7 +24,9 @@ depends on evidence, not preference (`app/public/quick-start.js`):
    dialog opens first. Then the build runs in the tab with the default apps
    of the desktop.
 3. **Download ISO, ready-made.** The page uses this route only for cells with
-   no installer pin. It needs an ISO on download.tunaos.org for the image.
+   no installer pin. It needs an ISO for the image in `downloads.json`. No
+   cell has one today: download.tunaos.org holds no ISOs, so `downloads.json`
+   lists none (#676).
 4. **Get TunaOS Media Writer.** The page uses this route when the native app
    (`desktop/`) has a release. The app writes the USB stick on your computer.
 5. **Build on your computer.** The page shows the local instructions of the
@@ -51,13 +53,13 @@ On macOS 15 and newer, an unsigned app opens only after you choose
 **Open Anyway** in **System Settings → Privacy & Security**. The app writes a
 USB stick for a PC. A Mac with Apple Silicon cannot start from that stick.
 
-The links to ready-made ISOs and app releases come from `downloads.json`.
-The deploy job makes this file with `scripts/generate-downloads.py`. The
-script reads the published ISO index and the GitHub releases. If the script
-cannot read a source, the page does not show that route. Thus the page never
-links to a missing file. tunaos.org reads the same file from its download
-page, so `app/public/_headers` serves it (and `catalog-snapshot.json`) with
-`Access-Control-Allow-Origin: *`.
+The links to app releases come from `downloads.json`. The deploy job makes
+this file with `scripts/generate-downloads.py`. The script reads the GitHub
+releases. Its `prebuilt` section stays in the file and is always empty. If
+the script cannot read the releases, the page does not show the app route.
+Thus the page never links to a missing file. tunaos.org reads the same file
+from its download page, so `app/public/_headers` serves it (and
+`catalog-snapshot.json`) with `Access-Control-Allow-Origin: *`.
 
 This page shows only standard, generic x86-64 images. A link that names only
 a TunaOS image, as tunaos.org sends

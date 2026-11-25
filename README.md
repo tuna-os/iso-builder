@@ -24,7 +24,7 @@ Never post account credentials or API keys in issues or pull requests.
 For step-by-step browser instructions and current limits, see the [browser quickstart](docs/browser-quickstart.md).
 
 1. **Pick a desktop:** the bare URL is one screen: desktop cards, a "Based on" menu and one button. A tunaos.org link (`?image=tuna-os/<variant>:<flavor>`) opens the same screen on that image.
-2. **One click:** the button builds the ISO in your browser when the image has a qualification receipt. Your browser must also be able to build it. If not, the button downloads the ready-made ISO or offers TunaOS Media Writer.
+2. **One click:** the button builds the ISO in your browser when the image has a qualification receipt. Your browser must also be able to build it. If not, the button offers TunaOS Media Writer, or the steps to build it on your computer.
 3. **Write the USB stick:** use Fedora Media Writer, balenaEtcher, or TunaOS Media Writer. The page offers TunaOS Media Writer under the button. It also gives an "Open in Media Writer" link and the image's `build-request.json`.
 
 **Customize apps and settings** (or `?customize=1`) opens the full builder. It offers any image and platform, Flatpaks, system packages ([remora](https://github.com/tuna-os/remora)), custom repos and a custom registry relay. It also has the build-on-your-computer fallback.
