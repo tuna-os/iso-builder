@@ -32,7 +32,7 @@ Two kinds of drift, reported differently:
             not to adjudicate it. Printed, does NOT fail the run.
 
 Only the top-level `variants:` list is in scope — `sibling_images:` are
-separate repos (tromso, xfce-linux) with their own build/test pipelines,
+separate repos (tromso, brussels) with their own build/test pipelines,
 not part of this catalog at all.
 
 This job is deliberately wired to the weekly `schedule` trigger only (see

@@ -108,7 +108,7 @@ variants:
 
 
 def test_parse_build_config_ignores_sibling_images(vtbc):
-    """sibling_images: entries (tromso, xfce-linux) are separate repos, not
+    """sibling_images: entries (tromso, brussels) are separate repos, not
     part of this catalog — must never leak into the comparison."""
     text = """
 sibling_images:
