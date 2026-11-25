@@ -1106,6 +1106,22 @@ jobs:
           STRICT_ROUNDTRIP_TEST: ${{ github.event.inputs.strict_roundtrip_test }}
         run: just iso-artifact-drop-local
 
+      # Large ISOs (16-19 GB: skipjack-kde, bonito-gnome-nvidia, guppy-gnome)
+      # need the original, the round-trip copy and the guest overlay at once,
+      # which does not fit a stock hosted runner (#447: ENOSPC at the strict
+      # guest step). The browser build is finished here, so reclaiming the
+      # preinstalled toolchains cannot move the OPFS quota that the note above
+      # warns about. Only paths outside RUNNER_TEMP and the workspace are
+      # removed. karnataka keeps its own disk.
+      - name: free hosted-runner disk before round trip and guest
+        if: ${{ always() && !cancelled() && github.event.inputs.runner != 'karnataka-gpu' && github.event.inputs.strict_roundtrip_test == 'true' }}
+        timeout-minutes: 10
+        run: |
+          df -h /
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc \
+            /usr/local/.ghcup /opt/hostedtoolcache/CodeQL /usr/local/share/boost
+          df -h /
+
       # A karnataka-gpu strict cell fetches what full-gpu-build uploaded under
       # the same run-scoped name.
       - name: download ISO artifact again
