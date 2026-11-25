@@ -7,30 +7,15 @@ spec = importlib.util.spec_from_file_location("generate_downloads", ROOT / "scri
 gen = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(gen)
 
-BASE = "https://download.tunaos.org/live-isos/"
 
-
-def iso(name, arch="", latest=True, size=6_000_000_000, url=None):
-    return {"name": name, "arch": arch, "latest": latest, "size": size, "url": url or f"{BASE}{name}.iso"}
-
-
-def test_prebuilt_links_only_amd64_latest_live_isos():
-    index = {"categories": [
-        {"id": "live-isos", "isos": [
-            iso("yellowfin-gnome-latest"),
-            iso("bonito-kde-latest", arch="x86_64"),
-            iso("bonito-kde-latest-arm64", arch="aarch64"),     # arm64 suffix after -latest
-            iso("bonito-xfce-latest", arch="aarch64"),          # arm64 by field
-            iso("bonito-niri-44-x86_64", latest=False),         # dated, not -latest
-            iso("marlin-cosmic-latest", size=0),                # empty object
-            iso("grouper-gnome-latest", url="https://evil.example/grouper-gnome-latest.iso"),
-        ]},
-        {"id": "other", "isos": [iso("albacore-latest")]},
-    ]}
-    assert gen.prebuilt_from_index(index) == {
-        "bonito-kde": {"url": f"{BASE}bonito-kde-latest.iso", "size": 6_000_000_000, "modified": None},
-        "yellowfin-gnome": {"url": f"{BASE}yellowfin-gnome-latest.iso", "size": 6_000_000_000, "modified": None},
-    }
+def test_no_prebuilt_iso_is_ever_linked(tmp_path, monkeypatch):
+    # R2 holds no ISOs: a link would be a 404 on the main button.
+    out = tmp_path / "downloads.json"
+    monkeypatch.setattr(gen, "fetch_json", lambda url, token=None: [])
+    monkeypatch.setattr(gen.sys, "argv", ["generate-downloads.py", "--out", str(out)])
+    assert gen.main() == 0
+    doc = gen.json.loads(out.read_text())
+    assert doc["schemaVersion"] == 1 and doc["prebuilt"] == {}
 
 
 def release(tag, assets, draft=False, prerelease=False):

@@ -1391,9 +1391,8 @@ jobs:
           name: engine
           path: app/public/
 
-      # Prebuilt ISO links and TunaOS Media Writer releases for the one-click
-      # download view, read from their published sources now rather than
-      # committed (an unreadable source only removes that route).
+      # TunaOS Media Writer releases for the one-click download view, read from
+      # the release list now rather than committed (unreadable: no app route).
       - name: generate downloads.json
         timeout-minutes: 3
         env:
