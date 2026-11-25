@@ -92,7 +92,7 @@ jobs:
       - name: Unit tests (JSONL parser, helper client, flow state machine)
         run: swift test
 
-      - uses: actions/setup-go@v7.0.0
+      - uses: actions/setup-go@v7.1.0
         with:
           go-version-file: desktop/helper/go.mod
           cache-dependency-path: desktop/helper/go.sum
