@@ -57,6 +57,27 @@ class ReceiptError(ValueError):
     pass
 
 
+
+EDITIONS_PATH = Path(__file__).resolve().parents[1] / "e2e/editions.json"
+
+
+def edition_slugs(variant: str, flavor: str, editions: list | None = None) -> set[str]:
+    """Slugs a <variant>:<flavor> target may carry: <variant>-<flavor>, plus the
+    slug e2e/editions.json declares for that exact ref. Some refs need a shorter
+    slug to keep the strict harness socket path under the 107-byte limit
+    (bonito-rawhide:gnome-hwe is bonito-rawhide-hwe); the gate in
+    e2e/tests/diagnostic-gate.js accepts the same set."""
+    if editions is None:
+        try:
+            editions = json.loads(EDITIONS_PATH.read_text())
+        except (OSError, json.JSONDecodeError):
+            editions = []
+    ref = f"{variant}:{flavor}"
+    declared = {e["slug"] for e in editions
+                if isinstance(e, dict) and e.get("ref") == ref and isinstance(e.get("slug"), str)}
+    return {f"{variant}-{flavor}"} | declared
+
+
 def require(condition: bool, message: str) -> None:
     if not condition:
         raise ReceiptError(message)
@@ -186,8 +207,8 @@ def validate_receipt(receipt: dict, catalog: dict | None = None) -> None:
     require(SHA40.fullmatch(producer["sha"]) is not None, "producer.sha must be 40 lowercase hex")
     run_id = positive_int(producer["runId"], "producer.runId")
     attempt = positive_int(producer["runAttempt"], "producer.runAttempt")
-    slug = f"{target['variant']}-{target['flavor']}"
-    require(producer["isoArtifactName"] == f"iso-{slug}-run{run_id}-a{attempt}",
+    slugs = edition_slugs(target["variant"], target["flavor"])
+    require(producer["isoArtifactName"] in {f"iso-{slug}-run{run_id}-a{attempt}" for slug in slugs},
             "producer.isoArtifactName does not bind target, run id and attempt")
     positive_int(producer["isoArtifactId"], "producer.isoArtifactId")
     harness = receipt["harness"]
@@ -243,7 +264,8 @@ def build_receipt(*, harness_output: Path, binding: dict, workflow_text: str, sl
     match = TUNAOS_IMAGE.fullmatch(target.get("image") or "")
     require(match is not None, "binding target is not a tuna-os/<variant>:<flavor> image")
     variant, flavor = match.groups()
-    require(target.get("slug") == slug == f"{variant}-{flavor}", "binding target slug differs from the matrix cell")
+    require(target.get("slug") == slug and slug in edition_slugs(variant, flavor),
+            "binding target slug differs from the matrix cell")
     require(target.get("platform") == PLATFORM, f"binding target platform is not {PLATFORM}")
     iso = binding.get("iso") or {}
     identities = binding.get("identities") or {}

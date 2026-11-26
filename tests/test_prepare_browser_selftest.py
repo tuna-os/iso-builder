@@ -769,3 +769,28 @@ def test_a_boot_image_is_never_the_only_payload(tmp_path, real_receipt_payloads)
     extra.write_bytes(b"070701".ljust(4096, b"\0"))
     with pytest.raises(helper.InputError, match="no embedded etc/tunaos/live-source.json"):
         helper.extract_media_receipts(args["iso"], extractor, tmp_path / "out", {})
+
+
+def test_edition_slugs_adds_only_the_slug_declared_for_that_exact_ref():
+    assert helper.edition_slugs("bonito-rawhide", "gnome-hwe") == {
+        "bonito-rawhide-gnome-hwe", "bonito-rawhide-hwe"}
+    assert helper.edition_slugs("bonito-rawhide", "gnome") == {"bonito-rawhide-gnome"}
+
+
+def test_admits_the_short_slug_editions_json_declares_for_the_target(tmp_path, monkeypatch):
+    args, *_ = fixture(tmp_path, diagnostic=False)
+    editions = [{"ref": "skipjack:gnome", "slug": "skipjack-gn"}]
+    monkeypatch.setattr(helper, "edition_slugs",
+                        lambda v, f, e=editions: {f"{v}-{f}"} | {x["slug"] for x in e if x["ref"] == f"{v}:{f}"})
+    args["slug"] = args["artifact_manifest"]["slug"] = "skipjack-gn"
+    args["artifact_name"] = "iso-skipjack-gn-run12345-a2"
+    _, binding = helper.validate_inputs(**args)
+    assert binding["target"]["slug"] == "skipjack-gn"
+
+
+def test_refuses_a_slug_editions_json_does_not_declare_for_the_target(tmp_path):
+    args, *_ = fixture(tmp_path, diagnostic=False)
+    args["slug"] = args["artifact_manifest"]["slug"] = "skipjack-hwe"
+    args["artifact_name"] = "iso-skipjack-hwe-run12345-a2"
+    with pytest.raises(helper.InputError, match="target slug does not match"):
+        helper.validate_inputs(**args)
