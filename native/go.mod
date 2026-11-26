@@ -5,7 +5,7 @@ go 1.27.0
 require (
 	fyne.io/fyne/v2 v2.8.3
 	github.com/tuna-os/iso-builder/safedrives v0.0.0
-	github.com/tuna-os/tacklebox v0.1.2-0.20261126110042-f2f5d9fc7c3f
+	github.com/tuna-os/tacklebox v0.1.2-0.20261126161532-29414d553222
 	golang.org/x/crypto v0.59.0
 	golang.org/x/net v0.63.0
 )
