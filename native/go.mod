@@ -1,11 +1,11 @@
 module github.com/tuna-os/iso-builder/native
 
-go 1.26.3
+go 1.27.0
 
 require (
 	fyne.io/fyne/v2 v2.8.3
 	github.com/tuna-os/iso-builder/safedrives v0.0.0
-	github.com/tuna-os/tacklebox v0.1.2-0.20261125031847-88e93bf65494
+	github.com/tuna-os/tacklebox v0.1.2-0.20261126110042-f2f5d9fc7c3f
 	golang.org/x/crypto v0.59.0
 	golang.org/x/net v0.63.0
 )
