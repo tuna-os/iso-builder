@@ -326,6 +326,44 @@ def test_validate_receipt_refuses_a_target_image_other_than_the_published_one(tm
         receipt_mod.validate_receipt(receipt, RENAMED_CATALOG)
 
 
+# e2e/editions.json gives some refs a shorter slug than <variant>-<flavor>, to
+# keep the strict harness socket path under 107 bytes.
+SHORT_SLUG = "bonito-rawhide-hwe"
+SHORT_IMAGE = "ghcr.io/tuna-os/bonito:gnome-hwe-rawhide"
+SHORT_CATALOG = {"targets": [{"targetKey": "bonito-rawhide:gnome-hwe:linux/amd64",
+                              "publication": {"ref": SHORT_IMAGE}}]}
+
+
+def short_slug_build(tmp_path, slug=SHORT_SLUG):
+    bind = binding()
+    bind["producer"]["artifactName"] = f"iso-{slug}-run{RUN_ID}-a{ATTEMPT}"
+    bind["target"].update(image="tuna-os/bonito-rawhide:gnome-hwe", slug=slug)
+    plain, luks = ({**fragment(m), "target_imgref": SHORT_IMAGE} for m in ("plain", "luks"))
+    return receipt_mod.build_receipt(
+        harness_output=harness_dir(tmp_path, plain, luks), binding=bind, workflow_text=CI_YML.read_text(),
+        slug=slug, install_mode="both", diagnostic_unqualified="false", environ=environ(),
+        qualified_at=NOW, catalog=SHORT_CATALOG)
+
+
+def test_the_short_slug_editions_json_declares_builds_and_validates(tmp_path):
+    assert SHORT_SLUG in receipt_mod.edition_slugs("bonito-rawhide", "gnome-hwe")
+    receipt = short_slug_build(tmp_path)
+    assert receipt["producer"]["isoArtifactName"] == f"iso-{SHORT_SLUG}-run4242-a2"
+    receipt_mod.validate_receipt(receipt, SHORT_CATALOG)
+
+
+def test_a_short_slug_declared_for_another_ref_is_refused(tmp_path):
+    with pytest.raises(receipt_mod.ReceiptError, match="slug"):
+        short_slug_build(tmp_path, slug="bonito-rawhide-gnome")
+
+
+def test_validate_receipt_refuses_an_artifact_name_with_an_undeclared_slug(tmp_path):
+    receipt = short_slug_build(tmp_path)
+    receipt["producer"]["isoArtifactName"] = "iso-bonito-rawhide-kde-run4242-a2"
+    with pytest.raises(receipt_mod.ReceiptError, match="isoArtifactName"):
+        receipt_mod.validate_receipt(receipt, SHORT_CATALOG)
+
+
 def test_the_committed_catalog_names_each_published_image():
     assert receipt_mod.published_image("bonito", "kde") == IMAGE
     assert receipt_mod.published_image("flounder-sid", "gnome") == "ghcr.io/tuna-os/flounder:gnome-sid"

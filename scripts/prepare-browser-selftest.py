@@ -41,6 +41,27 @@ class InputError(ValueError):
     pass
 
 
+
+EDITIONS_PATH = Path(__file__).resolve().parents[1] / "e2e/editions.json"
+
+
+def edition_slugs(variant: str, flavor: str, editions: list | None = None) -> set[str]:
+    """Slugs a <variant>:<flavor> target may carry: <variant>-<flavor>, plus the
+    slug e2e/editions.json declares for that exact ref. Some refs need a shorter
+    slug to keep the strict harness socket path under the 107-byte limit
+    (bonito-rawhide:gnome-hwe is bonito-rawhide-hwe); the gate in
+    e2e/tests/diagnostic-gate.js accepts the same set."""
+    if editions is None:
+        try:
+            editions = json.loads(EDITIONS_PATH.read_text())
+        except (OSError, json.JSONDecodeError):
+            editions = []
+    ref = f"{variant}:{flavor}"
+    declared = {e["slug"] for e in editions
+                if isinstance(e, dict) and e.get("ref") == ref and isinstance(e.get("slug"), str)}
+    return {f"{variant}-{flavor}"} | declared
+
+
 def require(condition: bool, message: str) -> None:
     if not condition:
         raise InputError(message)
@@ -489,7 +510,7 @@ def validate_inputs(*, iso: str | Path, measurements: dict, browser_evidence: di
     require(run_attempt.isdigit() and int(run_attempt) > 0, "producer run attempt is invalid")
     require(SHA40.fullmatch(source_sha) is not None, "producer source SHA is invalid")
     require(artifact_id.isdigit() and int(artifact_id) > 0, "uploaded artifact id is invalid")
-    require(slug == f"{variant}-{flavor}", "target slug does not match variant and flavor")
+    require(slug in edition_slugs(variant, flavor), "target slug does not match variant and flavor")
     require(artifact_name == f"iso-{slug}-run{run_id}-a{run_attempt}",
             "artifact name does not bind target, run id and attempt")
     require(PLATFORM.fullmatch(platform) is not None, "matrix platform is unsupported")
