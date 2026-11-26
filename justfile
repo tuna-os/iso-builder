@@ -240,13 +240,16 @@ full-guest-verify:
       sudo udevadm trigger --name-match=kvm || true
     fi
 
-    # Qualification targets run Task 11's strict offline-GUI
-    # contract; upstream pipeline references keep the LUKS check.
-    # sudo sanitizes the environment; the VAR=val prefix carries the
-    # image ref through to the harness.
+    # Qualification targets boot as a user's medium would (--published:
+    # readiness by pixels, no sshd). The strict offline-GUI contract needs
+    # the measured inputs only full-guest-verify-strict prepares; started
+    # here, it failed every run before boot with "immutable input 'OCI live
+    # overlay' is unmeasured" (run 45543140982, all eight cells).
+    # Upstream pipeline references keep the LUKS check. sudo sanitizes the
+    # environment; the VAR=val prefix carries the image ref to the harness.
     if [ "${QUALIFY}" = "true" ]; then
-      echo "Running strict offline-GUI verification..."
-      sudo env -u TBOX_E2E_IMAGE "${GITHUB_WORKSPACE}/tunaos-e2e/scripts/iso-e2e.sh" "$ISO" --strict-offline-gui \
+      echo "Running published-medium boot verification..."
+      sudo env -u TBOX_E2E_IMAGE "${GITHUB_WORKSPACE}/tunaos-e2e/scripts/iso-e2e.sh" "$ISO" --published \
         --output "luks-verify-${SLUG}" \
         --timeout 900
     else

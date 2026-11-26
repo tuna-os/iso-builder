@@ -102,11 +102,15 @@ def test_ci_tunaos_pin_is_full_sha():
 
 def test_ci_guest_verify_branches_on_qualify_flag():
     text = CI_YML.read_text() + "\n" + (ROOT / "justfile").read_text()  # guest verify lives in a recipe
-    assert "--strict-offline-gui" in text, "qualify targets must use --strict-offline-gui"
+    assert "--strict-offline-gui" in text, "the strict recipe must use --strict-offline-gui"
     assert re.search(r'\[\s*"\$\{QUALIFY\}"\s*=\s*"true"\s*\]', text), \
         "guest-verify must branch on the edition qualify flag"
-    luks_block = text[text.index("--strict-offline-gui"):text.index("--strict-offline-gui") + 2000]
-    assert "--luks" in text[text.index("--strict-offline-gui"):], \
+    recipe = text[text.index("full-guest-verify:"):text.index("full-guest-verify-strict:")]
+    # Without the strict recipe's measured inputs, --strict-offline-gui fails
+    # before boot on every cell (run 45543140982): a dead gate.
+    assert "--strict-offline-gui" not in recipe
+    assert "--published" in recipe, "qualify cells boot as a published medium"
+    assert "--luks" in recipe[recipe.index("--published"):], \
         "non-qualify (reference) cells must keep the --luks check"
 
 
