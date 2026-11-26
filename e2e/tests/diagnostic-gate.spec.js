@@ -183,6 +183,28 @@ test.describe("bounded strict-observed admission", () => {
     }
   });
 
+  test("both mode admits the shorter slug editions.json declares for that ref only", () => {
+    const both = { ...env, STRICT_INSTALL_MODE: "both" };
+    const hwe = { image: "tuna-os/bonito-rawhide:gnome-hwe", platform: PLATFORM };
+    const editions = [
+      { ref: "bonito-rawhide:gnome-hwe", slug: "bonito-rawhide-hwe" },
+      { ref: "bonito:kde", slug: "bonito-kde" },
+    ];
+    expect(strictObservedGrantFromEnv({ ...both, ONLY: "bonito-rawhide-hwe" }, hwe, editions)).toEqual({
+      kind: "strict-observed", ...hwe, installMode: "both", route: "retained-iso-roundtrip" });
+    expect(strictObservedGrantFromEnv({ ...both, ONLY: "bonito-rawhide-gnome-hwe" }, hwe, editions).image).toBe(hwe.image);
+    // The repo's own list declares it, so the default lookup admits it too.
+    expect(strictObservedGrantFromEnv({ ...both, ONLY: "bonito-rawhide-hwe" }, hwe).image).toBe(hwe.image);
+    for (const [only, target] of [
+      ["bonito-kde", hwe],
+      ["bonito-rawhide-hwe", { image: "tuna-os/bonito:kde", platform: PLATFORM }],
+      ["bonito-rawhide-hwe", { image: "tuna-os/bonito-rawhide:gnome", platform: PLATFORM }],
+    ]) {
+      expect(() => strictObservedGrantFromEnv({ ...both, ONLY: only }, target, editions), only).toThrow(/TBOX_E2E_STRICT_OBSERVED/);
+    }
+    expect(() => strictObservedGrantFromEnv({ ...env, ONLY: "bonito-rawhide-hwe" }, hwe, editions)).toThrow(/TBOX_E2E_STRICT_OBSERVED/);
+  });
+
   test("real app admits a both-mode observation as not-assessed", async ({ page }) => {
     await page.addInitScript(installStrictObservedGrant, { ...observedGrant(), installMode: "both" });
     await page.goto(PRESET);
