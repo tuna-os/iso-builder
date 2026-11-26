@@ -42,7 +42,18 @@ function installDiagnosticGrant(grant) {
 // may name any single TunaOS linux/amd64 cell; ONLY must be exactly its slug.
 const STRICT_BOTH_IMAGE = /^tuna-os\/([a-z0-9]+(?:-[a-z0-9]+)*):([a-z0-9]+(?:[.-][a-z0-9]+)*)$/;
 
-function strictObservedGrantFromEnv(env, { image, platform }) {
+// A cell's slug is <variant>-<flavor>, unless e2e/editions.json gives its ref a
+// shorter one. bonito-rawhide:gnome-hwe is bonito-rawhide-hwe there, because
+// the harness's longest socket, luks-verify-<slug>/strict-plain-warm-serial.sock,
+// must fit the 107-byte sun_path limit (justfile full-strict-inputs). The plan
+// already refuses an ONLY that names no edition, so this only lets that one
+// declared slug through for its own ref; it widens nothing else.
+function editionSlugsFor(ref, editions) {
+  const list = editions || require("../editions.json");
+  return list.filter((e) => e && e.ref === ref && typeof e.slug === "string").map((e) => e.slug);
+}
+
+function strictObservedGrantFromEnv(env, { image, platform }, editions) {
   if (env.TBOX_E2E_STRICT_OBSERVED === undefined || env.TBOX_E2E_STRICT_OBSERVED === "") return null;
   const required = {
     TBOX_E2E_STRICT_OBSERVED: "1", TBOX_E2E_FULL: "1",
@@ -53,7 +64,8 @@ function strictObservedGrantFromEnv(env, { image, platform }) {
   const both = mode === "both" && STRICT_BOTH_IMAGE.exec(image || "");
   const target = mode === "plain"
     ? env.ONLY === "skipjack-gnome" && image === "tuna-os/skipjack:gnome"
-    : Boolean(both) && env.ONLY === `${both[1]}-${both[2]}`;
+    : Boolean(both) && (env.ONLY === `${both[1]}-${both[2]}` ||
+        editionSlugsFor(`${both[1]}:${both[2]}`, editions).includes(env.ONLY));
   if (Object.entries(required).some(([key, value]) => env[key] !== value) || !target ||
       env.DIAGNOSTIC_ALLOW_UNQUALIFIED || platform !== "linux/amd64") {
     throw new Error("TBOX_E2E_STRICT_OBSERVED requires the retained Skipjack GNOME plain strict roundtrip, or a both-mode strict roundtrip of the one named TunaOS linux/amd64 cell, with no diagnostic grant or publishing");
